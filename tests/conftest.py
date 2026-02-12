@@ -1,14 +1,22 @@
+import asyncio
 import hashlib
 import hmac
+import tempfile
+from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from fastapi.testclient import TestClient
 
+from app.commands.builtins import register_builtins
+from app.commands.registry import CommandRegistry
 from app.config import Settings
 from app.conversation.manager import ConversationManager
+from app.database.db import init_db
+from app.database.repository import Repository
 from app.llm.client import OllamaClient
 from app.main import app
+from app.memory.markdown import MemoryFile
 from app.whatsapp.client import WhatsAppClient
 
 TEST_SETTINGS = Settings(
@@ -19,6 +27,7 @@ TEST_SETTINGS = Settings(
     allowed_phone_numbers=["5491112345678"],
     ollama_base_url="http://localhost:11434",
     ollama_model="test-model",
+    database_path=":memory:",
 )
 
 
@@ -27,9 +36,39 @@ def settings() -> Settings:
     return TEST_SETTINGS
 
 
+# --- Async fixtures for unit tests ---
+
+
 @pytest.fixture
-def conversation_manager() -> ConversationManager:
-    return ConversationManager(max_messages=20)
+async def db_connection():
+    conn = await init_db(":memory:")
+    yield conn
+    await conn.close()
+
+
+@pytest.fixture
+async def repository(db_connection):
+    return Repository(db_connection)
+
+
+@pytest.fixture
+def memory_file(tmp_path):
+    return MemoryFile(path=str(tmp_path / "MEMORY.md"))
+
+
+@pytest.fixture
+def command_registry():
+    registry = CommandRegistry()
+    register_builtins(registry)
+    return registry
+
+
+@pytest.fixture
+async def conversation_manager(repository) -> ConversationManager:
+    return ConversationManager(repository=repository, max_messages=20)
+
+
+# --- Sync fixture for TestClient-based integration tests ---
 
 
 @pytest.fixture
@@ -44,6 +83,17 @@ def client(settings: Settings) -> TestClient:
     mock_http.post = AsyncMock(return_value=mock_response)
     mock_http.get = AsyncMock()
 
+    # Create DB connection for TestClient tests
+    tmp_dir = tempfile.mkdtemp()
+    db_path = str(Path(tmp_dir) / "test.db")
+
+    conn = asyncio.run(init_db(db_path))
+    repository = Repository(conn)
+    memory_path = str(Path(tmp_dir) / "MEMORY.md")
+    memory_file = MemoryFile(path=memory_path)
+    command_registry = CommandRegistry()
+    register_builtins(command_registry)
+
     app.state.settings = settings
     app.state.http_client = mock_http
     app.state.whatsapp_client = WhatsAppClient(
@@ -56,7 +106,11 @@ def client(settings: Settings) -> TestClient:
         base_url=settings.ollama_base_url,
         model=settings.ollama_model,
     )
+    app.state.repository = repository
+    app.state.memory_file = memory_file
+    app.state.command_registry = command_registry
     app.state.conversation_manager = ConversationManager(
+        repository=repository,
         max_messages=settings.conversation_max_messages,
     )
 

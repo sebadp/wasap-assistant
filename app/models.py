@@ -21,3 +21,11 @@ class OllamaCheck(BaseModel):
 class HealthResponse(BaseModel):
     status: str
     checks: OllamaCheck
+
+
+class Memory(BaseModel):
+    id: int
+    content: str
+    category: str | None = None
+    active: bool = True
+    created_at: str = ""

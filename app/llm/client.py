@@ -27,6 +27,13 @@ class OllamaClient:
             "think": True,
         }
         resp = await self._http.post(url, json=payload)
+        if resp.status_code == 404:
+            logger.error(
+                "Ollama model '%s' not found — download it with: "
+                "docker compose exec ollama ollama pull %s",
+                self._model,
+                self._model,
+            )
         resp.raise_for_status()
         data = resp.json()
         content = data["message"]["content"]

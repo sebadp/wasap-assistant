@@ -28,6 +28,10 @@ class Settings(BaseSettings):
     )
     conversation_max_messages: int = 20
 
+    # Database
+    database_path: str = "data/wasap.db"
+    summary_threshold: int = 40
+
     # ngrok (only used in docker-compose, not by the app itself)
     ngrok_authtoken: str = ""
     ngrok_domain: str = ""

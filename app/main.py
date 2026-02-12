@@ -1,13 +1,19 @@
 import logging
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 import httpx
 from fastapi import FastAPI
 
+from app.commands.builtins import register_builtins
+from app.commands.registry import CommandRegistry
 from app.config import Settings
 from app.conversation.manager import ConversationManager
+from app.database.db import init_db
+from app.database.repository import Repository
 from app.health.router import router as health_router
 from app.llm.client import OllamaClient
+from app.memory.markdown import MemoryFile
 from app.webhook.router import router as webhook_router
 from app.whatsapp.client import WhatsAppClient
 
@@ -23,6 +29,18 @@ async def lifespan(app: FastAPI):
 
     http_client = httpx.AsyncClient(timeout=httpx.Timeout(120.0, connect=10.0))
 
+    # Database
+    Path(settings.database_path).parent.mkdir(parents=True, exist_ok=True)
+    db_conn = await init_db(settings.database_path)
+    repository = Repository(db_conn)
+
+    # Memory file
+    memory_file = MemoryFile(path="data/MEMORY.md")
+
+    # Command registry
+    command_registry = CommandRegistry()
+    register_builtins(command_registry)
+
     app.state.settings = settings
     app.state.http_client = http_client
     app.state.whatsapp_client = WhatsAppClient(
@@ -35,12 +53,17 @@ async def lifespan(app: FastAPI):
         base_url=settings.ollama_base_url,
         model=settings.ollama_model,
     )
+    app.state.repository = repository
+    app.state.memory_file = memory_file
+    app.state.command_registry = command_registry
     app.state.conversation_manager = ConversationManager(
+        repository=repository,
         max_messages=settings.conversation_max_messages,
     )
 
     yield
 
+    await db_conn.close()
     await http_client.aclose()
 
 

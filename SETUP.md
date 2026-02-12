@@ -218,6 +218,25 @@ INFO app.webhook.router: Incoming [5491112345678]: Hola!
 INFO app.whatsapp.client: Outgoing  [541112345678]: Hola! En qué puedo ayudarte?
 ```
 
+### Probar comandos
+
+Una vez que el chat funciona, probá los comandos:
+
+1. Mandá `/remember mi cumple es el 15 de marzo` → debería responder "Remembered: ..."
+2. Mandá `/memories` → debería listar el dato guardado
+3. Mandá un mensaje normal preguntando por tu cumpleaños → el LLM debería saberlo
+4. Mandá `/help` → debería listar todos los comandos disponibles
+5. Mandá `/clear` → borra el historial (las memorias persisten)
+
+### Verificar persistencia
+
+1. Verificar que existe `data/wasap.db` con datos:
+   ```bash
+   sqlite3 data/wasap.db "SELECT * FROM memories;"
+   ```
+2. Verificar que `data/MEMORY.md` refleja las memorias guardadas
+3. Reiniciar la app (`docker compose restart wasap`) y verificar que el historial y memorias persisten
+
 ### Troubleshooting
 
 | Problema | Causa probable | Solución |
@@ -230,7 +249,9 @@ INFO app.whatsapp.client: Outgoing  [541112345678]: Hola! En qué puedo ayudarte
 | `Invalid webhook signature` en logs | App Secret incorrecto | Verificar `WHATSAPP_APP_SECRET` en `.env` |
 | Meta no envía mensajes | No suscrito a "messages" | Activar "messages" en Webhook fields |
 | Error 131030 "Recipient not in allowed list" | Número no registrado como destinatario de prueba en Meta | Agregar número en API Setup > "Manage phone number list" |
-| Error 401 Unauthorized | Access token expirado | Generar nuevo token en API Setup y actualizar `.env` |
+| Error 401 Unauthorized | Access token expirado | Generar nuevo token en API Setup o usar token permanente (ver abajo) |
+| Error 400 "permission" | Token sin permisos correctos | Verificar que el System User tenga `whatsapp_business_messaging` |
+| Ollama 404 "model not found" | Modelo no descargado | `docker compose exec ollama ollama pull <modelo>` |
 
 ---
 

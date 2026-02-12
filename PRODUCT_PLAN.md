@@ -12,6 +12,16 @@ Un asistente personal inteligente al que le hablás por WhatsApp y te responde u
 - **Costo cero**: WhatsApp Cloud API gratis para mensajes de servicio + Ollama local + ngrok free
 - **Simplicidad**: se levanta con `docker compose up`, no requiere infra cloud
 - **Conversacional**: mantiene contexto y memoria entre sesiones
+- **Extensible**: sistema de skills/plugins inspirado en [OpenClaw](https://openclaw.ai), donde agregar capacidades nuevas es escribir un archivo markdown
+
+**Inspiración — OpenClaw:**
+WasAP toma varios patrones de diseño de OpenClaw, el asistente personal open-source que usa markdown como capa de configuración y memoria. En particular:
+- **Archivos markdown como fuente de verdad** para memorias y configuración de skills
+- **Skills como carpetas con SKILL.md** que definen capacidades del agente
+- **Memoria en dos capas**: hechos curados (MEMORY.md) + notas diarias (logs)
+- **Carga progresiva**: solo se lee el detalle de un skill cuando el agente lo necesita
+
+La diferencia clave: OpenClaw es un framework multi-canal multi-agente. WasAP es un asistente personal single-user, single-channel (WhatsApp), optimizado para simplicidad.
 
 ---
 
@@ -27,7 +37,6 @@ Un asistente personal inteligente al que le hablás por WhatsApp y te responde u
                                  ┌─────────────────┐
                                  │  ngrok tunnel    │
                                  │  (free tier)     │
-                                 │  dominio estático│
                                  └────────┬─────────┘
                                           │ localhost:8000
                                           ▼
@@ -38,7 +47,8 @@ Un asistente personal inteligente al que le hablás por WhatsApp y te responde u
                                  │  │                         │        │
                                  │  │  FastAPI                │        │
                                  │  │  ├─ Webhook receiver    │        │
-                                 │  │  ├─ Message router      │        │
+                                 │  │  ├─ Command router      │        │
+                                 │  │  ├─ Skill engine        │        │
                                  │  │  ├─ Conversation mgr    │        │
                                  │  │  ├─ Memory manager      │        │
                                  │  │  └─ WhatsApp sender     │        │
@@ -57,11 +67,14 @@ Un asistente personal inteligente al que le hablás por WhatsApp y te responde u
 2. Meta lo envía como webhook POST a tu dominio ngrok
 3. ngrok lo tuneliza a tu `localhost:8000`
 4. FastAPI recibe el webhook, valida la firma, extrae el mensaje
-5. Se carga el historial de conversación de SQLite
-6. Se arma el prompt (system + memoria + historial + mensaje nuevo)
-7. Se envía a Ollama API local (`localhost:11434`)
-8. La respuesta se envía de vuelta via WhatsApp Cloud API
-9. Se guarda el intercambio en SQLite
+5. Si es un `/comando` → se ejecuta directamente sin pasar por el LLM
+6. Si es texto normal:
+   - Se guarda en SQLite
+   - Se cargan memorias activas + resumen previo + historial reciente
+   - Se arma el contexto (system prompt + memorias + summary + historial)
+   - Se envía a Ollama API local
+   - La respuesta se guarda y se envía por WhatsApp
+   - Si el historial supera el threshold, se lanza un resumen en background
 
 ---
 
@@ -72,9 +85,9 @@ Un asistente personal inteligente al que le hablás por WhatsApp y te responde u
 | Servidor | **Python 3.11+ / FastAPI** | Async, rápido, ideal para webhooks |
 | WhatsApp | **WhatsApp Cloud API** (oficial) | Gratis para servicio, sin riesgo de ban |
 | Túnel | **ngrok** (free tier) | Dominio estático gratis, sin timeout, 1GB/mes sobra |
-| LLM | **Ollama** | Local, gratuito, múltiples modelos |
-| Base de datos | **SQLite** (WAL mode) | Sin servidor, suficiente para 1 usuario |
-| Config | **archivo .env** | Simple, estándar |
+| LLM | **Ollama** | Local, gratuito, múltiples modelos, tool calling |
+| Base de datos | **SQLite** (WAL mode) + **aiosqlite** | Sin servidor, async, suficiente para 1 usuario |
+| Config | **archivo .env** + **markdown** | Simple, estándar, human-readable |
 | Contenedores | **Docker + Docker Compose** | Setup reproducible, un solo comando para levantar todo |
 
 ### Por qué NO Baileys
@@ -93,7 +106,7 @@ Un asistente personal inteligente al que le hablás por WhatsApp y te responde u
 
 ## 4. Funcionalidades por Fase
 
-### Fase 1: MVP - Chat funcional
+### Fase 1: MVP - Chat funcional ✅
 > Poder mandar un mensaje por WhatsApp y recibir respuesta del LLM local.
 
 - Webhook receiver con validación de firma de Meta
@@ -104,101 +117,224 @@ Un asistente personal inteligente al que le hablás por WhatsApp y te responde u
 - Whitelist de números (solo responde a tu número)
 - Indicador de "visto" / acuse de recibo
 - Health check endpoint
-- Script de setup (guía para crear app en Meta Developer Portal)
-- **Dockerizado**: Dockerfile + docker-compose.yml (wasap + ollama como servicios)
-- Volume para SQLite y modelos de Ollama (persistencia entre reinicios)
-- ngrok corre en host o como servicio adicional en compose
+- Guía de setup completa (SETUP.md)
+- **Dockerizado**: Dockerfile + docker-compose.yml (wasap + ollama + ngrok)
+- Volume para modelos de Ollama (persistencia entre reinicios)
+- Tests unitarios completos
 
-### Fase 2: Persistencia y Memoria
+### Fase 2: Persistencia y Memoria ✅
 > El asistente recuerda conversaciones anteriores y datos que le pedís guardar.
 
-- Almacenar conversaciones en SQLite
+- Persistencia en SQLite (WAL mode, aiosqlite)
 - Cargar últimos N mensajes como contexto al recibir mensaje nuevo
-- Resumen automático de conversaciones largas (evitar overflow de context window)
-- Comandos de usuario:
-  - `/remember <dato>` - guardar info importante
-  - `/forget <dato>` - borrar info guardada
-  - `/memories` - listar datos guardados
-  - `/clear` - limpiar historial de conversación
-- Inyectar memorias relevantes en el system prompt
+- Resumen automático de conversaciones largas en background
+- Sistema de memorias globales (SQLite source of truth + `data/MEMORY.md` mirror)
+- Sistema de comandos extensible (registry pattern):
+  - `/remember <dato>` — guardar información importante
+  - `/forget <dato>` — olvidar un recuerdo guardado
+  - `/memories` — listar recuerdos guardados
+  - `/clear` — borrar historial de conversación
+  - `/help` — mostrar comandos disponibles
+- Memorias inyectadas automáticamente en el contexto del LLM
+- Mensajes de error claros para token expirado, permisos faltantes, modelo no descargado
+- Tests: 70+ tests cubriendo repository, commands, summarizer, memory mirror
 
 ### Fase 3: UX y Multimedia
 > El asistente se siente más natural y maneja más que texto.
 
-- Mensajes de audio entrantes → transcripción con Whisper (local via Ollama)
-- Imágenes entrantes → descripción con modelo multimodal (llava)
-- Formato WhatsApp en respuestas (negritas, listas, cursiva)
-- Respuestas largas divididas en múltiples mensajes
-- Manejo de errores user-friendly (Ollama caído, timeout, etc.)
-- Rate limiting (prevenir loops)
-- Logging estructurado
+- **Audio entrante**: descarga del audio de WhatsApp → transcripción con Whisper local (via Ollama o whisper.cpp)
+- **Imágenes entrantes**: descarga → análisis con modelo multimodal (llava/llama3.2-vision via Ollama)
+- **Formato WhatsApp**: formatear respuestas del LLM con la sintaxis de WhatsApp (*bold*, _italic_, ```code```, listas)
+- **Mensajes largos**: dividir respuestas que superen el límite de WhatsApp (~4096 chars) en múltiples mensajes
+- **Indicador de typing**: enviar "typing..." mientras Ollama procesa
+- **Rate limiting**: prevenir loops y abuso (máximo N mensajes por minuto)
+- **Logging estructurado**: JSON logging para mejor observabilidad
 
-### Fase 4: Herramientas
+### Fase 4: Skills y Herramientas
 > El asistente puede hacer cosas, no solo conversar.
 
-- Tool calling via Ollama (modelos compatibles)
-- Herramientas iniciales:
-  - Recordatorios (scheduler local)
-  - Clima (API pública)
-  - Notas / listas de tareas persistentes
-  - Cálculos
-  - Búsqueda web
-- Arquitectura de plugins extensible
+Inspirado en el [sistema de skills de OpenClaw](https://docs.openclaw.ai/tools/skills), donde cada skill es una carpeta con un archivo markdown que define qué puede hacer el agente.
 
-### Fase 5: Memoria Avanzada (futuro)
-> Memoria semántica de largo plazo.
+#### Arquitectura de Skills
 
-- Embeddings locales (via Ollama)
-- Búsqueda semántica con sqlite-vec
-- RAG sobre documentos/notas personales
-- Auto-resumen periódico de conversaciones
+```
+data/skills/
+├── weather/
+│   └── SKILL.md          # Definición + instrucciones para el LLM
+├── reminders/
+│   └── SKILL.md
+├── web-search/
+│   └── SKILL.md
+└── notes/
+    └── SKILL.md
+```
+
+Cada `SKILL.md` tiene frontmatter YAML + instrucciones en prosa:
+
+```yaml
+---
+name: weather
+description: Consultar el clima actual y pronóstico
+version: 1
+tools:
+  - get_weather
+---
+
+Cuando el usuario pregunte por el clima, usá la tool `get_weather` con la ciudad.
+Si no dice ciudad, preguntale cuál.
+Respondé en el idioma del usuario.
+```
+
+#### Carga progresiva (patrón OpenClaw)
+
+1. **Al iniciar**: se lee solo `name` y `description` de cada SKILL.md (~30 tokens por skill)
+2. **Al detectar relevancia**: el LLM decide qué skill usar y se carga el SKILL.md completo
+3. **Ejecución**: el LLM usa las tools definidas en el skill via tool calling de Ollama
+
+Esto escala: 50 skills instalados solo agregan ~1500 tokens al prompt inicial.
+
+#### Tool calling via Ollama
+
+Modelos como `qwen3:8b` soportan tool calling nativo. El flujo:
+
+1. El mensaje del usuario llega con la lista de tools disponibles (derivada de los skills activos)
+2. Ollama responde con una tool call en vez de texto
+3. WasAP ejecuta la tool, obtiene el resultado
+4. Se reenvía a Ollama para que formule la respuesta final
+
+#### Skills iniciales
+
+| Skill | Descripción | API/Mecanismo |
+|-------|-------------|---------------|
+| `weather` | Clima actual y pronóstico | API pública (wttr.in o Open-Meteo) |
+| `reminders` | Recordatorios con hora | Scheduler local (asyncio) |
+| `notes` | Notas y listas persistentes | SQLite |
+| `calculator` | Cálculos matemáticos | Python eval seguro |
+| `web-search` | Búsqueda web | API pública (SearXNG local o DuckDuckGo) |
+| `datetime` | Fecha, hora, zonas horarias | Python stdlib |
+
+#### Extensibilidad
+
+- Agregar un skill = crear una carpeta con SKILL.md + opcionalmente un .py con la tool
+- El registry de comandos de Fase 2 se extiende para cargar skills desde `data/skills/`
+- En el futuro: marketplace de skills (como [ClawHub](https://github.com/VoltAgent/awesome-openclaw-skills) de OpenClaw)
+
+### Fase 5: Memoria Avanzada
+> Memoria semántica de largo plazo, inspirada en el [sistema de memoria de OpenClaw](https://docs.openclaw.ai/concepts/memory).
+
+#### Modelo de memoria en dos capas (patrón OpenClaw)
+
+OpenClaw separa la memoria en dos niveles:
+
+| Capa | Archivo | Propósito | Carga |
+|------|---------|-----------|-------|
+| **Curada** | `data/MEMORY.md` | Hechos duraderos, preferencias, decisiones clave | Siempre (cada request) |
+| **Diaria** | `data/memory/YYYY-MM-DD.md` | Notas del día, contexto temporal | Hoy + ayer |
+
+El LLM puede **promocionar** información de notas diarias a MEMORY.md cuando detecta patrones recurrentes (ej: "el usuario siempre pide respuestas cortas" → se agrega a MEMORY.md).
+
+#### Memory flush antes de compactación
+
+Antes de que el summarizer borre mensajes viejos, se dispara un paso donde el LLM revisa si hay algo que debería persistir en MEMORY.md. Esto previene pérdida de información importante durante la compactación del historial.
+
+#### Búsqueda semántica
+
+- **Embeddings locales** via Ollama (`nomic-embed-text` o similar)
+- **sqlite-vec** para almacenar y buscar vectores directamente en SQLite
+- **Búsqueda híbrida**: vector similarity + FTS5 full-text (mismo patrón que OpenClaw)
+  - Vector: captura equivalencia semántica ("mi cumpleaños" ≈ "fecha de nacimiento")
+  - FTS5: exacto para nombres, fechas, códigos
+  - Score combinado: `finalScore = vectorWeight * vecScore + textWeight * ftsScore`
+- Los chunks de MEMORY.md y notas diarias se indexan automáticamente
+
+#### RAG sobre documentos personales
+
+- Directorio `data/docs/` para archivos del usuario (PDF, TXT, MD)
+- Indexación automática con embeddings
+- El LLM consulta documentos relevantes cuando necesita información específica
+
+#### MEMORY.md bidireccional
+
+En Fase 2, MEMORY.md es un mirror de solo escritura (SQLite → archivo). En Fase 5:
+- Editar MEMORY.md a mano → se sincroniza a SQLite
+- File watcher detecta cambios y actualiza la DB
+- El usuario puede curar sus memorias editando un archivo de texto
 
 ---
 
 ## 5. Modelo de Datos (SQLite)
 
+### Actual (Fase 1-2)
+
 ```
 conversations
 ├── id            INTEGER PRIMARY KEY
-├── phone_number  TEXT
-├── created_at    TIMESTAMP
-└── updated_at    TIMESTAMP
+├── phone_number  TEXT UNIQUE
+├── created_at    TEXT
+└── updated_at    TEXT
 
 messages
 ├── id              INTEGER PRIMARY KEY
 ├── conversation_id INTEGER FK
 ├── role            TEXT (user/assistant/system)
 ├── content         TEXT
-├── wa_message_id   TEXT (ID de WhatsApp, para dedup)
-├── token_count     INTEGER
-└── created_at      TIMESTAMP
+├── wa_message_id   TEXT UNIQUE (dedup)
+└── created_at      TEXT
+
+summaries
+├── id              INTEGER PRIMARY KEY
+├── conversation_id INTEGER FK
+├── content         TEXT
+├── message_count   INTEGER
+└── created_at      TEXT
 
 memories
-├── id          INTEGER PRIMARY KEY
-├── content     TEXT
-├── category    TEXT (nullable)
-├── created_at  TIMESTAMP
-└── active      BOOLEAN
+├── id         INTEGER PRIMARY KEY
+├── content    TEXT
+├── category   TEXT (nullable)
+├── active     INTEGER (soft delete)
+└── created_at TEXT
+```
 
-config
-├── key    TEXT PRIMARY KEY
-└── value  TEXT
+### Futuro (Fase 4-5)
+
+```
+skills
+├── id          INTEGER PRIMARY KEY
+├── name        TEXT UNIQUE
+├── description TEXT
+├── enabled     INTEGER
+└── loaded_at   TEXT
+
+notes (Fase 5 — notas diarias)
+├── id         INTEGER PRIMARY KEY
+├── date       TEXT
+├── content    TEXT
+└── created_at TEXT
+
+embeddings (Fase 5 — sqlite-vec)
+├── id         INTEGER PRIMARY KEY
+├── source     TEXT (memory/note/doc)
+├── source_id  INTEGER
+├── chunk      TEXT
+├── vector     BLOB
+└── created_at TEXT
 ```
 
 ---
 
 ## 6. Modelos Recomendados (Ollama)
 
-| Modelo | Params | RAM Mín. | Caso de uso | Español |
-|---|---|---|---|---|
-| `qwen2.5:7b` | 7B | 8GB | **Recomendado para empezar** | Excelente |
-| `llama3.2:8b` | 8B | 8GB | Balance velocidad/calidad | Bueno |
-| `mistral:7b` | 7B | 8GB | Buen razonamiento | Aceptable |
-| `llama3.2:3b` | 3B | 4GB | Hardware limitado | Aceptable |
-| `llava:7b` | 7B | 8GB | Multimodal (fase 3) | Limitado |
-| `qwen3:8b` | 8B | 8GB | Más nuevo, function calling | Excelente |
+| Modelo | Params | RAM Mín. | Caso de uso | Español | Tools |
+|---|---|---|---|---|---|
+| `qwen2.5:7b` | 7B | 8GB | **Recomendado para empezar** | Excelente | Sí |
+| `qwen3:8b` | 8B | 8GB | Más nuevo, mejor razonamiento | Excelente | Sí |
+| `llama3.2:8b` | 8B | 8GB | Balance velocidad/calidad | Bueno | Sí |
+| `llama3.2:3b` | 3B | 4GB | Hardware limitado | Aceptable | Limitado |
+| `llava:7b` | 7B | 8GB | Multimodal — imágenes (Fase 3) | Limitado | No |
+| `nomic-embed-text` | — | 1GB | Embeddings (Fase 5) | Sí | — |
 
-**Recomendación**: empezar con `qwen2.5:7b` o `qwen3:8b` por su buen soporte de español y function calling.
+**Recomendación**: empezar con `qwen2.5:7b` o `qwen3:8b` por su buen soporte de español y tool calling.
 
 ---
 
@@ -225,8 +361,9 @@ Todo gratis. El número de test tiene limitación de 5 destinatarios en modo des
 - **Variables de entorno**: tokens y secrets en `.env`, nunca hardcodeados
 - **ngrok**: el túnel usa HTTPS automáticamente
 - **SQLite**: opcionalmente cifrar con SQLCipher
-- **Rate limiting**: máximo N mensajes por minuto
+- **Rate limiting**: máximo N mensajes por minuto (Fase 3)
 - **No logging de tokens**: cuidado con los logs
+- **Skills sandboxing**: los skills no pueden ejecutar código arbitrario, solo tools pre-definidas (Fase 4)
 
 ---
 
@@ -236,17 +373,18 @@ Todo gratis. El número de test tiene limitación de 5 destinatarios en modo des
 - **ngrok** instalado (CLI) o como container
 - **RAM**: 8GB mínimo (16GB recomendado)
 - **GPU**: opcional pero 5-20x más rápido (pass-through con `nvidia-container-toolkit` si usás NVIDIA)
-- **Disco**: ~5GB por modelo 7B + ~500MB imagen Docker
+- **Disco**: ~5GB por modelo 7B + ~500MB imagen Docker + SQLite negligible
 - **Internet**: necesaria (WhatsApp Cloud API + ngrok)
 - **Cuenta Meta Developer** (gratis)
 
 ---
 
-## 10. Métricas de Éxito (MVP)
+## 10. Métricas de Éxito
 
 - Responde en <10s con GPU, <30s sin GPU
 - No pierde mensajes (dedup por `wa_message_id`)
 - Mantiene conversación coherente de 20+ mensajes
+- Memorias persisten entre reinicios
 - Se levanta con `docker compose up`
 - Cero costos de operación mensuales
 - Sin bans ni warnings de WhatsApp
@@ -260,9 +398,10 @@ Todo gratis. El número de test tiene limitación de 5 destinatarios en modo des
 | ngrok free tiene downtime | Baja | Medio | Los mensajes quedan en cola de Meta, llegan al reconectar |
 | Calidad LLM local | Media | Medio | System prompt bien diseñado, probar varios modelos |
 | Latencia sin GPU | Alta | Medio | Modelos más chicos (3B), o invertir en GPU |
-| Context window overflow | Media | Bajo | Resumen automático, truncar historial |
+| Context window overflow | Media | Bajo | Resumen automático, truncar historial (implementado Fase 2) |
 | Meta cambia pricing de Cloud API | Baja | Bajo | Monitorear, los mensajes de servicio son gratis desde 2023 |
 | ngrok cambia free tier | Baja | Medio | Alternativas: cloudflare tunnel, localhost.run |
+| Tool calling unreliable en modelos chicos | Media | Medio | Fallback a regex parsing, limitar tools por modelo |
 
 ---
 
@@ -270,10 +409,11 @@ Todo gratis. El número de test tiene limitación de 5 destinatarios en modo des
 
 - Grupos de WhatsApp (solo chat 1:1)
 - Interfaz web de admin
-- Multi-usuario
+- Multi-usuario (es un asistente personal single-user)
 - Fine-tuning de modelos
 - Deploy en cloud/VPS
 - Mensajes proactivos (el bot no inicia conversación, solo responde)
+- Multi-canal (solo WhatsApp — a diferencia de OpenClaw que soporta Telegram, Slack, etc.)
 
 ---
 
@@ -289,7 +429,7 @@ Todo gratis. El número de test tiene limitación de 5 destinatarios en modo des
 
 ### Volumes persistentes
 - `ollama_data` → modelos descargados (no re-descargar en cada restart)
-- `wasap_data` → SQLite DB + archivos de configuración
+- `./data` → SQLite DB + MEMORY.md + skills + documentos
 
 ### GPU pass-through
 - Para NVIDIA: `nvidia-container-toolkit` + `deploy.resources.reservations.devices` en compose
@@ -308,3 +448,34 @@ docker compose up -d         # Listo
 # Ver logs
 docker compose logs -f wasap
 ```
+
+---
+
+## 14. Comparación con OpenClaw
+
+WasAP se inspira en varios patrones de OpenClaw pero con un enfoque más simple:
+
+| Aspecto | OpenClaw | WasAP |
+|---------|----------|-------|
+| **Canales** | 12+ (WhatsApp, Telegram, Slack, Discord...) | Solo WhatsApp |
+| **Usuarios** | Multi-agente, multi-usuario | Single-user |
+| **LLM** | Cloud (Claude, GPT) + local | Solo local (Ollama) |
+| **Skills** | 3000+ en ClawHub, carga en 3 tiers | Directorio local, carga progresiva |
+| **Memoria** | MEMORY.md + daily notes + semantic search | MEMORY.md mirror + SQLite + semantic search (Fase 5) |
+| **Identidad** | SOUL.md + AGENTS.md + USER.md | System prompt en .env |
+| **Hosting** | Gateway WS local | FastAPI + ngrok |
+| **Costo** | API keys de LLM cloud | Cero (todo local) |
+| **Setup** | CLI install + gateway | `docker compose up` |
+
+**Lo que tomamos de OpenClaw:**
+- SKILL.md como definición declarativa de capacidades
+- MEMORY.md como fuente de verdad human-readable
+- Carga progresiva de skills (solo metadata al inicio, detalle on-demand)
+- Memoria en dos capas (curada + diaria)
+- Búsqueda híbrida (vector + full-text)
+
+**Lo que NO tomamos:**
+- Gateway WebSocket (innecesario para single-channel)
+- Multi-agente (somos single-user)
+- Marketplace de skills (comunidad, ClawHub)
+- Node system para dispositivos (cámara, pantalla, etc.)

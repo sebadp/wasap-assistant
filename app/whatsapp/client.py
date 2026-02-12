@@ -36,6 +36,20 @@ class WhatsAppClient:
             return "54" + number[3:]
         return number
 
+    def _check_auth_error(self, resp: httpx.Response) -> None:
+        if resp.status_code == 401:
+            logger.error(
+                "WhatsApp API auth failed (401) — access token expired or invalid. "
+                "Renew it at https://developers.facebook.com → WhatsApp → API Setup"
+            )
+        elif resp.status_code == 400 and "permission" in resp.text.lower():
+            logger.error(
+                "WhatsApp API permission error (400) — the access token lacks required permissions. "
+                "Check that your System User has 'whatsapp_business_messaging' permission "
+                "in Meta Business Suite → System Users"
+            )
+        resp.raise_for_status()
+
     async def send_message(self, to: str, text: str) -> None:
         to = self._normalize_ar_number(to)
         url = f"{self._base_url}/messages"
@@ -48,7 +62,7 @@ class WhatsAppClient:
         resp = await self._http.post(url, json=payload, headers=self._headers)
         if resp.status_code != 200:
             logger.error("Send failed [%s] %s: %s", to, resp.status_code, resp.text)
-        resp.raise_for_status()
+        self._check_auth_error(resp)
         logger.info("Outgoing  [%s]: %s", to, text[:80])
 
     async def mark_as_read(self, message_id: str) -> None:
@@ -59,4 +73,4 @@ class WhatsAppClient:
             "message_id": message_id,
         }
         resp = await self._http.post(url, json=payload, headers=self._headers)
-        resp.raise_for_status()
+        self._check_auth_error(resp)

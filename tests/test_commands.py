@@ -1,0 +1,156 @@
+from app.commands.context import CommandContext
+from app.commands.builtins import (
+    cmd_clear,
+    cmd_forget,
+    cmd_help,
+    cmd_memories,
+    cmd_remember,
+)
+from app.commands.parser import parse_command
+
+
+# --- Parser tests ---
+
+
+def test_parse_command_remember():
+    result = parse_command("/remember mi cumple es el 15")
+    assert result == ("remember", "mi cumple es el 15")
+
+
+def test_parse_command_no_args():
+    result = parse_command("/help")
+    assert result == ("help", "")
+
+
+def test_parse_command_not_a_command():
+    assert parse_command("hello world") is None
+
+
+def test_parse_command_empty():
+    assert parse_command("") is None
+
+
+def test_parse_command_just_slash():
+    assert parse_command("/") is None
+
+
+def test_parse_command_case_insensitive():
+    result = parse_command("/REMEMBER something")
+    assert result == ("remember", "something")
+
+
+# --- Command handler tests ---
+
+
+async def test_cmd_remember(repository, memory_file, command_registry):
+    ctx = CommandContext(
+        repository=repository,
+        memory_file=memory_file,
+        phone_number="123",
+        registry=command_registry,
+    )
+    reply = await cmd_remember("my birthday is March 15", ctx)
+    assert "Remembered" in reply
+    assert "my birthday is March 15" in reply
+
+    memories = await repository.get_active_memories()
+    assert "my birthday is March 15" in memories
+
+
+async def test_cmd_remember_empty(repository, memory_file, command_registry):
+    ctx = CommandContext(
+        repository=repository,
+        memory_file=memory_file,
+        phone_number="123",
+        registry=command_registry,
+    )
+    reply = await cmd_remember("", ctx)
+    assert "Usage" in reply
+
+
+async def test_cmd_forget(repository, memory_file, command_registry):
+    ctx = CommandContext(
+        repository=repository,
+        memory_file=memory_file,
+        phone_number="123",
+        registry=command_registry,
+    )
+    await repository.add_memory("my birthday is March 15")
+    reply = await cmd_forget("my birthday is March 15", ctx)
+    assert "Forgot" in reply
+
+    memories = await repository.get_active_memories()
+    assert len(memories) == 0
+
+
+async def test_cmd_forget_nonexistent(repository, memory_file, command_registry):
+    ctx = CommandContext(
+        repository=repository,
+        memory_file=memory_file,
+        phone_number="123",
+        registry=command_registry,
+    )
+    reply = await cmd_forget("nonexistent", ctx)
+    assert "No active memory" in reply
+
+
+async def test_cmd_memories(repository, memory_file, command_registry):
+    ctx = CommandContext(
+        repository=repository,
+        memory_file=memory_file,
+        phone_number="123",
+        registry=command_registry,
+    )
+    await repository.add_memory("Fact 1")
+    await repository.add_memory("Fact 2")
+    reply = await cmd_memories("", ctx)
+    assert "Fact 1" in reply
+    assert "Fact 2" in reply
+
+
+async def test_cmd_memories_empty(repository, memory_file, command_registry):
+    ctx = CommandContext(
+        repository=repository,
+        memory_file=memory_file,
+        phone_number="123",
+        registry=command_registry,
+    )
+    reply = await cmd_memories("", ctx)
+    assert "No memories" in reply
+
+
+async def test_cmd_clear(repository, memory_file, command_registry):
+    ctx = CommandContext(
+        repository=repository,
+        memory_file=memory_file,
+        phone_number="123",
+        registry=command_registry,
+    )
+    conv_id = await repository.get_or_create_conversation("123")
+    await repository.save_message(conv_id, "user", "hello")
+
+    reply = await cmd_clear("", ctx)
+    assert "cleared" in reply.lower()
+
+    count = await repository.get_message_count(conv_id)
+    assert count == 0
+
+
+async def test_cmd_help(repository, memory_file, command_registry):
+    ctx = CommandContext(
+        repository=repository,
+        memory_file=memory_file,
+        phone_number="123",
+        registry=command_registry,
+    )
+    reply = await cmd_help("", ctx)
+    assert "/remember" in reply
+    assert "/forget" in reply
+    assert "/memories" in reply
+    assert "/clear" in reply
+    assert "/help" in reply
+
+
+async def test_unknown_command(command_registry):
+    spec = command_registry.get("nonexistent")
+    assert spec is None
