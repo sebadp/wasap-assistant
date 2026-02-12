@@ -1,0 +1,38 @@
+services:
+  wasap:
+    build: .
+    ports:
+      - "8000:8000"
+    env_file: .env
+    depends_on:
+      - ollama
+    networks:
+      - wasap-net
+    restart: unless-stopped
+
+  ollama:
+    image: ollama/ollama
+    volumes:
+      - ollama_data:/root/.ollama
+    environment:
+      - OLLAMA_HOST=0.0.0.0
+    networks:
+      - wasap-net
+    restart: unless-stopped
+
+  ngrok:
+    image: ngrok/ngrok
+    command: http wasap:8000
+    environment:
+      - NGROK_AUTHTOKEN=${NGROK_AUTHTOKEN}
+    depends_on:
+      - wasap
+    networks:
+      - wasap-net
+    restart: unless-stopped
+
+volumes:
+  ollama_data:
+
+networks:
+  wasap-net:
