@@ -4,6 +4,7 @@ from pydantic import BaseModel
 class ChatMessage(BaseModel):
     role: str  # "system", "user", or "assistant"
     content: str
+    images: list[str] | None = None
 
 
 class WhatsAppMessage(BaseModel):
@@ -12,6 +13,7 @@ class WhatsAppMessage(BaseModel):
     timestamp: str
     text: str
     type: str
+    media_id: str | None = None
 
 
 class OllamaCheck(BaseModel):

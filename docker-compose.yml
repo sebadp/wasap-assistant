@@ -6,6 +6,7 @@ services:
     env_file: .env
     volumes:
       - ./data:/app/data
+      - whisper_cache:/root/.cache/huggingface
     depends_on:
       - ollama
     networks:
@@ -35,6 +36,7 @@ services:
 
 volumes:
   ollama_data:
+  whisper_cache:
 
 networks:
   wasap-net:

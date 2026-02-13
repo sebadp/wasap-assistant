@@ -48,7 +48,8 @@ def test_extract_status_update():
     assert messages == []
 
 
-def test_extract_non_text_message():
+def test_extract_unsupported_type_ignored():
+    """Unsupported types like sticker should be filtered out."""
     payload = {
         "object": "whatsapp_business_account",
         "entry": [
@@ -65,10 +66,10 @@ def test_extract_non_text_message():
                             "messages": [
                                 {
                                     "from": "5491112345678",
-                                    "id": "wamid.img1",
+                                    "id": "wamid.stk1",
                                     "timestamp": "1700000000",
-                                    "type": "image",
-                                    "image": {"id": "img123"},
+                                    "type": "sticker",
+                                    "sticker": {"id": "stk123"},
                                 }
                             ],
                         },
@@ -80,3 +81,30 @@ def test_extract_non_text_message():
     }
     messages = extract_messages(payload)
     assert messages == []
+
+
+def test_extract_audio_message():
+    payload = make_whatsapp_payload(msg_type="audio", media_id="aud123")
+    messages = extract_messages(payload)
+    assert len(messages) == 1
+    assert messages[0].type == "audio"
+    assert messages[0].media_id == "aud123"
+    assert messages[0].text == ""
+
+
+def test_extract_image_message():
+    payload = make_whatsapp_payload(msg_type="image", media_id="img123")
+    messages = extract_messages(payload)
+    assert len(messages) == 1
+    assert messages[0].type == "image"
+    assert messages[0].media_id == "img123"
+    assert messages[0].text == ""
+
+
+def test_extract_image_with_caption():
+    payload = make_whatsapp_payload(msg_type="image", media_id="img123", caption="Look at this")
+    messages = extract_messages(payload)
+    assert len(messages) == 1
+    assert messages[0].type == "image"
+    assert messages[0].text == "Look at this"
+    assert messages[0].media_id == "img123"

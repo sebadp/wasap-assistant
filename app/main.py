@@ -1,10 +1,10 @@
-import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
 
 import httpx
 from fastapi import FastAPI
 
+from app.audio.transcriber import Transcriber
 from app.commands.builtins import register_builtins
 from app.commands.registry import CommandRegistry
 from app.config import Settings
@@ -13,7 +13,9 @@ from app.database.db import init_db
 from app.database.repository import Repository
 from app.health.router import router as health_router
 from app.llm.client import OllamaClient
+from app.logging_config import configure_logging
 from app.memory.markdown import MemoryFile
+from app.webhook.rate_limiter import RateLimiter
 from app.webhook.router import router as webhook_router
 from app.whatsapp.client import WhatsAppClient
 
@@ -22,12 +24,9 @@ from app.whatsapp.client import WhatsAppClient
 async def lifespan(app: FastAPI):
     settings = Settings()
 
-    logging.basicConfig(
-        level=settings.log_level.upper(),
-        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
-    )
+    configure_logging(level=settings.log_level, json_format=settings.log_json)
 
-    http_client = httpx.AsyncClient(timeout=httpx.Timeout(120.0, connect=10.0))
+    http_client = httpx.AsyncClient(timeout=httpx.Timeout(300.0, connect=10.0))
 
     # Database
     Path(settings.database_path).parent.mkdir(parents=True, exist_ok=True)
@@ -43,6 +42,10 @@ async def lifespan(app: FastAPI):
 
     app.state.settings = settings
     app.state.http_client = http_client
+    app.state.rate_limiter = RateLimiter(
+        max_requests=settings.rate_limit_max,
+        window_seconds=settings.rate_limit_window,
+    )
     app.state.whatsapp_client = WhatsAppClient(
         http_client=http_client,
         access_token=settings.whatsapp_access_token,
@@ -59,6 +62,11 @@ async def lifespan(app: FastAPI):
     app.state.conversation_manager = ConversationManager(
         repository=repository,
         max_messages=settings.conversation_max_messages,
+    )
+    app.state.transcriber = Transcriber(
+        model_size=settings.whisper_model,
+        device=settings.whisper_device,
+        compute_type=settings.whisper_compute_type,
     )
 
     yield

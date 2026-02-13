@@ -18,21 +18,32 @@ class OllamaClient:
         self._base_url = base_url.rstrip("/")
         self._model = model
 
-    async def chat(self, messages: list[ChatMessage]) -> str:
+    async def chat(self, messages: list[ChatMessage], model: str | None = None) -> str:
         url = f"{self._base_url}/api/chat"
+        use_model = model or self._model
+
+        msg_dicts = []
+        for m in messages:
+            d = {"role": m.role, "content": m.content}
+            if m.images:
+                d["images"] = m.images
+            msg_dicts.append(d)
+
         payload = {
-            "model": self._model,
-            "messages": [m.model_dump() for m in messages],
+            "model": use_model,
+            "messages": msg_dicts,
             "stream": False,
-            "think": True,
         }
+        # Only enable thinking for the default chat model (qwen3 supports it, llava doesn't)
+        if model is None:
+            payload["think"] = True
         resp = await self._http.post(url, json=payload)
         if resp.status_code == 404:
             logger.error(
                 "Ollama model '%s' not found — download it with: "
                 "docker compose exec ollama ollama pull %s",
-                self._model,
-                self._model,
+                use_model,
+                use_model,
             )
         resp.raise_for_status()
         data = resp.json()

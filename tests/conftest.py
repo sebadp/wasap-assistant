@@ -17,6 +17,7 @@ from app.database.repository import Repository
 from app.llm.client import OllamaClient
 from app.main import app
 from app.memory.markdown import MemoryFile
+from app.webhook.rate_limiter import RateLimiter
 from app.whatsapp.client import WhatsAppClient
 
 TEST_SETTINGS = Settings(
@@ -113,6 +114,14 @@ def client(settings: Settings) -> TestClient:
         repository=repository,
         max_messages=settings.conversation_max_messages,
     )
+    app.state.rate_limiter = RateLimiter(
+        max_requests=settings.rate_limit_max,
+        window_seconds=settings.rate_limit_window,
+    )
+
+    mock_transcriber = MagicMock()
+    mock_transcriber.transcribe_async = AsyncMock(return_value="Transcribed text")
+    app.state.transcriber = mock_transcriber
 
     return TestClient(app, raise_server_exceptions=False)
 
@@ -121,7 +130,26 @@ def make_whatsapp_payload(
     from_number: str = "5491112345678",
     message_id: str = "wamid.test123",
     text: str = "Hello!",
+    msg_type: str = "text",
+    media_id: str | None = None,
+    caption: str | None = None,
 ) -> dict:
+    msg: dict = {
+        "from": from_number,
+        "id": message_id,
+        "timestamp": "1700000000",
+        "type": msg_type,
+    }
+    if msg_type == "text":
+        msg["text"] = {"body": text}
+    elif msg_type == "audio":
+        msg["audio"] = {"id": media_id or "audio_media_id", "mime_type": "audio/ogg"}
+    elif msg_type == "image":
+        img: dict = {"id": media_id or "image_media_id", "mime_type": "image/jpeg"}
+        if caption:
+            img["caption"] = caption
+        msg["image"] = img
+
     return {
         "object": "whatsapp_business_account",
         "entry": [
@@ -135,15 +163,7 @@ def make_whatsapp_payload(
                                 "display_phone_number": "1234567890",
                                 "phone_number_id": "123456",
                             },
-                            "messages": [
-                                {
-                                    "from": from_number,
-                                    "id": message_id,
-                                    "timestamp": "1700000000",
-                                    "type": "text",
-                                    "text": {"body": text},
-                                }
-                            ],
+                            "messages": [msg],
                         },
                         "field": "messages",
                     }

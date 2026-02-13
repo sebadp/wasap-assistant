@@ -2,6 +2,8 @@ import logging
 
 import httpx
 
+from app.formatting.splitter import split_message
+
 logger = logging.getLogger(__name__)
 
 GRAPH_API_URL = "https://graph.facebook.com/v22.0"
@@ -51,6 +53,11 @@ class WhatsAppClient:
         resp.raise_for_status()
 
     async def send_message(self, to: str, text: str) -> None:
+        chunks = split_message(text)
+        for chunk in chunks:
+            await self._send_single_message(to, chunk)
+
+    async def _send_single_message(self, to: str, text: str) -> None:
         to = self._normalize_ar_number(to)
         url = f"{self._base_url}/messages"
         payload = {
@@ -71,6 +78,32 @@ class WhatsAppClient:
             "messaging_product": "whatsapp",
             "status": "read",
             "message_id": message_id,
+        }
+        resp = await self._http.post(url, json=payload, headers=self._headers)
+        self._check_auth_error(resp)
+
+    async def download_media(self, media_id: str) -> bytes:
+        # Step 1: Get media URL from metadata
+        url = f"{GRAPH_API_URL}/{media_id}"
+        headers = {"Authorization": f"Bearer {self._access_token}"}
+        resp = await self._http.get(url, headers=headers)
+        resp.raise_for_status()
+        media_url = resp.json()["url"]
+
+        # Step 2: Download the binary
+        resp = await self._http.get(media_url, headers=headers)
+        resp.raise_for_status()
+        return resp.content
+
+    async def send_reaction(self, message_id: str, to: str, emoji: str) -> None:
+        to = self._normalize_ar_number(to)
+        url = f"{self._base_url}/messages"
+        payload = {
+            "messaging_product": "whatsapp",
+            "recipient_type": "individual",
+            "to": to,
+            "type": "reaction",
+            "reaction": {"message_id": message_id, "emoji": emoji},
         }
         resp = await self._http.post(url, json=payload, headers=self._headers)
         self._check_auth_error(resp)

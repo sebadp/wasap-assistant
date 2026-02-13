@@ -51,3 +51,53 @@ async def test_is_available_failure(ollama_client):
     ollama_client._http.get = AsyncMock(side_effect=httpx.ConnectError("refused"))
 
     assert await ollama_client.is_available() is False
+
+
+@pytest.mark.asyncio
+async def test_chat_with_model_override(ollama_client):
+    mock_response = MagicMock()
+    mock_response.raise_for_status = MagicMock()
+    mock_response.json.return_value = {
+        "message": {"role": "assistant", "content": "I see a cat"}
+    }
+    ollama_client._http.post = AsyncMock(return_value=mock_response)
+
+    messages = [ChatMessage(role="user", content="What is this?")]
+    result = await ollama_client.chat(messages, model="llava:7b")
+
+    assert result == "I see a cat"
+    payload = ollama_client._http.post.call_args.kwargs["json"]
+    assert payload["model"] == "llava:7b"
+
+
+@pytest.mark.asyncio
+async def test_chat_with_images(ollama_client):
+    mock_response = MagicMock()
+    mock_response.raise_for_status = MagicMock()
+    mock_response.json.return_value = {
+        "message": {"role": "assistant", "content": "A sunset"}
+    }
+    ollama_client._http.post = AsyncMock(return_value=mock_response)
+
+    messages = [ChatMessage(role="user", content="Describe", images=["base64data"])]
+    result = await ollama_client.chat(messages)
+
+    assert result == "A sunset"
+    payload = ollama_client._http.post.call_args.kwargs["json"]
+    assert payload["messages"][0]["images"] == ["base64data"]
+
+
+@pytest.mark.asyncio
+async def test_chat_without_images_excludes_key(ollama_client):
+    mock_response = MagicMock()
+    mock_response.raise_for_status = MagicMock()
+    mock_response.json.return_value = {
+        "message": {"role": "assistant", "content": "Hi"}
+    }
+    ollama_client._http.post = AsyncMock(return_value=mock_response)
+
+    messages = [ChatMessage(role="user", content="Hello")]
+    await ollama_client.chat(messages)
+
+    payload = ollama_client._http.post.call_args.kwargs["json"]
+    assert "images" not in payload["messages"][0]
