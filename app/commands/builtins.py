@@ -48,6 +48,14 @@ async def cmd_help(args: str, context: CommandContext) -> str:
     lines = ["*Available commands:*"]
     for spec in registry.list_commands():
         lines.append(f"- {spec.usage} — {spec.description}")
+
+    if context.skill_registry:
+        skills = context.skill_registry.list_skills()
+        if skills:
+            lines.append("")
+            lines.append("*Skills (just ask me!):*")
+            for skill in skills:
+                lines.append(f"- 🔧 {skill.name}: {skill.description}")
     return "\n".join(lines)
 
 

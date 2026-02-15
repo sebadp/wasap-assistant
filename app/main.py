@@ -77,9 +77,16 @@ async def lifespan(app: FastAPI):
     register_builtin_tools(skill_registry, repository)
     app.state.skill_registry = skill_registry
 
+    # MCP Manager
+    from app.mcp.manager import McpManager
+    mcp_manager = McpManager(config_path="data/mcp_servers.json")
+    await mcp_manager.initialize()
+    app.state.mcp_manager = mcp_manager
+
     yield
 
     await wait_for_in_flight(timeout=30.0)
+    await mcp_manager.cleanup()
     await db_conn.close()
     await http_client.aclose()
 

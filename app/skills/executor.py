@@ -16,9 +16,13 @@ async def execute_tool_loop(
     messages: list[ChatMessage],
     ollama_client: OllamaClient,
     skill_registry: SkillRegistry,
+    mcp_manager: Any | None = None,  # Avoid circular import or use TYPE_CHECKING
 ) -> str:
     """Run the tool calling loop: send messages to LLM, execute tools, repeat."""
     tools = skill_registry.get_ollama_tools()
+    if mcp_manager:
+        tools.extend(mcp_manager.get_ollama_tools())
+        
     working_messages = list(messages)
 
     for iteration in range(MAX_TOOL_ITERATIONS):
@@ -46,21 +50,25 @@ async def execute_tool_loop(
             tool_name = func.get("name", "")
             arguments = func.get("arguments", {})
 
-            # Inject skill instructions on first use of a skill
+            # Lazy-load skill instructions on first use (only for local skills)
             instructions = skill_registry.get_skill_instructions(tool_name)
-            if instructions:
-                working_messages.append(ChatMessage(
-                    role="system",
-                    content=instructions,
-                ))
 
             tool_call = ToolCall(name=tool_name, arguments=arguments)
-            result = await skill_registry.execute_tool(tool_call)
+            
+            if mcp_manager and mcp_manager.has_tool(tool_name):
+                result = await mcp_manager.execute_tool(tool_call)
+            else:
+                result = await skill_registry.execute_tool(tool_call)
+                
             logger.info("Tool %s -> %s", tool_name, result.content[:100])
+
+            final_content = result.content
+            if instructions:
+                final_content = f"{instructions}\n\nResult:\n{result.content}"
 
             working_messages.append(ChatMessage(
                 role="tool",
-                content=result.content,
+                content=final_content,
             ))
 
     # Safety: exceeded max iterations, force a text response without tools

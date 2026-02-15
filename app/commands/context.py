@@ -15,3 +15,4 @@ class CommandContext:
     memory_file: MemoryFile
     phone_number: str
     registry: Any = field(default=None, repr=False)
+    skill_registry: Any = field(default=None, repr=False)

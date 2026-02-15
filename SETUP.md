@@ -252,6 +252,7 @@ Una vez que el chat funciona, probá los comandos:
 | Error 401 Unauthorized | Access token expirado | Generar nuevo token en API Setup o usar token permanente (ver abajo) |
 | Error 400 "permission" | Token sin permisos correctos | Verificar que el System User tenga `whatsapp_business_messaging` |
 | Ollama 404 "model not found" | Modelo no descargado | `docker compose exec ollama ollama pull <modelo>` |
+| Docker build falla con "Temporary failure resolving" | DNS no funciona dentro de Docker (común en hosts IPv6-only) | Buildear con `docker build --network host -t wasap-wasap .` y luego `docker compose up -d` (ver abajo) |
 
 ---
 
@@ -315,4 +316,11 @@ docker compose exec ollama ollama list
 
 # Rebuild después de cambiar código
 docker compose up -d --build wasap
+
+# Si el build falla con "Temporary failure resolving" (problema DNS/IPv6):
+docker build --network host -t wasap-wasap .
+docker compose up -d
+# Con GPU:
+docker build --network host -t wasap-wasap .
+docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d
 ```

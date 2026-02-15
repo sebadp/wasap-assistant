@@ -50,3 +50,8 @@ def get_transcriber(request: Request) -> Transcriber:
 
 def get_skill_registry(request: Request) -> SkillRegistry:
     return request.app.state.skill_registry
+
+
+def get_mcp_manager(request: Request) -> Any:
+    """Return the McpManager instance."""
+    return getattr(request.app.state, "mcp_manager", None)

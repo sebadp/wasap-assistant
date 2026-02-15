@@ -97,6 +97,7 @@ async def incoming_webhook(
     rate_limiter = get_rate_limiter(request)
     transcriber = get_transcriber(request)
     skill_registry = get_skill_registry(request)
+    mcp_manager = get_mcp_manager(request)
 
     for msg in messages:
         logger.info("Incoming [%s] (%s): %s", msg.from_number, msg.type, msg.text[:80] if msg.text else "(empty)")
@@ -121,6 +122,7 @@ async def incoming_webhook(
             memory_file=memory_file,
             transcriber=transcriber,
             skill_registry=skill_registry,
+            mcp_manager=mcp_manager,
         )
 
     return Response(status_code=200)
@@ -137,6 +139,7 @@ async def process_message(
     memory_file,
     transcriber: Transcriber,
     skill_registry: SkillRegistry,
+    mcp_manager: Any | None = None,
 ) -> None:
     try:
         await wa_client.mark_as_read(msg.message_id)
@@ -154,6 +157,7 @@ async def process_message(
             msg, settings, wa_client, ollama_client,
             conversation, repository, command_registry,
             memory_file, transcriber, skill_registry,
+            mcp_manager=mcp_manager,
         )
     finally:
         # Remove typing indicator
@@ -174,6 +178,7 @@ async def _handle_message(
     memory_file,
     transcriber: Transcriber,
     skill_registry: SkillRegistry,
+    mcp_manager: Any | None = None,
 ) -> None:
     # Handle audio: transcribe to text
     if msg.type == "audio" and msg.media_id:
@@ -235,6 +240,7 @@ async def _handle_message(
                 memory_file=memory_file,
                 phone_number=msg.from_number,
                 registry=command_registry,
+                skill_registry=skill_registry,
             )
             try:
                 reply = await spec.handler(cmd_args, ctx)
@@ -264,16 +270,34 @@ async def _handle_message(
         msg.from_number, "user", user_text, msg.message_id,
     )
 
+    # Inject current date into system prompt
+    import datetime
+    current_date = datetime.datetime.now().strftime("%Y-%m-%d")
+    system_prompt_with_date = f"{settings.system_prompt}\nCurrent Date: {current_date}"
+
     memories = await repository.get_active_memories()
     skills_summary = skill_registry.get_tools_summary() if skill_registry.has_tools() else None
+    
+    # Add MCP tools summary if available
+    if mcp_manager:
+        mcp_tools = mcp_manager.get_tools()
+        if mcp_tools:
+            mcp_summary = "\nAvailable MCP Tools:"
+            for name, tool in mcp_tools.items():
+                mcp_summary += f"\n- {name}: {tool.description}"
+            if skills_summary:
+                skills_summary += mcp_summary
+            else:
+                skills_summary = mcp_summary
+
     context = await conversation.get_context(
-        msg.from_number, settings.system_prompt, memories,
+        msg.from_number, system_prompt_with_date, memories,
         skills_summary=skills_summary,
     )
 
     try:
-        if skill_registry.has_tools():
-            reply = await execute_tool_loop(context, ollama_client, skill_registry)
+        if skill_registry.has_tools() or (mcp_manager and mcp_manager.get_tools()):
+            reply = await execute_tool_loop(context, ollama_client, skill_registry, mcp_manager=mcp_manager)
         else:
             reply = await ollama_client.chat(context)
     except Exception:

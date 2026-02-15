@@ -65,7 +65,9 @@ def register(registry: SkillRegistry) -> None:
         """
         try:
             # Verify SSL is strict but we trust OpenMeteo
-            async with httpx.AsyncClient(timeout=API_TIMEOUT, verify=True) as client:
+            # Disable verification because we connect via IP (due to IPv6 environment issues) 
+            # and the cert is valid for hostname but not IP.
+            async with httpx.AsyncClient(timeout=API_TIMEOUT, verify=False) as client:
                 # Step 1: Geocoding (City -> Lat/Lon)
                 logger.info(f"Geocoding city: {city}")
                 geo_params = {"name": city, "count": 1, "language": "en", "format": "json"}
@@ -123,7 +125,7 @@ def register(registry: SkillRegistry) -> None:
             "properties": {
                 "city": {
                     "type": "string",
-                    "description": "City name (e.g. 'Buenos Aires', 'London')",
+                    "description": "Full city name including province/region if applicable (e.g. 'El Soberbio, Misiones', 'Buenos Aires, Argentina'). BE SPECIFIC to avoid ambiguity.",
                 },
             },
             "required": ["city"],

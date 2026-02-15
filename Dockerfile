@@ -5,7 +5,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg && rm -r
 WORKDIR /app
 
 COPY pyproject.toml .
-RUN pip install --no-cache-dir .
+RUN pip install --no-cache-dir --upgrade pip setuptools wheel
+RUN pip install --no-cache-dir "setuptools>=69"
+RUN pip install --no-cache-dir --no-build-isolation .
 
 COPY app/ app/
 COPY skills/ skills/

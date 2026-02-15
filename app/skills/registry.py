@@ -99,5 +99,9 @@ class SkillRegistry:
         self._loaded_instructions.add(tool.skill_name)
         return skill.instructions
 
+    def list_skills(self) -> list[SkillMetadata]:
+        """Return all loaded skill metadata."""
+        return list(self._skills.values())
+
     def has_tools(self) -> bool:
         return len(self._tools) > 0

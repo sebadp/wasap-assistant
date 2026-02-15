@@ -151,6 +151,43 @@ async def test_cmd_help(repository, memory_file, command_registry):
     assert "/help" in reply
 
 
+async def test_cmd_help_with_skills(repository, memory_file, command_registry, tmp_path):
+    """When skill_registry has skills loaded, /help shows them."""
+    from app.skills.registry import SkillRegistry
+
+    # Create a minimal skill directory with a SKILL.md
+    skill_dir = tmp_path / "weather"
+    skill_dir.mkdir()
+    (skill_dir / "SKILL.md").write_text(
+        "---\nname: weather\ndescription: Get current weather\ntools:\n  - get_weather\n---\nUse get_weather.\n"
+    )
+    search_dir = tmp_path / "search"
+    search_dir.mkdir()
+    (search_dir / "SKILL.md").write_text(
+        "---\nname: search\ndescription: Search the internet\ntools:\n  - web_search\n---\nUse web_search.\n"
+    )
+
+    sr = SkillRegistry(skills_dir=str(tmp_path))
+    sr.load_skills()
+
+    ctx = CommandContext(
+        repository=repository,
+        memory_file=memory_file,
+        phone_number="123",
+        registry=command_registry,
+        skill_registry=sr,
+    )
+    reply = await cmd_help("", ctx)
+    # Commands section
+    assert "/help" in reply
+    assert "/remember" in reply
+    # Skills section
+    assert "Skills" in reply
+    assert "weather" in reply
+    assert "search" in reply
+    assert "Get current weather" in reply
+
+
 async def test_unknown_command(command_registry):
     spec = command_registry.get("nonexistent")
     assert spec is None
