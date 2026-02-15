@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import aiosqlite
 
-from app.models import ChatMessage, Memory
+from app.models import ChatMessage, Memory, Note
 
 
 class Repository:
@@ -140,3 +140,67 @@ class Repository:
         )
         await self._conn.commit()
         return cursor.rowcount
+
+    # --- Deduplication ---
+
+    async def try_claim_message(self, wa_message_id: str) -> bool:
+        """Atomically claim a message ID. Returns True if already processed (duplicate)."""
+        cursor = await self._conn.execute(
+            "INSERT OR IGNORE INTO processed_messages (wa_message_id) VALUES (?)",
+            (wa_message_id,),
+        )
+        await self._conn.commit()
+        # If rowcount == 0, the INSERT was ignored → message was already claimed
+        return cursor.rowcount == 0
+
+    # --- Reply context ---
+
+    async def get_message_by_wa_id(self, wa_message_id: str) -> ChatMessage | None:
+        cursor = await self._conn.execute(
+            "SELECT role, content FROM messages WHERE wa_message_id = ?",
+            (wa_message_id,),
+        )
+        row = await cursor.fetchone()
+        if row:
+            return ChatMessage(role=row[0], content=row[1])
+        return None
+
+    # --- Notes ---
+
+    async def save_note(self, title: str, content: str) -> int:
+        cursor = await self._conn.execute(
+            "INSERT INTO notes (title, content) VALUES (?, ?)",
+            (title, content),
+        )
+        await self._conn.commit()
+        return cursor.lastrowid
+
+    async def list_notes(self) -> list[Note]:
+        cursor = await self._conn.execute(
+            "SELECT id, title, content, created_at FROM notes ORDER BY id DESC",
+        )
+        rows = await cursor.fetchall()
+        return [
+            Note(id=r[0], title=r[1], content=r[2], created_at=r[3])
+            for r in rows
+        ]
+
+    async def search_notes(self, query: str) -> list[Note]:
+        cursor = await self._conn.execute(
+            "SELECT id, title, content, created_at FROM notes "
+            "WHERE title LIKE ? OR content LIKE ? ORDER BY id DESC",
+            (f"%{query}%", f"%{query}%"),
+        )
+        rows = await cursor.fetchall()
+        return [
+            Note(id=r[0], title=r[1], content=r[2], created_at=r[3])
+            for r in rows
+        ]
+
+    async def delete_note(self, note_id: int) -> bool:
+        cursor = await self._conn.execute(
+            "DELETE FROM notes WHERE id = ?",
+            (note_id,),
+        )
+        await self._conn.commit()
+        return cursor.rowcount > 0

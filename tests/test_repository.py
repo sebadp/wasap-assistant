@@ -129,3 +129,77 @@ async def test_delete_old_messages(repository):
     messages = await repository.get_recent_messages(conv_id, 10)
     assert len(messages) == 3
     assert messages[0].content == "msg7"
+
+
+# --- Deduplication ---
+
+async def test_try_claim_message_first_time(repository):
+    result = await repository.try_claim_message("wamid.new")
+    assert result is False  # Not a duplicate
+
+
+async def test_try_claim_message_duplicate(repository):
+    await repository.try_claim_message("wamid.dup")
+    result = await repository.try_claim_message("wamid.dup")
+    assert result is True  # Duplicate
+
+
+# --- Reply context ---
+
+async def test_get_message_by_wa_id(repository):
+    conv_id = await repository.get_or_create_conversation("123")
+    await repository.save_message(conv_id, "user", "Hello!", wa_message_id="wamid.abc")
+
+    msg = await repository.get_message_by_wa_id("wamid.abc")
+    assert msg is not None
+    assert msg.content == "Hello!"
+    assert msg.role == "user"
+
+
+async def test_get_message_by_wa_id_not_found(repository):
+    msg = await repository.get_message_by_wa_id("wamid.nonexistent")
+    assert msg is None
+
+
+# --- Notes ---
+
+async def test_save_and_list_notes(repository):
+    note_id = await repository.save_note("Test Title", "Test content")
+    assert note_id is not None
+
+    notes = await repository.list_notes()
+    assert len(notes) == 1
+    assert notes[0].title == "Test Title"
+    assert notes[0].content == "Test content"
+
+
+async def test_search_notes(repository):
+    await repository.save_note("Shopping List", "Buy milk and eggs")
+    await repository.save_note("Todo", "Fix the bug")
+
+    results = await repository.search_notes("milk")
+    assert len(results) == 1
+    assert results[0].title == "Shopping List"
+
+
+async def test_search_notes_by_title(repository):
+    await repository.save_note("Shopping List", "Buy stuff")
+    await repository.save_note("Work Notes", "Meeting at 3pm")
+
+    results = await repository.search_notes("Shopping")
+    assert len(results) == 1
+    assert results[0].title == "Shopping List"
+
+
+async def test_delete_note(repository):
+    note_id = await repository.save_note("To Delete", "Will be gone")
+    deleted = await repository.delete_note(note_id)
+    assert deleted is True
+
+    notes = await repository.list_notes()
+    assert len(notes) == 0
+
+
+async def test_delete_nonexistent_note(repository):
+    deleted = await repository.delete_note(999)
+    assert deleted is False

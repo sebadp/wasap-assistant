@@ -27,6 +27,8 @@ def extract_messages(payload: dict) -> list[WhatsAppMessage]:
                     if caption:
                         text = caption
 
+                reply_to = msg.get("context", {}).get("id")
+
                 messages.append(
                     WhatsAppMessage(
                         from_number=msg["from"],
@@ -35,6 +37,7 @@ def extract_messages(payload: dict) -> list[WhatsAppMessage]:
                         text=text,
                         type=msg_type,
                         media_id=media_id,
+                        reply_to_message_id=reply_to,
                     )
                 )
     return messages

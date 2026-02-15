@@ -1,16 +1,13 @@
 services:
   wasap:
     build: .
-    ports:
-      - "8000:8000"
     env_file: .env
     volumes:
       - ./data:/app/data
-      - whisper_cache:/root/.cache/huggingface
+      - whisper_cache:/home/appuser/.cache/huggingface
     depends_on:
       - ollama
-    networks:
-      - wasap-net
+    network_mode: host
     restart: unless-stopped
 
   ollama:
@@ -18,25 +15,20 @@ services:
     volumes:
       - ollama_data:/root/.ollama
     environment:
-      - OLLAMA_HOST=0.0.0.0
-    networks:
-      - wasap-net
+      - OLLAMA_HOST=0.0.0.0:11435
+    network_mode: host
     restart: unless-stopped
 
   ngrok:
     image: ngrok/ngrok
-    command: http wasap:8000
+    command: http --url=${NGROK_DOMAIN} --log=stdout http://localhost:8000
     environment:
       - NGROK_AUTHTOKEN=${NGROK_AUTHTOKEN}
+    network_mode: host
     depends_on:
       - wasap
-    networks:
-      - wasap-net
     restart: unless-stopped
 
 volumes:
   ollama_data:
   whisper_cache:
-
-networks:
-  wasap-net:

@@ -108,3 +108,17 @@ def test_extract_image_with_caption():
     assert messages[0].type == "image"
     assert messages[0].text == "Look at this"
     assert messages[0].media_id == "img123"
+
+
+def test_extract_reply_context():
+    payload = make_whatsapp_payload(text="Yes!", reply_to="wamid.original123")
+    messages = extract_messages(payload)
+    assert len(messages) == 1
+    assert messages[0].reply_to_message_id == "wamid.original123"
+
+
+def test_extract_no_reply_context():
+    payload = make_whatsapp_payload(text="Hello")
+    messages = extract_messages(payload)
+    assert len(messages) == 1
+    assert messages[0].reply_to_message_id is None

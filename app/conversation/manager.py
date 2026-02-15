@@ -31,6 +31,7 @@ class ConversationManager:
         phone_number: str,
         system_prompt: str,
         memories: list[str],
+        skills_summary: str | None = None,
     ) -> list[ChatMessage]:
         conv_id = await self._repo.get_or_create_conversation(phone_number)
         summary = await self._repo.get_latest_summary(conv_id)
@@ -40,6 +41,8 @@ class ConversationManager:
         if memories:
             memory_block = "Important user information:\n" + "\n".join(f"- {m}" for m in memories)
             context.append(ChatMessage(role="system", content=memory_block))
+        if skills_summary:
+            context.append(ChatMessage(role="system", content=skills_summary))
         if summary:
             context.append(ChatMessage(role="system", content=f"Previous conversation summary:\n{summary}"))
         context.extend(history)

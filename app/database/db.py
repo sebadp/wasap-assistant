@@ -34,6 +34,18 @@ CREATE TABLE IF NOT EXISTS memories (
     active     INTEGER NOT NULL DEFAULT 1,
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
+
+CREATE TABLE IF NOT EXISTS notes (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    title      TEXT NOT NULL,
+    content    TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS processed_messages (
+    wa_message_id TEXT PRIMARY KEY,
+    processed_at  TEXT NOT NULL DEFAULT (datetime('now'))
+);
 """
 
 

@@ -139,18 +139,18 @@ La diferencia clave: OpenClaw es un framework multi-canal multi-agente. WasAP es
 - Mensajes de error claros para token expirado, permisos faltantes, modelo no descargado
 - Tests: 70+ tests cubriendo repository, commands, summarizer, memory mirror
 
-### Fase 3: UX y Multimedia
+### Fase 3: UX y Multimedia ✅
 > El asistente se siente más natural y maneja más que texto.
 
-- **Audio entrante**: descarga del audio de WhatsApp → transcripción con Whisper local (via Ollama o whisper.cpp)
-- **Imágenes entrantes**: descarga → análisis con modelo multimodal (llava/llama3.2-vision via Ollama)
-- **Formato WhatsApp**: formatear respuestas del LLM con la sintaxis de WhatsApp (*bold*, _italic_, ```code```, listas)
-- **Mensajes largos**: dividir respuestas que superen el límite de WhatsApp (~4096 chars) en múltiples mensajes
-- **Indicador de typing**: enviar "typing..." mientras Ollama procesa
-- **Rate limiting**: prevenir loops y abuso (máximo N mensajes por minuto)
-- **Logging estructurado**: JSON logging para mejor observabilidad
+- **Audio entrante**: descarga de WhatsApp → transcripción con faster-whisper local (async via run_in_executor)
+- **Imágenes entrantes**: descarga → descripción con llava:7b → respuesta contextual con qwen3:8b
+- **Formato WhatsApp**: conversión markdown→WhatsApp (*bold*, _italic_, ```code```, listas)
+- **Mensajes largos**: split automático (>4096 chars) en múltiples mensajes
+- **Indicador de typing**: emoji ⏳ como reacción durante procesamiento, removido en finally
+- **Rate limiting**: in-memory, por número de teléfono
+- **Logging estructurado**: JSON con python-json-logger
 
-### Fase 4: Skills y Herramientas
+### Fase 4: Skills y Herramientas ✅
 > El asistente puede hacer cosas, no solo conversar.
 
 Inspirado en el [sistema de skills de OpenClaw](https://docs.openclaw.ai/tools/skills), donde cada skill es una carpeta con un archivo markdown que define qué puede hacer el agente.
@@ -158,18 +158,18 @@ Inspirado en el [sistema de skills de OpenClaw](https://docs.openclaw.ai/tools/s
 #### Arquitectura de Skills
 
 ```
-data/skills/
-├── weather/
-│   └── SKILL.md          # Definición + instrucciones para el LLM
-├── reminders/
+skills/
+├── datetime/
 │   └── SKILL.md
-├── web-search/
+├── calculator/
+│   └── SKILL.md
+├── weather/
 │   └── SKILL.md
 └── notes/
     └── SKILL.md
 ```
 
-Cada `SKILL.md` tiene frontmatter YAML + instrucciones en prosa:
+Cada `SKILL.md` tiene frontmatter YAML (parseado con regex, sin PyYAML) + instrucciones en prosa:
 
 ```yaml
 ---
@@ -188,36 +188,39 @@ Respondé en el idioma del usuario.
 #### Carga progresiva (patrón OpenClaw)
 
 1. **Al iniciar**: se lee solo `name` y `description` de cada SKILL.md (~30 tokens por skill)
-2. **Al detectar relevancia**: el LLM decide qué skill usar y se carga el SKILL.md completo
-3. **Ejecución**: el LLM usa las tools definidas en el skill via tool calling de Ollama
-
-Esto escala: 50 skills instalados solo agregan ~1500 tokens al prompt inicial.
+2. **Al usar una tool**: se carga el cuerpo del SKILL.md correspondiente (lazy, una vez por skill)
+3. **Ejecución**: tool calling loop con max 5 iteraciones como safety cap
 
 #### Tool calling via Ollama
 
-Modelos como `qwen3:8b` soportan tool calling nativo. El flujo:
+`think: True` es incompatible con tools en qwen3. Cuando hay tools en el payload, se desactiva automáticamente. El flujo:
 
-1. El mensaje del usuario llega con la lista de tools disponibles (derivada de los skills activos)
-2. Ollama responde con una tool call en vez de texto
-3. WasAP ejecuta la tool, obtiene el resultado
-4. Se reenvía a Ollama para que formule la respuesta final
+1. El mensaje del usuario llega con la lista de tools disponibles
+2. Ollama responde con tool_calls en vez de texto
+3. WasAP ejecuta cada tool, appendea resultados como role="tool"
+4. Se reenvía a Ollama → puede llamar más tools o responder con texto
+5. Después de MAX_TOOL_ITERATIONS (5), se fuerza respuesta sin tools
 
-#### Skills iniciales
+#### Skills implementados
 
-| Skill | Descripción | API/Mecanismo |
-|-------|-------------|---------------|
-| `weather` | Clima actual y pronóstico | API pública (wttr.in o Open-Meteo) |
-| `reminders` | Recordatorios con hora | Scheduler local (asyncio) |
-| `notes` | Notas y listas persistentes | SQLite |
-| `calculator` | Cálculos matemáticos | Python eval seguro |
-| `web-search` | Búsqueda web | API pública (SearXNG local o DuckDuckGo) |
-| `datetime` | Fecha, hora, zonas horarias | Python stdlib |
+| Skill | Tools | Mecanismo |
+|-------|-------|-----------|
+| `datetime` | `get_current_datetime`, `convert_timezone` | zoneinfo stdlib |
+| `calculator` | `calculate` | AST safe eval (whitelist estricta, NO eval()) |
+| `weather` | `get_weather` | wttr.in API (gratis, sin API key) |
+| `notes` | `save_note`, `list_notes`, `search_notes`, `delete_note` | SQLite |
+
+#### Reliability (incluido en Fase 4)
+
+- **Dedup atómico**: tabla `processed_messages` con INSERT OR IGNORE (sin race conditions entre webhooks concurrentes)
+- **Reply context**: si el usuario responde a un mensaje específico, se inyecta `[Replying to: "..."]` en el prompt
+- **Graceful shutdown**: tracking de background tasks, wait con timeout de 30s antes de cerrar DB/HTTP
 
 #### Extensibilidad
 
-- Agregar un skill = crear una carpeta con SKILL.md + opcionalmente un .py con la tool
-- El registry de comandos de Fase 2 se extiende para cargar skills desde `data/skills/`
-- En el futuro: marketplace de skills (como [ClawHub](https://github.com/VoltAgent/awesome-openclaw-skills) de OpenClaw)
+- Agregar un skill = crear carpeta con SKILL.md + registrar handlers en Python
+- El directorio de skills es configurable via `SKILLS_DIR` (default: `skills/`)
+- Sin skills disponibles, el sistema se comporta exactamente como antes (backward compatible)
 
 ### Fase 5: Memoria Avanzada
 > Memoria semántica de largo plazo, inspirada en el [sistema de memoria de OpenClaw](https://docs.openclaw.ai/concepts/memory).
@@ -264,7 +267,7 @@ En Fase 2, MEMORY.md es un mirror de solo escritura (SQLite → archivo). En Fas
 
 ## 5. Modelo de Datos (SQLite)
 
-### Actual (Fase 1-2)
+### Actual (Fase 1-4)
 
 ```
 conversations
@@ -278,7 +281,7 @@ messages
 ├── conversation_id INTEGER FK
 ├── role            TEXT (user/assistant/system)
 ├── content         TEXT
-├── wa_message_id   TEXT UNIQUE (dedup)
+├── wa_message_id   TEXT UNIQUE
 └── created_at      TEXT
 
 summaries
@@ -294,25 +297,22 @@ memories
 ├── category   TEXT (nullable)
 ├── active     INTEGER (soft delete)
 └── created_at TEXT
-```
 
-### Futuro (Fase 4-5)
-
-```
-skills
-├── id          INTEGER PRIMARY KEY
-├── name        TEXT UNIQUE
-├── description TEXT
-├── enabled     INTEGER
-└── loaded_at   TEXT
-
-notes (Fase 5 — notas diarias)
+notes
 ├── id         INTEGER PRIMARY KEY
-├── date       TEXT
+├── title      TEXT
 ├── content    TEXT
 └── created_at TEXT
 
-embeddings (Fase 5 — sqlite-vec)
+processed_messages
+└── wa_message_id  TEXT PRIMARY KEY  (dedup atómico)
+└── processed_at   TEXT
+```
+
+### Futuro (Fase 5)
+
+```
+embeddings (sqlite-vec)
 ├── id         INTEGER PRIMARY KEY
 ├── source     TEXT (memory/note/doc)
 ├── source_id  INTEGER
@@ -334,7 +334,7 @@ embeddings (Fase 5 — sqlite-vec)
 | `llava:7b` | 7B | 8GB | Multimodal — imágenes (Fase 3) | Limitado | No |
 | `nomic-embed-text` | — | 1GB | Embeddings (Fase 5) | Sí | — |
 
-**Recomendación**: empezar con `qwen2.5:7b` o `qwen3:8b` por su buen soporte de español y tool calling.
+**Recomendación**: usar `qwen3:8b` para chat + tool calling y `llava:7b` para visión.
 
 ---
 
@@ -429,7 +429,7 @@ Todo gratis. El número de test tiene limitación de 5 destinatarios en modo des
 
 ### Volumes persistentes
 - `ollama_data` → modelos descargados (no re-descargar en cada restart)
-- `./data` → SQLite DB + MEMORY.md + skills + documentos
+- `./data` → SQLite DB + MEMORY.md + documentos
 
 ### GPU pass-through
 - Para NVIDIA: `nvidia-container-toolkit` + `deploy.resources.reservations.devices` en compose
@@ -440,7 +440,7 @@ Todo gratis. El número de test tiene limitación de 5 destinatarios en modo des
 # Primer uso
 cp .env.example .env        # Configurar tokens
 docker compose up -d         # Levanta todo
-docker compose exec ollama ollama pull qwen2.5:7b  # Descargar modelo
+docker compose exec ollama ollama pull qwen3:8b   # Descargar modelo
 
 # Uso diario
 docker compose up -d         # Listo

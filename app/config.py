@@ -54,4 +54,7 @@ class Settings(BaseSettings):
     # Vision
     vision_model: str = "llava:7b"
 
+    # Skills
+    skills_dir: str = "skills"
+
     model_config = {"env_file": ".env"}

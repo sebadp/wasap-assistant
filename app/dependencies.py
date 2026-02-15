@@ -7,6 +7,7 @@ from app.conversation.manager import ConversationManager
 from app.database.repository import Repository
 from app.llm.client import OllamaClient
 from app.memory.markdown import MemoryFile
+from app.skills.registry import SkillRegistry
 from app.webhook.rate_limiter import RateLimiter
 from app.whatsapp.client import WhatsAppClient
 
@@ -45,3 +46,7 @@ def get_rate_limiter(request: Request) -> RateLimiter:
 
 def get_transcriber(request: Request) -> Transcriber:
     return request.app.state.transcriber
+
+
+def get_skill_registry(request: Request) -> SkillRegistry:
+    return request.app.state.skill_registry

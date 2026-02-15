@@ -8,6 +8,13 @@ COPY pyproject.toml .
 RUN pip install --no-cache-dir .
 
 COPY app/ app/
-RUN mkdir -p /app/data
+COPY skills/ skills/
+
+ARG UID=1000
+ARG GID=1000
+RUN groupadd -g $GID appuser && useradd -u $UID -g $GID -m appuser \
+    && mkdir -p /app/data /home/appuser/.cache/huggingface \
+    && chown -R appuser:appuser /app /home/appuser
+USER appuser
 
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]

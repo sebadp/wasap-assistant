@@ -15,8 +15,10 @@ from app.health.router import router as health_router
 from app.llm.client import OllamaClient
 from app.logging_config import configure_logging
 from app.memory.markdown import MemoryFile
+from app.skills.registry import SkillRegistry
+from app.skills.tools import register_builtin_tools
 from app.webhook.rate_limiter import RateLimiter
-from app.webhook.router import router as webhook_router
+from app.webhook.router import router as webhook_router, wait_for_in_flight
 from app.whatsapp.client import WhatsAppClient
 
 
@@ -26,7 +28,7 @@ async def lifespan(app: FastAPI):
 
     configure_logging(level=settings.log_level, json_format=settings.log_json)
 
-    http_client = httpx.AsyncClient(timeout=httpx.Timeout(300.0, connect=10.0))
+    http_client = httpx.AsyncClient(timeout=httpx.Timeout(600.0, connect=10.0))
 
     # Database
     Path(settings.database_path).parent.mkdir(parents=True, exist_ok=True)
@@ -69,8 +71,15 @@ async def lifespan(app: FastAPI):
         compute_type=settings.whisper_compute_type,
     )
 
+    # Skills
+    skill_registry = SkillRegistry(skills_dir=settings.skills_dir)
+    skill_registry.load_skills()
+    register_builtin_tools(skill_registry, repository)
+    app.state.skill_registry = skill_registry
+
     yield
 
+    await wait_for_in_flight(timeout=30.0)
     await db_conn.close()
     await http_client.aclose()
 

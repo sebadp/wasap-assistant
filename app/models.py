@@ -2,9 +2,10 @@ from pydantic import BaseModel
 
 
 class ChatMessage(BaseModel):
-    role: str  # "system", "user", or "assistant"
+    role: str  # "system", "user", "assistant", or "tool"
     content: str
     images: list[str] | None = None
+    tool_calls: list[dict] | None = None
 
 
 class WhatsAppMessage(BaseModel):
@@ -14,6 +15,7 @@ class WhatsAppMessage(BaseModel):
     text: str
     type: str
     media_id: str | None = None
+    reply_to_message_id: str | None = None
 
 
 class OllamaCheck(BaseModel):
@@ -23,6 +25,13 @@ class OllamaCheck(BaseModel):
 class HealthResponse(BaseModel):
     status: str
     checks: OllamaCheck
+
+
+class Note(BaseModel):
+    id: int
+    title: str
+    content: str
+    created_at: str = ""
 
 
 class Memory(BaseModel):

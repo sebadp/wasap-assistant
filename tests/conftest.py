@@ -17,6 +17,7 @@ from app.database.repository import Repository
 from app.llm.client import OllamaClient
 from app.main import app
 from app.memory.markdown import MemoryFile
+from app.skills.registry import SkillRegistry
 from app.webhook.rate_limiter import RateLimiter
 from app.whatsapp.client import WhatsAppClient
 
@@ -123,6 +124,8 @@ def client(settings: Settings) -> TestClient:
     mock_transcriber.transcribe_async = AsyncMock(return_value="Transcribed text")
     app.state.transcriber = mock_transcriber
 
+    app.state.skill_registry = SkillRegistry(skills_dir="/nonexistent")
+
     return TestClient(app, raise_server_exceptions=False)
 
 
@@ -133,6 +136,7 @@ def make_whatsapp_payload(
     msg_type: str = "text",
     media_id: str | None = None,
     caption: str | None = None,
+    reply_to: str | None = None,
 ) -> dict:
     msg: dict = {
         "from": from_number,
@@ -140,6 +144,8 @@ def make_whatsapp_payload(
         "timestamp": "1700000000",
         "type": msg_type,
     }
+    if reply_to:
+        msg["context"] = {"id": reply_to}
     if msg_type == "text":
         msg["text"] = {"body": text}
     elif msg_type == "audio":

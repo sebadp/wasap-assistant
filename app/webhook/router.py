@@ -22,11 +22,14 @@ from app.dependencies import (
     get_rate_limiter,
     get_repository,
     get_settings,
+    get_skill_registry,
     get_transcriber,
     get_whatsapp_client,
 )
 from app.llm.client import OllamaClient
 from app.models import ChatMessage, WhatsAppMessage
+from app.skills.executor import execute_tool_loop
+from app.skills.registry import SkillRegistry
 from app.webhook.parser import extract_messages
 from app.webhook.security import validate_signature
 from app.whatsapp.client import WhatsAppClient
@@ -34,6 +37,25 @@ from app.whatsapp.client import WhatsAppClient
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+_in_flight: set[asyncio.Task] = set()
+
+
+def _track_task(task: asyncio.Task) -> asyncio.Task:
+    """Track a background task for graceful shutdown."""
+    _in_flight.add(task)
+    task.add_done_callback(_in_flight.discard)
+    return task
+
+
+async def wait_for_in_flight(timeout: float = 30.0) -> None:
+    """Wait for all in-flight background tasks to complete."""
+    if not _in_flight:
+        return
+    logger.info("Waiting for %d in-flight tasks (timeout=%.1fs)", len(_in_flight), timeout)
+    done, pending = await asyncio.wait(_in_flight, timeout=timeout)
+    if pending:
+        logger.warning("%d tasks still running after timeout", len(pending))
 
 
 @router.get("/webhook")
@@ -74,6 +96,7 @@ async def incoming_webhook(
     memory_file = get_memory_file(request)
     rate_limiter = get_rate_limiter(request)
     transcriber = get_transcriber(request)
+    skill_registry = get_skill_registry(request)
 
     for msg in messages:
         logger.info("Incoming [%s] (%s): %s", msg.from_number, msg.type, msg.text[:80] if msg.text else "(empty)")
@@ -83,7 +106,7 @@ async def incoming_webhook(
         if not rate_limiter.is_allowed(msg.from_number):
             logger.warning("Rate limit exceeded for %s", msg.from_number)
             continue
-        if await conversation.is_duplicate(msg.message_id):
+        if await repository.try_claim_message(msg.message_id):
             logger.info("Duplicate message ignored: %s", msg.message_id)
             continue
         background_tasks.add_task(
@@ -97,6 +120,7 @@ async def incoming_webhook(
             command_registry=command_registry,
             memory_file=memory_file,
             transcriber=transcriber,
+            skill_registry=skill_registry,
         )
 
     return Response(status_code=200)
@@ -112,6 +136,7 @@ async def process_message(
     command_registry,
     memory_file,
     transcriber: Transcriber,
+    skill_registry: SkillRegistry,
 ) -> None:
     try:
         await wa_client.mark_as_read(msg.message_id)
@@ -128,7 +153,7 @@ async def process_message(
         await _handle_message(
             msg, settings, wa_client, ollama_client,
             conversation, repository, command_registry,
-            memory_file, transcriber,
+            memory_file, transcriber, skill_registry,
         )
     finally:
         # Remove typing indicator
@@ -148,6 +173,7 @@ async def _handle_message(
     command_registry,
     memory_file,
     transcriber: Transcriber,
+    skill_registry: SkillRegistry,
 ) -> None:
     # Handle audio: transcribe to text
     if msg.type == "audio" and msg.media_id:
@@ -228,17 +254,28 @@ async def _handle_message(
     if msg.type == "audio":
         user_text = f"[Audio] {msg.text}"
 
+    # Reply context: prepend quoted message if replying
+    if msg.reply_to_message_id:
+        quoted = await repository.get_message_by_wa_id(msg.reply_to_message_id)
+        if quoted:
+            user_text = f'[Replying to: "{quoted.content[:200]}"]\n{user_text}'
+
     await conversation.add_message(
         msg.from_number, "user", user_text, msg.message_id,
     )
 
     memories = await repository.get_active_memories()
+    skills_summary = skill_registry.get_tools_summary() if skill_registry.has_tools() else None
     context = await conversation.get_context(
         msg.from_number, settings.system_prompt, memories,
+        skills_summary=skills_summary,
     )
 
     try:
-        reply = await ollama_client.chat(context)
+        if skill_registry.has_tools():
+            reply = await execute_tool_loop(context, ollama_client, skill_registry)
+        else:
+            reply = await ollama_client.chat(context)
     except Exception:
         logger.exception("Ollama chat failed")
         reply = "Sorry, I'm having trouble processing your message right now. Please try again later."
@@ -252,7 +289,7 @@ async def _handle_message(
 
     # Summarize in background if needed
     conv_id = await conversation.get_conversation_id(msg.from_number)
-    asyncio.create_task(
+    _track_task(asyncio.create_task(
         maybe_summarize(
             conversation_id=conv_id,
             repository=repository,
@@ -260,4 +297,4 @@ async def _handle_message(
             threshold=settings.summary_threshold,
             max_messages=settings.conversation_max_messages,
         )
-    )
+    ))
