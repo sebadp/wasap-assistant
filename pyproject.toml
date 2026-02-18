@@ -11,8 +11,9 @@ dependencies = [
     "aiosqlite>=0.21",
     "python-json-logger>=3.0",
     "faster-whisper>=1.1.0",
-    "duckduckgo-search>=5.0",
+    "duckduckgo-search>=7.0",
     "mcp>=0.1.0",
+    "APScheduler>=3.10",
 ]
 
 [project.optional-dependencies]

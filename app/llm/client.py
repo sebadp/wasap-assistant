@@ -43,6 +43,7 @@ class OllamaClient:
         messages: list[ChatMessage],
         tools: list[dict] | None = None,
         model: str | None = None,
+        think: bool | None = None,
     ) -> ChatResponse:
         url = f"{self._base_url}/api/chat"
         use_model = model or self._model
@@ -56,6 +57,9 @@ class OllamaClient:
         if tools:
             # think: True is incompatible with tools in qwen3
             payload["tools"] = tools
+        elif think is False:
+            # Explicit False: skip thinking (e.g. fast classification calls)
+            pass
         elif model is None:
             # Only enable thinking for default chat model without tools
             payload["think"] = True

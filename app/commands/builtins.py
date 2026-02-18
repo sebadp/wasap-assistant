@@ -56,6 +56,24 @@ async def cmd_help(args: str, context: CommandContext) -> str:
             lines.append("*Skills (just ask me!):*")
             for skill in skills:
                 lines.append(f"- 🔧 {skill.name}: {skill.description}")
+
+    if context.mcp_manager:
+        mcp_summary = context.mcp_manager.get_tools_summary()
+        if mcp_summary:
+            lines.append("")
+            lines.append("*MCP integrations (just ask me!):*")
+            # get_tools grouped by server
+            tools = context.mcp_manager.get_tools()
+            by_server: dict[str, list] = {}
+            for tool in tools.values():
+                server = tool.skill_name.removeprefix("mcp::")
+                by_server.setdefault(server, []).append(tool)
+            for server, server_tools in by_server.items():
+                desc = context.mcp_manager._server_descriptions.get(server, server)
+                lines.append(f"- 📡 {server} ({desc})")
+                for tool in server_tools:
+                    lines.append(f"    - {tool.name}: {tool.description}")
+
     return "\n".join(lines)
 
 

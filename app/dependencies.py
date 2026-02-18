@@ -1,3 +1,7 @@
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
 from fastapi import Request
 
 from app.audio.transcriber import Transcriber
@@ -10,6 +14,9 @@ from app.memory.markdown import MemoryFile
 from app.skills.registry import SkillRegistry
 from app.webhook.rate_limiter import RateLimiter
 from app.whatsapp.client import WhatsAppClient
+
+if TYPE_CHECKING:
+    from app.mcp.manager import McpManager
 
 
 def get_settings(request: Request) -> Settings:
@@ -52,6 +59,6 @@ def get_skill_registry(request: Request) -> SkillRegistry:
     return request.app.state.skill_registry
 
 
-def get_mcp_manager(request: Request) -> Any:
-    """Return the McpManager instance."""
+def get_mcp_manager(request: Request) -> McpManager | None:
+    """Return the McpManager instance, or None if not configured."""
     return getattr(request.app.state, "mcp_manager", None)

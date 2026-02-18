@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import logging
+from typing import TYPE_CHECKING
 
 from fastapi import APIRouter, BackgroundTasks, Query, Request
 from fastapi.responses import PlainTextResponse, Response
@@ -25,6 +26,7 @@ from app.dependencies import (
     get_skill_registry,
     get_transcriber,
     get_whatsapp_client,
+    get_mcp_manager,
 )
 from app.llm.client import OllamaClient
 from app.models import ChatMessage, WhatsAppMessage
@@ -33,6 +35,9 @@ from app.skills.registry import SkillRegistry
 from app.webhook.parser import extract_messages
 from app.webhook.security import validate_signature
 from app.whatsapp.client import WhatsAppClient
+
+if TYPE_CHECKING:
+    from app.mcp.manager import McpManager
 
 logger = logging.getLogger(__name__)
 
@@ -139,7 +144,7 @@ async def process_message(
     memory_file,
     transcriber: Transcriber,
     skill_registry: SkillRegistry,
-    mcp_manager: Any | None = None,
+    mcp_manager: McpManager | None = None,
 ) -> None:
     try:
         await wa_client.mark_as_read(msg.message_id)
@@ -178,7 +183,7 @@ async def _handle_message(
     memory_file,
     transcriber: Transcriber,
     skill_registry: SkillRegistry,
-    mcp_manager: Any | None = None,
+    mcp_manager: McpManager | None = None,
 ) -> None:
     # Handle audio: transcribe to text
     if msg.type == "audio" and msg.media_id:
@@ -241,6 +246,7 @@ async def _handle_message(
                 phone_number=msg.from_number,
                 registry=command_registry,
                 skill_registry=skill_registry,
+                mcp_manager=mcp_manager,
             )
             try:
                 reply = await spec.handler(cmd_args, ctx)
@@ -270,34 +276,38 @@ async def _handle_message(
         msg.from_number, "user", user_text, msg.message_id,
     )
 
-    # Inject current date into system prompt
+    # Inject current date into system prompt (date only — for current time
+    # the LLM should call get_current_datetime, which is more reliable than
+    # the LLM trying to do timezone math from a UTC timestamp)
     import datetime
-    current_date = datetime.datetime.now().strftime("%Y-%m-%d")
+    now = datetime.datetime.now(datetime.timezone.utc)
+    current_date = now.strftime("%Y-%m-%d")
     system_prompt_with_date = f"{settings.system_prompt}\nCurrent Date: {current_date}"
 
     memories = await repository.get_active_memories()
     skills_summary = skill_registry.get_tools_summary() if skill_registry.has_tools() else None
-    
+
     # Add MCP tools summary if available
-    if mcp_manager:
-        mcp_tools = mcp_manager.get_tools()
-        if mcp_tools:
-            mcp_summary = "\nAvailable MCP Tools:"
-            for name, tool in mcp_tools.items():
-                mcp_summary += f"\n- {name}: {tool.description}"
-            if skills_summary:
-                skills_summary += mcp_summary
-            else:
-                skills_summary = mcp_summary
+    mcp_summary = mcp_manager.get_tools_summary() if mcp_manager else None
+    if mcp_summary:
+        skills_summary = f"{skills_summary}\n\n{mcp_summary}" if skills_summary else mcp_summary
 
     context = await conversation.get_context(
         msg.from_number, system_prompt_with_date, memories,
         skills_summary=skills_summary,
     )
 
+    # Set current user context for tools that need it (e.g. scheduler)
+    from app.skills.tools.scheduler_tools import set_current_user
+    set_current_user(msg.from_number, received_at=now)
+
     try:
         if skill_registry.has_tools() or (mcp_manager and mcp_manager.get_tools()):
-            reply = await execute_tool_loop(context, ollama_client, skill_registry, mcp_manager=mcp_manager)
+            reply = await execute_tool_loop(
+                context, ollama_client, skill_registry,
+                mcp_manager=mcp_manager,
+                max_tools=settings.max_tools_per_call,
+            )
         else:
             reply = await ollama_client.chat(context)
     except Exception:

@@ -185,11 +185,21 @@ def _get_wmo_description(code: int) -> str:
         return "Foggy"
     elif code in (51, 53, 55):
         return "Drizzle"
+    elif code in (56, 57):
+        return "Freezing drizzle"
     elif code in (61, 63, 65):
         return "Rain"
+    elif code in (66, 67):
+        return "Freezing rain"
+    elif code in (71, 73, 75):
+        return "Snowfall"
+    elif code == 77:
+        return "Snow grains"
     elif code in (80, 81, 82):
         return "Rain showers"
+    elif code in (85, 86):
+        return "Snow showers"
     elif code in (95, 96, 99):
         return "Thunderstorm"
     else:
-        return "Overcast/Rain"
+        return "Unknown"

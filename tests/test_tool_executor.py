@@ -1,4 +1,4 @@
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -6,6 +6,17 @@ from app.llm.client import ChatResponse, OllamaClient
 from app.models import ChatMessage
 from app.skills.executor import execute_tool_loop, MAX_TOOL_ITERATIONS
 from app.skills.registry import SkillRegistry
+
+
+def _bypass_router():
+    """Return patch decorators that bypass the tool router for unit tests."""
+    return (
+        patch("app.skills.executor.classify_intent", new_callable=AsyncMock, return_value=["time"]),
+        patch(
+            "app.skills.executor.select_tools",
+            side_effect=lambda cats, all_tools, max_tools=8: list(all_tools.values()),
+        ),
+    )
 
 
 @pytest.fixture
@@ -26,6 +37,7 @@ def ollama_client():
 
 async def test_no_tool_calls_returns_text(ollama_client, skill_registry):
     """When LLM returns plain text, return it directly."""
+    p1, p2 = _bypass_router()
 
     async def fake_handler() -> str:
         return "result"
@@ -42,12 +54,14 @@ async def test_no_tool_calls_returns_text(ollama_client, skill_registry):
     )
 
     messages = [ChatMessage(role="user", content="Hello")]
-    result = await execute_tool_loop(messages, ollama_client, skill_registry)
+    with p1, p2:
+        result = await execute_tool_loop(messages, ollama_client, skill_registry)
     assert result == "Just text, no tools"
 
 
 async def test_single_tool_call(ollama_client, skill_registry):
     """LLM calls a tool, gets result, returns final text."""
+    p1, p2 = _bypass_router()
 
     async def get_time() -> str:
         return "2024-01-01 12:00:00"
@@ -70,13 +84,15 @@ async def test_single_tool_call(ollama_client, skill_registry):
     ])
 
     messages = [ChatMessage(role="user", content="What time is it?")]
-    result = await execute_tool_loop(messages, ollama_client, skill_registry)
+    with p1, p2:
+        result = await execute_tool_loop(messages, ollama_client, skill_registry)
     assert result == "The time is 12:00"
     assert ollama_client.chat_with_tools.call_count == 2
 
 
 async def test_max_iterations_forces_text(ollama_client, skill_registry):
     """After MAX_TOOL_ITERATIONS, force a response without tools."""
+    p1, p2 = _bypass_router()
 
     async def dummy() -> str:
         return "ok"
@@ -99,7 +115,8 @@ async def test_max_iterations_forces_text(ollama_client, skill_registry):
     ollama_client.chat_with_tools = AsyncMock(side_effect=responses)
 
     messages = [ChatMessage(role="user", content="Loop me")]
-    result = await execute_tool_loop(messages, ollama_client, skill_registry)
+    with p1, p2:
+        result = await execute_tool_loop(messages, ollama_client, skill_registry)
     assert result == "Forced final answer"
     # MAX_TOOL_ITERATIONS calls with tools + 1 final call without tools
     assert ollama_client.chat_with_tools.call_count == MAX_TOOL_ITERATIONS + 1
@@ -107,6 +124,7 @@ async def test_max_iterations_forces_text(ollama_client, skill_registry):
 
 async def test_tool_error_returns_error_content(ollama_client, skill_registry):
     """Tool execution errors are returned as tool results."""
+    p1, p2 = _bypass_router()
 
     async def failing_tool() -> str:
         raise RuntimeError("Network error")
@@ -127,12 +145,14 @@ async def test_tool_error_returns_error_content(ollama_client, skill_registry):
     ])
 
     messages = [ChatMessage(role="user", content="Do the thing")]
-    result = await execute_tool_loop(messages, ollama_client, skill_registry)
+    with p1, p2:
+        result = await execute_tool_loop(messages, ollama_client, skill_registry)
     assert result == "Sorry, there was an error"
 
 
 async def test_multiple_tool_calls_in_one_response(ollama_client, skill_registry):
     """LLM returns multiple tool calls in a single response."""
+    p1, p2 = _bypass_router()
 
     async def tool_a() -> str:
         return "result_a"
@@ -159,5 +179,6 @@ async def test_multiple_tool_calls_in_one_response(ollama_client, skill_registry
     ])
 
     messages = [ChatMessage(role="user", content="Do both")]
-    result = await execute_tool_loop(messages, ollama_client, skill_registry)
+    with p1, p2:
+        result = await execute_tool_loop(messages, ollama_client, skill_registry)
     assert result == "Both tools returned results"

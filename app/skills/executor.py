@@ -1,28 +1,73 @@
 from __future__ import annotations
 
 import logging
+from typing import TYPE_CHECKING
 
 from app.llm.client import OllamaClient
 from app.models import ChatMessage
 from app.skills.models import ToolCall
 from app.skills.registry import SkillRegistry
+from app.skills.router import classify_intent, select_tools
+
+if TYPE_CHECKING:
+    from app.mcp.manager import McpManager
 
 logger = logging.getLogger(__name__)
 
 MAX_TOOL_ITERATIONS = 5
 
 
+def _build_tools_map(
+    skill_registry: SkillRegistry,
+    mcp_manager: McpManager | None,
+) -> dict[str, dict]:
+    """Build a name -> ollama schema dict from all available tools."""
+    tools_map: dict[str, dict] = {}
+    for tool_schema in skill_registry.get_ollama_tools():
+        name = tool_schema["function"]["name"]
+        tools_map[name] = tool_schema
+    if mcp_manager:
+        for tool_schema in mcp_manager.get_ollama_tools():
+            name = tool_schema["function"]["name"]
+            tools_map[name] = tool_schema
+    return tools_map
+
+
 async def execute_tool_loop(
     messages: list[ChatMessage],
     ollama_client: OllamaClient,
     skill_registry: SkillRegistry,
-    mcp_manager: Any | None = None,  # Avoid circular import or use TYPE_CHECKING
+    mcp_manager: McpManager | None = None,
+    max_tools: int = 8,
 ) -> str:
-    """Run the tool calling loop: send messages to LLM, execute tools, repeat."""
-    tools = skill_registry.get_ollama_tools()
-    if mcp_manager:
-        tools.extend(mcp_manager.get_ollama_tools())
-        
+    """Run the tool calling loop: classify intent, select tools, execute."""
+    # Extract last user message for classification
+    user_message = ""
+    for msg in reversed(messages):
+        if msg.role == "user":
+            user_message = msg.content
+            break
+
+    # Stage 1: classify intent
+    all_tools_map = _build_tools_map(skill_registry, mcp_manager)
+    categories = await classify_intent(user_message, ollama_client)
+
+    if categories == ["none"]:
+        logger.info("Tool router: categories=none, plain chat")
+        return await ollama_client.chat(messages)
+
+    # Stage 2: select relevant tools
+    tools = select_tools(categories, all_tools_map, max_tools=max_tools)
+    logger.info(
+        "Tool router: categories=%s, selected %d tools",
+        categories,
+        len(tools),
+    )
+
+    if not tools:
+        logger.info("Tool router: no matching tools found, plain chat")
+        return await ollama_client.chat(messages)
+
     working_messages = list(messages)
 
     for iteration in range(MAX_TOOL_ITERATIONS):
@@ -54,12 +99,12 @@ async def execute_tool_loop(
             instructions = skill_registry.get_skill_instructions(tool_name)
 
             tool_call = ToolCall(name=tool_name, arguments=arguments)
-            
+
             if mcp_manager and mcp_manager.has_tool(tool_name):
                 result = await mcp_manager.execute_tool(tool_call)
             else:
                 result = await skill_registry.execute_tool(tool_call)
-                
+
             logger.info("Tool %s -> %s", tool_name, result.content[:100])
 
             final_content = result.content

@@ -16,3 +16,4 @@ class CommandContext:
     phone_number: str
     registry: Any = field(default=None, repr=False)
     skill_registry: Any = field(default=None, repr=False)
+    mcp_manager: Any = field(default=None, repr=False)

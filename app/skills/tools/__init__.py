@@ -14,6 +14,8 @@ def register_builtin_tools(registry: SkillRegistry, repository: Repository) -> N
     from app.skills.tools.weather_tools import register as register_weather
     from app.skills.tools.search_tools import register as register_search
     from app.skills.tools.news_tools import register as register_news
+    from app.skills.tools.scheduler_tools import register as register_scheduler
+    from app.skills.tools.tool_manager_tools import register as register_tool_manager
 
     register_datetime(registry)
     register_calculator(registry)
@@ -21,4 +23,6 @@ def register_builtin_tools(registry: SkillRegistry, repository: Repository) -> N
     register_search(registry)
     register_notes(registry, repository)
     register_news(registry, repository)
+    register_scheduler(registry)
+    register_tool_manager(registry)
 

@@ -188,6 +188,44 @@ async def test_cmd_help_with_skills(repository, memory_file, command_registry, t
     assert "Get current weather" in reply
 
 
+async def test_cmd_help_with_mcp(repository, memory_file, command_registry):
+    """When mcp_manager has tools, /help shows MCP integrations."""
+    from unittest.mock import MagicMock
+    from app.skills.models import ToolDefinition
+
+    async def h(**kwargs):
+        return ""
+
+    mcp_manager = MagicMock()
+    mcp_manager.get_tools_summary.return_value = "something"
+    mcp_manager._server_descriptions = {"filesystem": "Read and write files"}
+    tools = {
+        "read_file": ToolDefinition(
+            name="read_file", description="Read a file",
+            parameters={}, handler=h, skill_name="mcp::filesystem",
+        ),
+        "write_file": ToolDefinition(
+            name="write_file", description="Write a file",
+            parameters={}, handler=h, skill_name="mcp::filesystem",
+        ),
+    }
+    mcp_manager.get_tools.return_value = tools
+
+    ctx = CommandContext(
+        repository=repository,
+        memory_file=memory_file,
+        phone_number="123",
+        registry=command_registry,
+        mcp_manager=mcp_manager,
+    )
+    reply = await cmd_help("", ctx)
+    assert "MCP integrations" in reply
+    assert "filesystem" in reply
+    assert "Read and write files" in reply
+    assert "read_file" in reply
+    assert "write_file" in reply
+
+
 async def test_unknown_command(command_registry):
     spec = command_registry.get("nonexistent")
     assert spec is None

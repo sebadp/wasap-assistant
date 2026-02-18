@@ -125,6 +125,7 @@ def client(settings: Settings) -> TestClient:
     app.state.transcriber = mock_transcriber
 
     app.state.skill_registry = SkillRegistry(skills_dir="/nonexistent")
+    app.state.mcp_manager = None
 
     return TestClient(app, raise_server_exceptions=False)
 

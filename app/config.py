@@ -57,4 +57,10 @@ class Settings(BaseSettings):
     # Skills
     skills_dir: str = "skills"
 
+    # MCP
+    mcp_config_path: str = "data/mcp_servers.json"
+
+    # Tool router
+    max_tools_per_call: int = 8
+
     model_config = {"env_file": ".env"}

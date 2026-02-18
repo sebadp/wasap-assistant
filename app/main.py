@@ -79,13 +79,23 @@ async def lifespan(app: FastAPI):
 
     # MCP Manager
     from app.mcp.manager import McpManager
-    mcp_manager = McpManager(config_path="data/mcp_servers.json")
+    mcp_manager = McpManager(config_path=settings.mcp_config_path)
     await mcp_manager.initialize()
     app.state.mcp_manager = mcp_manager
+
+    # Scheduler Skill
+    from apscheduler.schedulers.asyncio import AsyncIOScheduler
+    from app.skills.tools.scheduler_tools import set_scheduler
+
+    scheduler = AsyncIOScheduler()
+    scheduler.start()
+    set_scheduler(scheduler, app.state.whatsapp_client)
+    app.state.scheduler = scheduler
 
     yield
 
     await wait_for_in_flight(timeout=30.0)
+    scheduler.shutdown()
     await mcp_manager.cleanup()
     await db_conn.close()
     await http_client.aclose()

@@ -1,58 +1,72 @@
 from __future__ import annotations
 
+import asyncio
 import logging
+from functools import partial
 from typing import TYPE_CHECKING
 
+from duckduckgo_search import DDGS
+
 from app.skills.registry import SkillRegistry
-from app.skills.tools.search_tools import _perform_search
 
 if TYPE_CHECKING:
     from app.database.repository import Repository
 
 logger = logging.getLogger(__name__)
 
+MAX_RESULTS = 5
+
+
+def _search_news(query: str, time_range: str | None = None) -> list[dict]:
+    """Search DuckDuckGo News. Returns dicts with: date, title, body, url, source, image."""
+    results = DDGS().news(
+        keywords=query,
+        timelimit=time_range,
+        max_results=MAX_RESULTS,
+    )
+    return results
+
 
 def register(registry: SkillRegistry, repository: Repository) -> None:
     async def add_news_preference(source: str, preference: str) -> str:
-        """
-        Save a user's preference for a news source.
-        """
-        # Validate preference
+        """Save a user's preference for a news source."""
         pref = preference.lower()
         if pref not in ("like", "dislike"):
             return "Error: preference must be 'like' or 'dislike'."
-        
+
         content = f"News Preference: User {pref}s {source}."
-        logger.info(f"Saving news preference: {content}")
-        
-        # Save to memory (category 'news_pref')
+        logger.info("Saving news preference: %s", content)
         await repository.add_memory(content, category="news_pref")
-        
         return f"Memorized: You {pref} {source}."
 
     async def search_news(query: str, time_range: str | None = None) -> str:
-        """
-        Search for news with optional time filtering.
-        """
-        logger.info(f"Searching news: {query} (time_range={time_range})")
-        
-        # Reuse the existing search implementation (sync function)
-        import asyncio
-        loop = asyncio.get_running_loop()
-        
-        # Use functools.partial to pass arguments to the sync function
-        from functools import partial
-        search_func = partial(_perform_search, query, time_range=time_range)
-        results = await loop.run_in_executor(None, search_func)
-        
-        if not results:
-            return "No news found."
-            
-        formatted_results = []
-        for i, r in enumerate(results, 1):
-            formatted_results.append(f"{i}. [{r['title']}]({r['href']}): {r['body']}")
-            
-        return "\n\n".join(formatted_results)
+        """Search for news with optional time filtering."""
+        logger.info("Searching news: %s (time_range=%s)", query, time_range)
+        try:
+            loop = asyncio.get_running_loop()
+            results = await loop.run_in_executor(
+                None, partial(_search_news, query, time_range=time_range)
+            )
+
+            if not results:
+                return f"No news found for '{query}'."
+
+            formatted = []
+            for i, r in enumerate(results, 1):
+                title = r.get("title", "No title")
+                url = r.get("url", "#")
+                source = r.get("source", "")
+                date = r.get("date", "")
+                body = r.get("body", "")
+                source_date = ", ".join(filter(None, [source, date]))
+                formatted.append(f"{i}. [{title}]({url}) — {source_date}: {body}")
+
+            logger.info("Found %d news results for: %s", len(results), query)
+            return "\n\n".join(formatted)
+
+        except Exception as e:
+            logger.exception("News search failed for query '%s'", query)
+            return f"Error searching news: {e}"
 
     registry.register_tool(
         name="add_news_preference",
