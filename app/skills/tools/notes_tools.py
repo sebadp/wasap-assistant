@@ -6,18 +6,33 @@ from app.skills.registry import SkillRegistry
 
 if TYPE_CHECKING:
     from app.database.repository import Repository
+    from app.llm.client import OllamaClient
 
 
 import logging
 
 logger = logging.getLogger(__name__)
 
-def register(registry: SkillRegistry, repository: Repository) -> None:
+def register(
+    registry: SkillRegistry,
+    repository: Repository,
+    ollama_client: OllamaClient | None = None,
+    embed_model: str | None = None,
+    vec_available: bool = False,
+) -> None:
     async def save_note(title: str, content: str) -> str:
         logger.info(f"Saving note: {title}")
         note_id = await repository.save_note(title, content)
         msg = f"Note saved (ID: {note_id}): {title}"
         logger.info(msg)
+
+        # Embed the new note (best-effort)
+        if ollama_client and embed_model and vec_available:
+            from app.embeddings.indexer import embed_note
+            await embed_note(
+                note_id, f"{title}: {content}", repository, ollama_client, embed_model,
+            )
+
         return msg
 
     async def list_notes() -> str:
@@ -35,6 +50,22 @@ def register(registry: SkillRegistry, repository: Repository) -> None:
 
     async def search_notes(query: str) -> str:
         logger.info(f"Searching notes with query: {query}")
+
+        # Try semantic search first
+        if ollama_client and embed_model and vec_available:
+            try:
+                query_emb = await ollama_client.embed([query], model=embed_model)
+                notes = await repository.search_similar_notes(query_emb[0], top_k=5)
+                if notes:
+                    lines = []
+                    for n in notes:
+                        lines.append(f"[{n.id}] {n.title}: {n.content[:80]}")
+                    logger.info(f"Semantic search found {len(notes)} matching notes")
+                    return "\n".join(lines)
+            except Exception:
+                logger.warning("Semantic note search failed, falling back to keyword", exc_info=True)
+
+        # Fallback to keyword search
         notes = await repository.search_notes(query)
         if not notes:
             logger.info(f"No notes match query: {query}")
@@ -49,6 +80,10 @@ def register(registry: SkillRegistry, repository: Repository) -> None:
         logger.info(f"Deleting note ID: {note_id}")
         deleted = await repository.delete_note(note_id)
         if deleted:
+            # Remove embedding (best-effort)
+            if vec_available:
+                from app.embeddings.indexer import remove_note_embedding
+                await remove_note_embedding(note_id, repository)
             msg = f"Note {note_id} deleted."
             logger.info(msg)
             return msg

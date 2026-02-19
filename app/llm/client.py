@@ -84,6 +84,27 @@ class OllamaClient:
         response = await self.chat_with_tools(messages, tools=None, model=model)
         return response.content
 
+    async def embed(
+        self,
+        texts: list[str],
+        model: str | None = None,
+    ) -> list[list[float]]:
+        """Generate embeddings for a batch of texts via POST /api/embed."""
+        url = f"{self._base_url}/api/embed"
+        use_model = model or self._model
+        payload = {"model": use_model, "input": texts}
+        resp = await self._http.post(url, json=payload)
+        if resp.status_code == 404:
+            logger.error(
+                "Ollama embedding model '%s' not found — download it with: "
+                "docker compose exec ollama ollama pull %s",
+                use_model,
+                use_model,
+            )
+        resp.raise_for_status()
+        data = resp.json()
+        return data["embeddings"]
+
     async def is_available(self) -> bool:
         try:
             resp = await self._http.get(

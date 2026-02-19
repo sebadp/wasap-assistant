@@ -63,4 +63,16 @@ class Settings(BaseSettings):
     # Tool router
     max_tools_per_call: int = 8
 
+    # Memory (Phase 5)
+    memory_dir: str = "data/memory"
+    daily_log_days: int = 2
+    memory_flush_enabled: bool = True
+
+    # Embeddings & Semantic Search (Phase 6)
+    embedding_model: str = "nomic-embed-text"
+    embedding_dimensions: int = 768
+    semantic_search_enabled: bool = True
+    semantic_search_top_k: int = 10
+    memory_file_watch_enabled: bool = True
+
     model_config = {"env_file": ".env"}

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import struct
+
 import aiosqlite
 
 from app.models import ChatMessage, Memory, Note
@@ -123,10 +125,13 @@ class Repository:
             for r in rows
         ]
 
-    async def get_active_memories(self) -> list[str]:
-        cursor = await self._conn.execute(
-            "SELECT content FROM memories WHERE active = 1 ORDER BY id",
-        )
+    async def get_active_memories(self, limit: int | None = None) -> list[str]:
+        sql = "SELECT content FROM memories WHERE active = 1 ORDER BY id"
+        params: tuple = ()
+        if limit is not None:
+            sql += " LIMIT ?"
+            params = (limit,)
+        cursor = await self._conn.execute(sql, params)
         rows = await cursor.fetchall()
         return [r[0] for r in rows]
 
@@ -204,3 +209,107 @@ class Repository:
         )
         await self._conn.commit()
         return cursor.rowcount > 0
+
+    # --- Embeddings (sqlite-vec) ---
+
+    @staticmethod
+    def _serialize_vector(vec: list[float]) -> bytes:
+        return struct.pack(f"{len(vec)}f", *vec)
+
+    async def save_embedding(self, memory_id: int, embedding: list[float]) -> None:
+        blob = self._serialize_vector(embedding)
+        await self._conn.execute(
+            "INSERT OR REPLACE INTO vec_memories (memory_id, embedding) VALUES (?, ?)",
+            (memory_id, blob),
+        )
+        await self._conn.commit()
+
+    async def delete_embedding(self, memory_id: int) -> None:
+        await self._conn.execute(
+            "DELETE FROM vec_memories WHERE memory_id = ?",
+            (memory_id,),
+        )
+        await self._conn.commit()
+
+    async def search_similar_memories(
+        self, embedding: list[float], top_k: int = 10
+    ) -> list[str]:
+        blob = self._serialize_vector(embedding)
+        cursor = await self._conn.execute(
+            "SELECT m.content FROM vec_memories v "
+            "JOIN memories m ON m.id = v.memory_id "
+            "WHERE m.active = 1 AND v.embedding MATCH ? AND k = ? "
+            "ORDER BY distance",
+            (blob, top_k),
+        )
+        rows = await cursor.fetchall()
+        return [r[0] for r in rows]
+
+    async def get_unembedded_memories(self) -> list[tuple[int, str]]:
+        cursor = await self._conn.execute(
+            "SELECT m.id, m.content FROM memories m "
+            "LEFT JOIN vec_memories v ON v.memory_id = m.id "
+            "WHERE m.active = 1 AND v.memory_id IS NULL",
+        )
+        rows = await cursor.fetchall()
+        return [(r[0], r[1]) for r in rows]
+
+    async def remove_memory_return_id(self, content: str) -> int | None:
+        """Deactivate a memory and return its ID (for embedding cleanup)."""
+        cursor = await self._conn.execute(
+            "SELECT id FROM memories WHERE content = ? AND active = 1",
+            (content,),
+        )
+        row = await cursor.fetchone()
+        if not row:
+            return None
+        memory_id = row[0]
+        await self._conn.execute(
+            "UPDATE memories SET active = 0 WHERE id = ?",
+            (memory_id,),
+        )
+        await self._conn.commit()
+        return memory_id
+
+    # --- Note Embeddings ---
+
+    async def save_note_embedding(self, note_id: int, embedding: list[float]) -> None:
+        blob = self._serialize_vector(embedding)
+        await self._conn.execute(
+            "INSERT OR REPLACE INTO vec_notes (note_id, embedding) VALUES (?, ?)",
+            (note_id, blob),
+        )
+        await self._conn.commit()
+
+    async def delete_note_embedding(self, note_id: int) -> None:
+        await self._conn.execute(
+            "DELETE FROM vec_notes WHERE note_id = ?",
+            (note_id,),
+        )
+        await self._conn.commit()
+
+    async def search_similar_notes(
+        self, embedding: list[float], top_k: int = 5
+    ) -> list[Note]:
+        blob = self._serialize_vector(embedding)
+        cursor = await self._conn.execute(
+            "SELECT n.id, n.title, n.content, n.created_at FROM vec_notes v "
+            "JOIN notes n ON n.id = v.note_id "
+            "WHERE v.embedding MATCH ? AND k = ? "
+            "ORDER BY distance",
+            (blob, top_k),
+        )
+        rows = await cursor.fetchall()
+        return [
+            Note(id=r[0], title=r[1], content=r[2], created_at=r[3])
+            for r in rows
+        ]
+
+    async def get_unembedded_notes(self) -> list[tuple[int, str, str]]:
+        cursor = await self._conn.execute(
+            "SELECT n.id, n.title, n.content FROM notes n "
+            "LEFT JOIN vec_notes v ON v.note_id = n.id "
+            "WHERE v.note_id IS NULL",
+        )
+        rows = await cursor.fetchall()
+        return [(r[0], r[1], r[2]) for r in rows]

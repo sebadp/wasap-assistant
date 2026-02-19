@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import TYPE_CHECKING
 
@@ -15,6 +16,9 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 MAX_TOOL_ITERATIONS = 5
+
+# Module-level cache: tools don't change at runtime after initialization
+_cached_tools_map: dict[str, dict] | None = None
 
 
 def _build_tools_map(
@@ -33,24 +37,66 @@ def _build_tools_map(
     return tools_map
 
 
+def _get_cached_tools_map(
+    skill_registry: SkillRegistry,
+    mcp_manager: McpManager | None,
+) -> dict[str, dict]:
+    """Return cached tools map, building it on first call."""
+    global _cached_tools_map
+    if _cached_tools_map is None:
+        _cached_tools_map = _build_tools_map(skill_registry, mcp_manager)
+    return _cached_tools_map
+
+
+async def _run_tool_call(
+    tc: dict,
+    skill_registry: SkillRegistry,
+    mcp_manager: McpManager | None,
+) -> ChatMessage:
+    """Execute a single tool call and return the result as a tool message."""
+    func = tc.get("function", {})
+    tool_name = func.get("name", "")
+    arguments = func.get("arguments", {})
+
+    # Lazy-load skill instructions on first use (only for local skills)
+    instructions = skill_registry.get_skill_instructions(tool_name)
+
+    tool_call = ToolCall(name=tool_name, arguments=arguments)
+
+    if mcp_manager and mcp_manager.has_tool(tool_name):
+        result = await mcp_manager.execute_tool(tool_call)
+    else:
+        result = await skill_registry.execute_tool(tool_call)
+
+    logger.info("Tool %s -> %s", tool_name, result.content[:100])
+
+    final_content = result.content
+    if instructions:
+        final_content = f"{instructions}\n\nResult:\n{result.content}"
+
+    return ChatMessage(role="tool", content=final_content)
+
+
 async def execute_tool_loop(
     messages: list[ChatMessage],
     ollama_client: OllamaClient,
     skill_registry: SkillRegistry,
     mcp_manager: McpManager | None = None,
     max_tools: int = 8,
+    pre_classified_categories: list[str] | None = None,
 ) -> str:
     """Run the tool calling loop: classify intent, select tools, execute."""
-    # Extract last user message for classification
+    # Extract last user message for classification (only if not pre-classified)
     user_message = ""
-    for msg in reversed(messages):
-        if msg.role == "user":
-            user_message = msg.content
-            break
+    if pre_classified_categories is None:
+        for msg in reversed(messages):
+            if msg.role == "user":
+                user_message = msg.content
+                break
 
-    # Stage 1: classify intent
-    all_tools_map = _build_tools_map(skill_registry, mcp_manager)
-    categories = await classify_intent(user_message, ollama_client)
+    # Stage 1: classify intent (use pre-computed result if available)
+    all_tools_map = _get_cached_tools_map(skill_registry, mcp_manager)
+    categories = pre_classified_categories or await classify_intent(user_message, ollama_client)
 
     if categories == ["none"]:
         logger.info("Tool router: categories=none, plain chat")
@@ -89,32 +135,12 @@ async def execute_tool_loop(
             tool_calls=response.tool_calls,
         ))
 
-        # Execute each tool call and append results
-        for tc in response.tool_calls:
-            func = tc.get("function", {})
-            tool_name = func.get("name", "")
-            arguments = func.get("arguments", {})
-
-            # Lazy-load skill instructions on first use (only for local skills)
-            instructions = skill_registry.get_skill_instructions(tool_name)
-
-            tool_call = ToolCall(name=tool_name, arguments=arguments)
-
-            if mcp_manager and mcp_manager.has_tool(tool_name):
-                result = await mcp_manager.execute_tool(tool_call)
-            else:
-                result = await skill_registry.execute_tool(tool_call)
-
-            logger.info("Tool %s -> %s", tool_name, result.content[:100])
-
-            final_content = result.content
-            if instructions:
-                final_content = f"{instructions}\n\nResult:\n{result.content}"
-
-            working_messages.append(ChatMessage(
-                role="tool",
-                content=final_content,
-            ))
+        # Execute all tool calls in parallel, append results in order
+        tool_messages = await asyncio.gather(*[
+            _run_tool_call(tc, skill_registry, mcp_manager)
+            for tc in response.tool_calls
+        ])
+        working_messages.extend(tool_messages)
 
     # Safety: exceeded max iterations, force a text response without tools
     logger.warning("Max tool iterations (%d) reached, forcing text response", MAX_TOOL_ITERATIONS)

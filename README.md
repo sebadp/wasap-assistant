@@ -13,7 +13,11 @@ Tu celular ──► WhatsApp ──► Meta Cloud API ──► ngrok ──►
 - Recibe mensajes de WhatsApp via la API oficial de Meta (sin riesgo de ban)
 - Los procesa con un LLM local corriendo en Ollama
 - Mantiene historial de conversación persistente en SQLite
-- Sistema de memorias: el asistente recuerda datos entre sesiones
+- Sistema de memorias avanzado: el asistente recuerda datos entre sesiones
+- Memoria en 3 capas: semántica (hechos), episódica reciente (daily logs), episódica histórica (snapshots)
+- **Búsqueda semántica**: embeddings locales (nomic-embed-text) + sqlite-vec — solo inyecta memorias y notas relevantes al contexto
+- **MEMORY.md bidireccional**: editá el archivo a mano y los cambios se sincronizan a SQLite automáticamente
+- Extracción automática de hechos y eventos antes de compactar historial
 - Resumen automático de conversaciones largas
 - Comandos interactivos via `/slash`
 - **Skills con tool calling**: el asistente puede consultar el clima, calcular, tomar notas, decir la hora
@@ -34,6 +38,7 @@ docker compose up -d
 # 3. Descargar modelos
 docker compose exec ollama ollama pull qwen3:8b
 docker compose exec ollama ollama pull llava:7b
+docker compose exec ollama ollama pull nomic-embed-text
 
 # 4. Configurar webhook en Meta Developer Portal
 #    Callback URL: https://tu-dominio-ngrok/webhook
@@ -48,7 +53,7 @@ Ver [SETUP.md](SETUP.md) para la guía completa paso a paso.
 | `/remember <dato>` | Guardar información importante |
 | `/forget <dato>` | Olvidar un recuerdo guardado |
 | `/memories` | Listar todos los recuerdos |
-| `/clear` | Borrar historial de conversación |
+| `/clear` | Guardar snapshot + borrar historial |
 | `/help` | Mostrar comandos disponibles |
 
 Las memorias persisten entre reinicios y se inyectan automáticamente en el contexto del LLM.
@@ -76,8 +81,8 @@ app/
 ├── dependencies.py          # FastAPI dependency injection
 ├── logging_config.py        # JSON structured logging
 ├── database/
-│   ├── db.py                # Inicialización SQLite (WAL, schema)
-│   └── repository.py        # Queries (conversations, messages, memories, notes, dedup)
+│   ├── db.py                # Inicialización SQLite + sqlite-vec (WAL, schema, vectores)
+│   └── repository.py        # Queries (conversations, messages, memories, notes, embeddings, dedup)
 ├── conversation/
 │   ├── manager.py           # ConversationManager (historial, contexto)
 │   └── summarizer.py        # Resumen automático en background
@@ -96,8 +101,10 @@ app/
 │       ├── calculator_tools.py
 │       ├── weather_tools.py
 │       └── notes_tools.py
+├── embeddings/
+│   └── indexer.py           # Embed/backfill de memorias y notas (best-effort)
 ├── llm/
-│   └── client.py            # Cliente Ollama (chat + tool calling)
+│   └── client.py            # Cliente Ollama (chat + tool calling + embeddings)
 ├── whatsapp/
 │   └── client.py            # Cliente WhatsApp Cloud API
 ├── webhook/
@@ -111,7 +118,10 @@ app/
 │   ├── whatsapp.py          # Markdown -> formato WhatsApp
 │   └── splitter.py          # Split de mensajes largos
 ├── memory/
-│   └── markdown.py          # Mirror SQLite -> MEMORY.md
+│   ├── markdown.py          # Sync SQLite <-> MEMORY.md (bidireccional)
+│   ├── watcher.py           # File watcher (watchdog) para edición manual de MEMORY.md
+│   ├── daily_log.py         # Daily logs + session snapshots
+│   └── consolidator.py      # Dedup/merge de memorias via LLM
 └── health/
     └── router.py            # GET /health
 
@@ -130,7 +140,8 @@ skills/                      # Definiciones de skills (SKILL.md)
 | WhatsApp | Cloud API oficial de Meta |
 | Túnel | ngrok (free tier) |
 | LLM | Ollama (local) |
-| Base de datos | SQLite (WAL mode) + aiosqlite |
+| Embeddings | nomic-embed-text via Ollama (768 dims) |
+| Base de datos | SQLite (WAL mode) + aiosqlite + sqlite-vec |
 | Contenedores | Docker + Docker Compose |
 
 ### Flujo de un mensaje
@@ -142,15 +153,21 @@ skills/                      # Definiciones de skills (SKILL.md)
 5. Si es un `/comando` → se ejecuta directamente, sin pasar por el LLM
 6. Si es texto normal:
    - Se guarda en SQLite (con reply context si es respuesta a un mensaje)
-   - Se cargan memorias activas + skills summary + resumen previo + historial reciente
+   - Se computa el embedding del mensaje (una sola vez)
+   - Se buscan memorias y notas relevantes via búsqueda semántica (KNN con sqlite-vec)
+   - Se cargan memorias relevantes + notas relevantes + skills summary + resumen previo + historial reciente
    - Si hay skills disponibles → tool calling loop (LLM ↔ tools, max 5 iteraciones)
    - Si no hay skills → chat directo con Ollama
    - La respuesta se formatea (markdown→WhatsApp), se splitea si es larga, y se envía
-   - Si el historial supera el threshold, se lanza un resumen en background
+   - Si el historial supera el threshold:
+     - Se extraen hechos → memorias + eventos → daily log (pre-compaction flush)
+     - Se auto-embeden los hechos extraídos
+     - Se resume la conversación en background
+     - Si se agregaron memorias nuevas, se consolidan (dedup via LLM)
 
 ### Base de datos
 
-SQLite con 6 tablas:
+SQLite con 6 tablas + 2 tablas virtuales:
 
 - **conversations** — una por número de teléfono
 - **messages** — historial completo con `wa_message_id`
@@ -158,8 +175,28 @@ SQLite con 6 tablas:
 - **summaries** — resúmenes automáticos de conversaciones largas
 - **notes** — notas del usuario (title, content) via skill de notas
 - **processed_messages** — deduplicación atómica de webhooks (INSERT OR IGNORE)
+- **vec_memories** — embeddings de memorias (sqlite-vec, float[768])
+- **vec_notes** — embeddings de notas (sqlite-vec, float[768])
 
-El archivo `data/MEMORY.md` es un mirror de solo lectura de las memorias activas.
+El archivo `data/MEMORY.md` es **bidireccional**: los cambios se sincronizan en ambas direcciones entre el archivo y SQLite.
+
+### Memoria avanzada
+
+El sistema de memoria tiene 3 capas:
+
+| Capa | Archivo | Propósito |
+|------|---------|-----------|
+| **Semántica** | `data/MEMORY.md` + tabla `memories` | Hechos estables, preferencias |
+| **Episódica Reciente** | `data/memory/YYYY-MM-DD.md` | Eventos y actividad del día |
+| **Episódica Histórica** | `data/memory/snapshots/*.md` | Conversaciones guardadas al hacer `/clear` |
+
+- **Búsqueda semántica**: solo las memorias y notas relevantes al mensaje se inyectan en el contexto (no todas)
+- **Embeddings automáticos**: cada memoria y nota se embede al crearse; backfill al iniciar la app
+- **MEMORY.md bidireccional**: editá el archivo → se sincroniza a SQLite (watchdog + inotify)
+- **Daily logs**: se cargan automáticamente en el contexto del LLM (hoy + ayer)
+- **Pre-compaction flush**: antes de borrar mensajes viejos, el LLM extrae hechos y eventos
+- **Session snapshots**: `/clear` guarda los últimos 15 mensajes como snapshot
+- **Consolidación**: el LLM revisa memorias periódicamente para eliminar duplicados
 
 ## Configuración
 
@@ -180,6 +217,14 @@ Variables de entorno (ver [.env.example](.env.example)):
 | `DATABASE_PATH` | Ruta al archivo SQLite | `data/wasap.db` |
 | `SUMMARY_THRESHOLD` | Mensajes antes de resumir | `40` |
 | `SKILLS_DIR` | Directorio de skills | `skills` |
+| `MEMORY_DIR` | Directorio para daily logs y snapshots | `data/memory` |
+| `DAILY_LOG_DAYS` | Días de daily logs a cargar en contexto | `2` |
+| `MEMORY_FLUSH_ENABLED` | Extraer hechos/eventos antes de compactar | `true` |
+| `EMBEDDING_MODEL` | Modelo de embeddings Ollama | `nomic-embed-text` |
+| `EMBEDDING_DIMENSIONS` | Dimensiones del vector | `768` |
+| `SEMANTIC_SEARCH_ENABLED` | Habilitar búsqueda semántica | `true` |
+| `SEMANTIC_SEARCH_TOP_K` | Cantidad de resultados semánticos | `10` |
+| `MEMORY_FILE_WATCH_ENABLED` | Watch de MEMORY.md para sync bidireccional | `true` |
 | `LOG_LEVEL` | Nivel de logging | `INFO` |
 
 ## Tests
@@ -192,7 +237,7 @@ Variables de entorno (ver [.env.example](.env.example)):
 docker compose run --rm wasap python -m pytest tests/ -v
 ```
 
-180+ tests cubriendo: repository, conversation manager, comandos, parser, markdown memory, summarizer, webhook (verificación, mensajes, comandos), health check, cliente Ollama, cliente WhatsApp, validación de firma, skill loader, skill registry, tool executor, y cada skill (datetime, calculator, weather, notes).
+316 tests cubriendo: repository, conversation manager, comandos, parser, markdown memory, summarizer, daily logs, memory flush, session snapshots, consolidator, embeddings, sqlite-vec, semantic search, memory watcher, webhook (verificación, mensajes, comandos), health check, cliente Ollama, cliente WhatsApp, validación de firma, skill loader, skill registry, tool executor, tool router, MCP, y cada skill (datetime, calculator, weather, notes, search, news, scheduler, tools).
 
 ## Docker
 
@@ -218,12 +263,13 @@ sudo chown -R $(id -u):$(id -g) data/
 
 ## Modelos recomendados
 
-| Modelo | Params | RAM | Español | Tools |
-|--------|--------|-----|---------|-------|
-| `qwen3:8b` | 8B | 8GB | Excelente | Si |
-| `llava:7b` | 7B | 8GB | Limitado | No (vision) |
-| `llama3.2:8b` | 8B | 8GB | Bueno | Si |
-| `llama3.2:3b` | 3B | 4GB | Aceptable | Limitado |
+| Modelo | Params | RAM | Español | Uso |
+|--------|--------|-----|---------|-----|
+| `qwen3:8b` | 8B | 8GB | Excelente | Chat + tool calling |
+| `llava:7b` | 7B | 8GB | Limitado | Vision (imágenes) |
+| `nomic-embed-text` | 137M | 1GB | Si | Embeddings (768 dims) |
+| `llama3.2:8b` | 8B | 8GB | Bueno | Chat alternativo |
+| `llama3.2:3b` | 3B | 4GB | Aceptable | Hardware limitado |
 
 ## Roadmap
 
@@ -231,6 +277,7 @@ sudo chown -R $(id -u):$(id -g) data/
 - [x] **Fase 2**: Persistencia y memoria (SQLite, comandos, summarization)
 - [x] **Fase 3**: UX y multimedia (audio, imágenes, formato WhatsApp, rate limiting, logging)
 - [x] **Fase 4**: Skills y herramientas (tool calling, datetime, calculator, weather, notes) + reliability (dedup atómico, reply context, graceful shutdown)
-- [ ] **Fase 5**: Memoria avanzada (embeddings, RAG)
+- [x] **Fase 5**: Memoria avanzada (daily logs, pre-compaction flush, session snapshots, consolidación)
+- [x] **Fase 6**: Búsqueda semántica (embeddings, sqlite-vec, RAG, MEMORY.md bidireccional)
 
 Ver [PRODUCT_PLAN.md](PRODUCT_PLAN.md) para el detalle de cada fase.

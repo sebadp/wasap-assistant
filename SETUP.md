@@ -138,13 +138,22 @@ docker compose up -d
 docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d
 ```
 
-### Descargar el modelo LLM
+### Descargar los modelos
 
 ```bash
+# Chat (obligatorio)
 docker compose exec ollama ollama pull qwen3:8b
+
+# Vision (para imágenes)
+docker compose exec ollama ollama pull llava:7b
+
+# Embeddings (para búsqueda semántica)
+docker compose exec ollama ollama pull nomic-embed-text
 ```
 
-Esto descarga ~5GB. Solo se hace la primera vez (queda persistido en el volume `ollama_data`).
+Esto descarga ~6GB en total. Solo se hace la primera vez (queda persistido en el volume `ollama_data`).
+
+> **Nota:** Si no descargás `nomic-embed-text`, la app funciona igual pero sin búsqueda semántica (inyecta todas las memorias en vez de solo las relevantes). Podés deshabilitarla con `SEMANTIC_SEARCH_ENABLED=false` en `.env`.
 
 ### Verificar que todo levantó
 
@@ -226,7 +235,7 @@ Una vez que el chat funciona, probá los comandos:
 2. Mandá `/memories` → debería listar el dato guardado
 3. Mandá un mensaje normal preguntando por tu cumpleaños → el LLM debería saberlo
 4. Mandá `/help` → debería listar todos los comandos disponibles
-5. Mandá `/clear` → borra el historial (las memorias persisten)
+5. Mandá `/clear` → guarda un snapshot de la sesión y borra el historial (las memorias persisten)
 
 ### Verificar persistencia
 

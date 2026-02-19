@@ -1,9 +1,9 @@
-# Guía de Testing Manual — Skills & MCP
+# Guía de Testing Manual
 
 ## Requisitos previos
 
 - Container corriendo: `docker compose up --build -d`
-- Ollama con `qwen3:8b` y `llava:7b` disponibles
+- Ollama con `qwen3:8b`, `llava:7b` y `nomic-embed-text` disponibles
 - WhatsApp configurado (token, phone number ID, verify token, app secret en `.env`)
 - Número de teléfono en `ALLOWED_PHONE_NUMBERS`
 - Para MCP: `data/mcp_servers.json` con servers habilitados (`"enabled": true`)
@@ -15,6 +15,9 @@ docker compose logs -f wasap | head -50
 ```
 
 Buscar en los logs:
+- `sqlite-vec loaded successfully (dims=768)` — sqlite-vec activo
+- `Backfilled N memory embeddings` — embeddings creados al startup
+- `Memory watcher started for data/MEMORY.md` — watcher bidireccional activo
 - `Skills loaded: N skill(s)` — skills de `skills/` cargados
 - `Registered tool: <name>` — tools builtin registrados
 - `MCP initialized: N server(s), M tool(s)` — MCP conectado
@@ -281,15 +284,287 @@ Los comandos `/` se procesan **antes** de llegar al LLM.
 | `/remember Mi cumple es el 15 de marzo` | Guardado en SQLite + MEMORY.md |
 | `/memories` | Lista de memorias guardadas |
 | `/forget 1` | Borra memoria por ID |
-| `/clear` | Limpia historial de conversación |
+| `/clear` | Limpia historial + guarda snapshot de sesión |
 
 ---
 
-## 16. Rate Limiting
+## 16. Memoria Avanzada (Fase 5)
+
+### 16a. Daily Logs — Bootstrap Loading
+
+Los daily logs se cargan automáticamente en el contexto del LLM. Para verificar:
+
+1. Enviar muchos mensajes hasta que el summarizer se active (>40 mensajes)
+2. Verificar en `data/memory/` que aparece un archivo `YYYY-MM-DD.md`
+3. El archivo debería contener eventos extraídos de la conversación
+
+### 16b. Pre-Compaction Flush
+
+**Objetivo**: Antes de borrar mensajes viejos, el LLM extrae hechos y eventos.
+
+1. Enviar >40 mensajes incluyendo hechos memorables (ej: "Mi color favorito es el azul", "Vivo en Córdoba")
+2. Esperar que se active el summarizer
+3. Verificar:
+   - `data/MEMORY.md` contiene los hechos extraídos automáticamente
+   - `data/memory/YYYY-MM-DD.md` contiene eventos del día
+   - `sqlite3 data/wasap.db "SELECT * FROM memories;"` muestra las memorias auto-extraídas
+
+### 16c. Session Snapshots
+
+**Objetivo**: `/clear` guarda un snapshot antes de borrar.
+
+1. Tener una conversación de varios mensajes
+2. Enviar `/clear`
+3. Verificar:
+   - `data/memory/snapshots/` contiene un archivo `.md` con slug descriptivo
+   - El archivo contiene los últimos mensajes (user/assistant)
+   - El daily log tiene una entrada "Session cleared: ..."
+
+### 16d. Memory Consolidation
+
+**Objetivo**: Memorias duplicadas se consolidan automáticamente.
+
+1. Usar `/remember` para guardar datos similares:
+   - `/remember Mi color favorito es azul`
+   - `/remember Me gusta el color azul`
+   - (agregar al menos 8 memorias en total)
+2. Enviar suficientes mensajes para activar el summarizer
+3. Verificar que memorias duplicadas fueron removidas de `data/MEMORY.md`
+
+---
+
+## 17. Rate Limiting
 
 - Default: 10 mensajes por 60 segundos (por número de teléfono)
-- Enviar >10 mensajes rápido → algunos rechazados con mensaje de rate limit
-- Verificar en logs: `Rate limited: <phone_number>`
+- Enviar >10 mensajes rápido → algunos ignorados silenciosamente
+- Verificar en logs: `Rate limit exceeded for <phone_number>`
+
+---
+
+## 18. Búsqueda Semántica de Memorias (Fase 6)
+
+**Objetivo**: Verificar que solo memorias relevantes se inyectan en el contexto del LLM.
+
+### 18a. Setup
+
+```bash
+# Verificar que nomic-embed-text está disponible
+docker compose exec ollama ollama list | grep nomic
+
+# Si no:
+docker compose exec ollama ollama pull nomic-embed-text
+```
+
+### 18b. Prueba de relevancia
+
+1. Guardar varias memorias diversas:
+   ```
+   /remember Mi color favorito es el azul
+   /remember Trabajo como ingeniero de software
+   /remember Tengo un perro llamado Max
+   /remember Mi cumpleaños es el 15 de marzo
+   /remember Prefiero café sin azúcar
+   ```
+
+2. Preguntar algo específico:
+   - `Tengo mascotas?` → Debe mencionar a Max (la memoria del perro es relevante)
+   - `A qué me dedico?` → Debe mencionar ingeniería de software
+
+3. **Verificar en logs** (con `LOG_LEVEL=DEBUG`):
+   - `Semantic memory search` — indica que se usó búsqueda semántica
+   - Si falla → `falling back to all memories` — fallback automático
+
+### 18c. Fallback sin embeddings
+
+1. Setear `SEMANTIC_SEARCH_ENABLED=false` en `.env`
+2. Reiniciar: `docker compose restart wasap`
+3. Enviar un mensaje → todas las memorias deben aparecer en contexto (comportamiento anterior)
+4. Volver a `SEMANTIC_SEARCH_ENABLED=true` y reiniciar
+
+### 18d. Verificar embeddings en DB
+
+```bash
+# Contar embeddings de memorias
+sqlite3 data/wasap.db "SELECT COUNT(*) FROM vec_memories;"
+
+# Contar memorias sin embedding (deberían ser 0 después de backfill)
+sqlite3 data/wasap.db "
+  SELECT m.id, m.content FROM memories m
+  LEFT JOIN vec_memories v ON v.memory_id = m.id
+  WHERE m.active = 1 AND v.memory_id IS NULL;
+"
+```
+
+---
+
+## 19. MEMORY.md Bidireccional (Fase 6)
+
+**Objetivo**: Editar `data/MEMORY.md` a mano y verificar que los cambios se sincronizan a SQLite.
+
+### 19a. Sync File → DB (agregar)
+
+1. Abrir `data/MEMORY.md` con un editor de texto
+2. Agregar una línea: `- Editado desde el archivo`
+3. Guardar
+4. Esperar 1-2 segundos
+5. Verificar:
+   ```bash
+   sqlite3 data/wasap.db "SELECT * FROM memories WHERE content = 'Editado desde el archivo';"
+   ```
+   Debe existir la memoria en la DB.
+
+### 19b. Sync File → DB (borrar)
+
+1. Abrir `data/MEMORY.md`
+2. Eliminar una línea de memoria existente
+3. Guardar
+4. Verificar que la memoria fue desactivada en SQLite:
+   ```bash
+   sqlite3 data/wasap.db "SELECT id, content, active FROM memories ORDER BY id DESC LIMIT 5;"
+   ```
+
+### 19c. Sync DB → File
+
+1. Usar el comando de WhatsApp: `/remember Agregado desde WhatsApp`
+2. Verificar que `data/MEMORY.md` contiene la nueva línea
+3. El archivo debe estar formateado correctamente
+
+### 19d. Prevención de loops
+
+1. Hacer un cambio via `/remember` → verificar que no se generan múltiples syncs en los logs
+2. Editar el archivo → verificar que el watcher no entra en loop
+
+**Verificar en logs:**
+- `Synced from file → added: ...` — sync exitoso (file → DB)
+- `Synced from file → removed: ...` — sync exitoso (eliminación)
+- `Skipping sync (guard set)` — guard funcionando (previene loops)
+
+### 19e. Memorias con categoría
+
+1. Editar `data/MEMORY.md` y agregar: `- [hobby] Juega al fútbol`
+2. Verificar en DB:
+   ```bash
+   sqlite3 data/wasap.db "SELECT content, category FROM memories WHERE content LIKE '%fútbol%';"
+   ```
+   Debe tener `category = 'hobby'`.
+
+---
+
+## 20. Búsqueda Semántica de Notas (Fase 6)
+
+**Objetivo**: Verificar que `search_notes` usa búsqueda semántica con fallback a keyword.
+
+### 20a. Crear notas y buscar semánticamente
+
+1. Crear notas variadas:
+   - `Guardá una nota: Receta de pizza - Harina, tomate, mozzarella, albahaca`
+   - `Guardá una nota: Lista de compras - Leche, pan, huevos, manteca`
+   - `Guardá una nota: Ideas proyecto - App de recetas con IA`
+
+2. Buscar con términos semánticos (no exactos):
+   - `Buscá notas sobre cocina` → debería encontrar la receta de pizza
+   - `Buscá notas sobre comida` → debería encontrar la receta y la lista de compras
+   - `Qué ideas tengo anotadas?` → debería encontrar ideas de proyecto
+
+3. **Verificar en logs:**
+   - `Semantic search found N matching notes` — búsqueda semántica usada
+   - Si falla: `Semantic note search failed, falling back to keyword` — fallback
+
+### 20b. Notas inyectadas en contexto
+
+Las notas relevantes se inyectan automáticamente en el contexto del LLM:
+
+1. Crear una nota: `Guardá una nota: Reunión lunes - Hablar con Juan sobre el deploy`
+2. Preguntar: `Qué tengo pendiente para el lunes?`
+3. El LLM debería mencionar la reunión con Juan (inyectada como contexto, no via tool)
+
+### 20c. Verificar embeddings de notas
+
+```bash
+# Contar embeddings de notas
+sqlite3 data/wasap.db "SELECT COUNT(*) FROM vec_notes;"
+
+# Notas sin embedding
+sqlite3 data/wasap.db "
+  SELECT n.id, n.title FROM notes n
+  LEFT JOIN vec_notes v ON v.note_id = n.id
+  WHERE v.note_id IS NULL;
+"
+```
+
+---
+
+## 21. Auto-indexing (Fase 6)
+
+**Objetivo**: Verificar que los embeddings se crean/borran automáticamente.
+
+### 21a. /remember embede
+
+1. Enviar `/remember Dato nuevo para embeder`
+2. Verificar:
+   ```bash
+   sqlite3 data/wasap.db "
+     SELECT m.id, m.content, CASE WHEN v.memory_id IS NOT NULL THEN 'embedded' ELSE 'pending' END
+     FROM memories m
+     LEFT JOIN vec_memories v ON v.memory_id = m.id
+     WHERE m.content LIKE '%embeder%';
+   "
+   ```
+   Debe mostrar `embedded`.
+
+### 21b. /forget borra embedding
+
+1. Enviar `/forget Dato nuevo para embeder`
+2. Verificar que el embedding fue borrado:
+   ```bash
+   sqlite3 data/wasap.db "SELECT COUNT(*) FROM vec_memories WHERE memory_id NOT IN (SELECT id FROM memories WHERE active = 1);"
+   ```
+   Debe ser 0 (no hay embeddings huérfanos).
+
+### 21c. Backfill al startup
+
+1. Agregar una memoria directamente en SQLite (sin embedding):
+   ```bash
+   sqlite3 data/wasap.db "INSERT INTO memories (content) VALUES ('Memoria manual sin embedding');"
+   ```
+2. Reiniciar: `docker compose restart wasap`
+3. Verificar en logs: `Backfilled N memory embeddings`
+4. Verificar que ahora tiene embedding:
+   ```bash
+   sqlite3 data/wasap.db "
+     SELECT m.content FROM memories m
+     JOIN vec_memories v ON v.memory_id = m.id
+     WHERE m.content LIKE '%manual%';
+   "
+   ```
+
+---
+
+## 22. Graceful Degradation (Fase 6)
+
+**Objetivo**: Verificar que la app funciona cuando fallan los componentes de Fase 6.
+
+### 22a. Sin modelo de embedding
+
+1. Borrar el modelo: `docker compose exec ollama ollama rm nomic-embed-text`
+2. Reiniciar: `docker compose restart wasap`
+3. Enviar un mensaje → debe funcionar normalmente (fallback a todas las memorias)
+4. Verificar en logs: `Failed to compute query embedding` o similar
+5. Restaurar: `docker compose exec ollama ollama pull nomic-embed-text`
+
+### 22b. SEMANTIC_SEARCH_ENABLED=false
+
+1. Setear `SEMANTIC_SEARCH_ENABLED=false` en `.env`
+2. Reiniciar
+3. Verificar que la app funciona con el comportamiento pre-Fase 6
+4. No se computan embeddings, no se busca semánticamente
+
+### 22c. MEMORY_FILE_WATCH_ENABLED=false
+
+1. Setear `MEMORY_FILE_WATCH_ENABLED=false` en `.env`
+2. Reiniciar
+3. Editar `data/MEMORY.md` → los cambios NO se sincronizan a SQLite
+4. `/remember` sigue funcionando normalmente (DB → archivo, dirección única)
 
 ---
 
@@ -304,6 +579,11 @@ Los comandos `/` se procesan **antes** de llegar al LLM.
 | `GitHub auth error` | Verificar token en `.env` y scope `repo` |
 | Tool loop infinito | No debería pasar (max 5 iteraciones), pero verificar en logs |
 | `think` aparece en respuesta con tools | Bug: `think: True` no se deshabilitó; verificar `chat_with_tools()` |
+| `sqlite-vec not available` | Instalar `sqlite-vec` o verificar wheels en Docker; app sigue funcionando sin él |
+| `Failed to compute query embedding` | Modelo `nomic-embed-text` no descargado; `ollama pull nomic-embed-text` |
+| Watcher no detecta cambios | Verificar `MEMORY_FILE_WATCH_ENABLED=true` y que el archivo existe |
+| Watcher entra en loop | Bug en sync guard; verificar logs por `Skipping sync (guard set)` repetido |
+| Embeddings no se crean | Verificar `SEMANTIC_SEARCH_ENABLED=true` y que el modelo está disponible |
 
 ### Logs útiles
 
@@ -319,4 +599,10 @@ docker compose logs -f wasap 2>&1 | grep -i "tool\|executing\|skill"
 
 # MCP
 docker compose logs -f wasap 2>&1 | grep -i "mcp\|server"
+
+# Embeddings y búsqueda semántica
+docker compose logs -f wasap 2>&1 | grep -i "embed\|vec\|semantic\|backfill"
+
+# Memory watcher
+docker compose logs -f wasap 2>&1 | grep -i "watcher\|sync\|guard"
 ```

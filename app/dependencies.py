@@ -10,6 +10,7 @@ from app.config import Settings
 from app.conversation.manager import ConversationManager
 from app.database.repository import Repository
 from app.llm.client import OllamaClient
+from app.memory.daily_log import DailyLog
 from app.memory.markdown import MemoryFile
 from app.skills.registry import SkillRegistry
 from app.webhook.rate_limiter import RateLimiter
@@ -59,6 +60,15 @@ def get_skill_registry(request: Request) -> SkillRegistry:
     return request.app.state.skill_registry
 
 
+def get_daily_log(request: Request) -> DailyLog:
+    return request.app.state.daily_log
+
+
 def get_mcp_manager(request: Request) -> McpManager | None:
     """Return the McpManager instance, or None if not configured."""
     return getattr(request.app.state, "mcp_manager", None)
+
+
+def get_vec_available(request: Request) -> bool:
+    """Return whether sqlite-vec is available."""
+    return getattr(request.app.state, "vec_available", False)

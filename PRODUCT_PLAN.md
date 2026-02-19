@@ -222,52 +222,130 @@ Respondé en el idioma del usuario.
 - El directorio de skills es configurable via `SKILLS_DIR` (default: `skills/`)
 - Sin skills disponibles, el sistema se comporta exactamente como antes (backward compatible)
 
-### Fase 5: Memoria Avanzada
-> Memoria semántica de largo plazo, inspirada en el [sistema de memoria de OpenClaw](https://docs.openclaw.ai/concepts/memory).
+### Fase 5: Memoria Avanzada ✅
+> Sistema de memoria en capas con triggers automáticos, inspirado en [OpenClaw](https://docs.openclaw.ai/concepts/memory) y Context Engineering (Google, Nov 2025).
 
-#### Modelo de memoria en dos capas (patrón OpenClaw)
+#### Taxonomía de memoria (3 capas)
 
-OpenClaw separa la memoria en dos niveles:
+| Tipo | Qué guarda | Dónde | Ejemplo |
+|------|-----------|-------|---------|
+| **Semántica** | Hechos estables, preferencias | `data/MEMORY.md` + tabla `memories` | "El usuario prefiere respuestas en español" |
+| **Episódica Reciente** | Contexto temporal (del día) | `data/memory/YYYY-MM-DD.md` | "Hoy discutimos migrar la DB a Postgres" |
+| **Episódica Histórica** | Conversaciones pasadas (crudo) | `data/memory/snapshots/*.md` | Últimos 15 msgs antes de /clear |
 
-| Capa | Archivo | Propósito | Carga |
-|------|---------|-----------|-------|
-| **Curada** | `data/MEMORY.md` | Hechos duraderos, preferencias, decisiones clave | Siempre (cada request) |
-| **Diaria** | `data/memory/YYYY-MM-DD.md` | Notas del día, contexto temporal | Hoy + ayer |
+#### 5A: Daily Logs + Bootstrap Loading
 
-El LLM puede **promocionar** información de notas diarias a MEMORY.md cuando detecta patrones recurrentes (ej: "el usuario siempre pide respuestas cortas" → se agrega a MEMORY.md).
+- **Daily logs**: archivos append-only `data/memory/YYYY-MM-DD.md` con entries timestamped
+- **Bootstrap loading**: `ConversationManager.get_context()` inyecta daily logs (hoy + ayer) como system message
+- Los daily logs se escriben durante el flush (5B) y snapshots (5C), no en cada mensaje
+- Configurable: `memory_dir`, `daily_log_days` en Settings
 
-#### Memory flush antes de compactación
+#### 5B: Pre-Compaction Flush (Write-Ahead Log)
 
-Antes de que el summarizer borre mensajes viejos, se dispara un paso donde el LLM revisa si hay algo que debería persistir en MEMORY.md. Esto previene pérdida de información importante durante la compactación del historial.
+- Antes de que el summarizer borre mensajes, `flush_to_memory()` los analiza con el LLM
+- Extrae **facts** → `repository.add_memory()` + sync MEMORY.md
+- Extrae **events** → `daily_log.append()`
+- **Dedup**: `difflib.SequenceMatcher(ratio > 0.8)` contra memorias existentes
+- JSON output format, con fallback para code-fenced responses
+- Configurable: `memory_flush_enabled` en Settings
+
+#### 5C: Session Snapshots
+
+- **Trigger**: comando `/clear`
+- Antes de borrar, guarda los últimos 15 mensajes (user + assistant) como snapshot
+- Slug descriptivo generado por LLM (`think=False`), fallback a timestamp
+- Snapshot guardado en `data/memory/snapshots/YYYY-MM-DD-slug.md`
+- Entry en daily log: "Session cleared: topic (N messages saved)"
+
+#### 5D: Memory Consolidation
+
+- Después del flush, si se agregaron memorias nuevas, el LLM revisa todas las memorias
+- Identifica duplicados y contradicciones → soft-delete los redundantes
+- Mínimo 8 memorias para activar consolidación
+- Solo se ejecuta cuando el flush agrega ≥1 memoria nueva
+
+### Fase 6: Búsqueda Semántica y RAG ✅
+> Embeddings locales, búsqueda semántica y MEMORY.md bidireccional.
 
 #### Búsqueda semántica
 
-- **Embeddings locales** via Ollama (`nomic-embed-text` o similar)
-- **sqlite-vec** para almacenar y buscar vectores directamente en SQLite
-- **Búsqueda híbrida**: vector similarity + FTS5 full-text (mismo patrón que OpenClaw)
-  - Vector: captura equivalencia semántica ("mi cumpleaños" ≈ "fecha de nacimiento")
-  - FTS5: exacto para nombres, fechas, códigos
-  - Score combinado: `finalScore = vectorWeight * vecScore + textWeight * ftsScore`
-- Los chunks de MEMORY.md y notas diarias se indexan automáticamente
+- **Embeddings locales** via Ollama (`nomic-embed-text`, 768 dims)
+- **sqlite-vec** para KNN search nativo en SQLite (tablas virtuales `vec_memories`, `vec_notes`)
+- Solo las memorias y notas **relevantes** al mensaje se inyectan en el contexto del LLM
+- Query embedding se computa una sola vez y se reutiliza para memorias + notas
+- Fallback graceful: si sqlite-vec no carga o embed() falla → comportamiento anterior (todas las memorias)
+- Master switch: `SEMANTIC_SEARCH_ENABLED` (default `true`)
 
-#### RAG sobre documentos personales
+#### Auto-indexing
 
-- Directorio `data/docs/` para archivos del usuario (PDF, TXT, MD)
-- Indexación automática con embeddings
-- El LLM consulta documentos relevantes cuando necesita información específica
+- `/remember` → embede la nueva memoria automáticamente
+- `/forget` → borra el embedding
+- Pre-compaction flush → embede cada fact auto-extraído
+- Consolidador → borra embeddings de memorias removidas
+- Startup → backfill de todas las memorias y notas sin embedding
 
 #### MEMORY.md bidireccional
 
-En Fase 2, MEMORY.md es un mirror de solo escritura (SQLite → archivo). En Fase 5:
-- Editar MEMORY.md a mano → se sincroniza a SQLite
-- File watcher detecta cambios y actualiza la DB
-- El usuario puede curar sus memorias editando un archivo de texto
+- Editar MEMORY.md a mano → watchdog (inotify en Linux) detecta el cambio → sync a SQLite
+- Sync guard (`threading.Event`) previene loops de retroalimentación
+- Maneja `on_created` además de `on_modified` para editores con atomic rename (vim, etc.)
+
+#### Notas semánticas
+
+- `search_notes` usa búsqueda semántica con fallback a LIKE
+- `save_note` auto-embede; `delete_note` limpia el embedding
+- Notas relevantes inyectadas como contexto del LLM (via `get_context(relevant_notes=...)`)
+
+### Fase 7: Performance Optimization ✅
+> Optimizaciones quirúrgicas para reducir latencia sin cambios de arquitectura.
+
+#### Problema
+El critical path para un mensaje de texto tomaba 5-12s con todas las operaciones secuenciales:
+- DB queries, embed, file I/O y `classify_intent` (LLM, 1-3s) todos en serie
+- File I/O en `daily_log` y `markdown.sync()` bloqueando el event loop
+- `get_or_create_conversation()` llamado 3-5 veces por mensaje para el mismo número
+- `_build_tools_map()` reconstruido en cada mensaje aunque nunca cambia en runtime
+- Tool calls dentro de una iteración ejecutados secuencialmente
+
+#### Optimizaciones implementadas
+
+| Cambio | Archivo | Ganancia |
+|--------|---------|---------|
+| Critical path parallelizado en fases A/B/C | `webhook/router.py` | ~3-5s |
+| `classify_intent` kickeado como task paralelo | `webhook/router.py` | solapado con I/O |
+| WA calls iniciales en paralelo (mark_as_read + reaction) | `webhook/router.py` | ~200ms |
+| `_build_context()` helper (sin DB calls) | `webhook/router.py` | código limpio |
+| `pre_classified_categories` evita segundo classify | `skills/executor.py` | ~1-3s |
+| Module-level cache de tools_map | `skills/executor.py` | ~5ms/msg |
+| Tool calls paralelos por iteración | `skills/executor.py` | variable |
+| Blocking I/O → `asyncio.to_thread()` | `daily_log.py`, `markdown.py` | evita stall |
+| Cache de conv_id en `ConversationManager` | `conversation/manager.py` | ~4 DB hits/msg |
+| `get_active_memories(limit=...)` | `database/repository.py` | fallback limitado |
+| SQLite PRAGMA tuning (synchronous, cache, temp) | `database/db.py` | I/O más rápido |
+| Model warmup en startup | `app/main.py` | cold-start eliminado |
+
+#### Arquitectura del nuevo critical path
+```
+0. reply_context (solo si hay reply, sequential)
+1. get_conversation_id (una sola DB hit, cacheable)
+   + asyncio.create_task(classify_intent(...))  ← LLM call en background
+
+Phase A (asyncio.gather):
+   embed(user_text) ‖ save_message(conv_id) ‖ load_daily_logs()
+
+Phase B (asyncio.gather):
+   search_memories ‖ search_notes ‖ get_latest_summary ‖ get_recent_messages
+
+Phase C: categories = await classify_task  ← ya casi listo
+
+Phase D: _build_context() → chat_with_tools (LLM principal, ~3-8s)
+```
 
 ---
 
 ## 5. Modelo de Datos (SQLite)
 
-### Actual (Fase 1-4)
+### Actual (Fase 1-6)
 
 ```
 conversations
@@ -307,18 +385,14 @@ notes
 processed_messages
 └── wa_message_id  TEXT PRIMARY KEY  (dedup atómico)
 └── processed_at   TEXT
-```
 
-### Futuro (Fase 5)
+vec_memories (sqlite-vec virtual table)
+├── memory_id  INTEGER PRIMARY KEY
+└── embedding  float[768]
 
-```
-embeddings (sqlite-vec)
-├── id         INTEGER PRIMARY KEY
-├── source     TEXT (memory/note/doc)
-├── source_id  INTEGER
-├── chunk      TEXT
-├── vector     BLOB
-└── created_at TEXT
+vec_notes (sqlite-vec virtual table)
+├── note_id    INTEGER PRIMARY KEY
+└── embedding  float[768]
 ```
 
 ---
@@ -327,14 +401,13 @@ embeddings (sqlite-vec)
 
 | Modelo | Params | RAM Mín. | Caso de uso | Español | Tools |
 |---|---|---|---|---|---|
-| `qwen2.5:7b` | 7B | 8GB | **Recomendado para empezar** | Excelente | Sí |
-| `qwen3:8b` | 8B | 8GB | Más nuevo, mejor razonamiento | Excelente | Sí |
-| `llama3.2:8b` | 8B | 8GB | Balance velocidad/calidad | Bueno | Sí |
+| `qwen3:8b` | 8B | 8GB | **Recomendado — chat + tools** | Excelente | Sí |
+| `llava:7b` | 7B | 8GB | Multimodal — imágenes | Limitado | No |
+| `nomic-embed-text` | 137M | 1GB | Embeddings (768 dims) | Sí | — |
+| `llama3.2:8b` | 8B | 8GB | Alternativa chat | Bueno | Sí |
 | `llama3.2:3b` | 3B | 4GB | Hardware limitado | Aceptable | Limitado |
-| `llava:7b` | 7B | 8GB | Multimodal — imágenes (Fase 3) | Limitado | No |
-| `nomic-embed-text` | — | 1GB | Embeddings (Fase 5) | Sí | — |
 
-**Recomendación**: usar `qwen3:8b` para chat + tool calling y `llava:7b` para visión.
+**Recomendación**: usar `qwen3:8b` para chat + tool calling, `llava:7b` para visión, y `nomic-embed-text` para embeddings.
 
 ---
 

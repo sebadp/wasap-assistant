@@ -4,10 +4,17 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from app.database.repository import Repository
+    from app.llm.client import OllamaClient
     from app.skills.registry import SkillRegistry
 
 
-def register_builtin_tools(registry: SkillRegistry, repository: Repository) -> None:
+def register_builtin_tools(
+    registry: SkillRegistry,
+    repository: Repository,
+    ollama_client: OllamaClient | None = None,
+    embed_model: str | None = None,
+    vec_available: bool = False,
+) -> None:
     from app.skills.tools.calculator_tools import register as register_calculator
     from app.skills.tools.datetime_tools import register as register_datetime
     from app.skills.tools.notes_tools import register as register_notes
@@ -21,8 +28,12 @@ def register_builtin_tools(registry: SkillRegistry, repository: Repository) -> N
     register_calculator(registry)
     register_weather(registry)
     register_search(registry)
-    register_notes(registry, repository)
+    register_notes(
+        registry, repository,
+        ollama_client=ollama_client,
+        embed_model=embed_model,
+        vec_available=vec_available,
+    )
     register_news(registry, repository)
     register_scheduler(registry)
     register_tool_manager(registry)
-

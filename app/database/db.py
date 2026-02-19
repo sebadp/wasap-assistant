@@ -1,4 +1,10 @@
+from __future__ import annotations
+
+import logging
+
 import aiosqlite
+
+logger = logging.getLogger(__name__)
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS conversations (
@@ -48,11 +54,50 @@ CREATE TABLE IF NOT EXISTS processed_messages (
 );
 """
 
+VEC_SCHEMA_MEMORIES = (
+    "CREATE VIRTUAL TABLE IF NOT EXISTS vec_memories "
+    "USING vec0(memory_id INTEGER PRIMARY KEY, embedding float[{dims}])"
+)
+VEC_SCHEMA_NOTES = (
+    "CREATE VIRTUAL TABLE IF NOT EXISTS vec_notes "
+    "USING vec0(note_id INTEGER PRIMARY KEY, embedding float[{dims}])"
+)
 
-async def init_db(db_path: str) -> aiosqlite.Connection:
-    conn = await aiosqlite.connect(db_path)
+
+async def init_db(db_path: str, embedding_dims: int = 768) -> tuple[aiosqlite.Connection, bool]:
+    """Initialize database and optionally load sqlite-vec.
+
+    Returns (connection, vec_available).
+    """
+    # check_same_thread=False allows accessing the raw connection from
+    # the main thread (needed for enable_load_extension during init)
+    conn = await aiosqlite.connect(db_path, check_same_thread=False)
     await conn.execute("PRAGMA journal_mode=WAL")
+    await conn.execute("PRAGMA synchronous=NORMAL")   # Faster, safe with WAL
+    await conn.execute("PRAGMA cache_size=-32000")    # 32MB page cache in memory
+    await conn.execute("PRAGMA temp_store=MEMORY")    # Temp tables in RAM
     await conn.execute("PRAGMA foreign_keys=ON")
     await conn.executescript(SCHEMA)
     await conn.commit()
-    return conn
+
+    # Try to load sqlite-vec
+    vec_available = False
+    try:
+        import sqlite_vec
+
+        ext_path = sqlite_vec.loadable_path()
+        # Load extension via the raw connection (safe during init — no concurrent queries)
+        conn._connection.enable_load_extension(True)
+        conn._connection.load_extension(ext_path)
+        conn._connection.enable_load_extension(False)
+
+        # Create vector tables
+        await conn.execute(VEC_SCHEMA_MEMORIES.format(dims=embedding_dims))
+        await conn.execute(VEC_SCHEMA_NOTES.format(dims=embedding_dims))
+        await conn.commit()
+        vec_available = True
+        logger.info("sqlite-vec loaded successfully (dims=%d)", embedding_dims)
+    except Exception:
+        logger.warning("sqlite-vec not available, semantic search disabled", exc_info=True)
+
+    return conn, vec_available

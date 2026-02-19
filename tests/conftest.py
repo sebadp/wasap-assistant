@@ -16,6 +16,7 @@ from app.database.db import init_db
 from app.database.repository import Repository
 from app.llm.client import OllamaClient
 from app.main import app
+from app.memory.daily_log import DailyLog
 from app.memory.markdown import MemoryFile
 from app.skills.registry import SkillRegistry
 from app.webhook.rate_limiter import RateLimiter
@@ -43,7 +44,7 @@ def settings() -> Settings:
 
 @pytest.fixture
 async def db_connection():
-    conn = await init_db(":memory:")
+    conn, _vec = await init_db(":memory:")
     yield conn
     await conn.close()
 
@@ -89,7 +90,7 @@ def client(settings: Settings) -> TestClient:
     tmp_dir = tempfile.mkdtemp()
     db_path = str(Path(tmp_dir) / "test.db")
 
-    conn = asyncio.run(init_db(db_path))
+    conn, _vec = asyncio.run(init_db(db_path))
     repository = Repository(conn)
     memory_path = str(Path(tmp_dir) / "MEMORY.md")
     memory_file = MemoryFile(path=memory_path)
@@ -126,6 +127,8 @@ def client(settings: Settings) -> TestClient:
 
     app.state.skill_registry = SkillRegistry(skills_dir="/nonexistent")
     app.state.mcp_manager = None
+    app.state.daily_log = DailyLog(memory_dir=str(Path(tmp_dir) / "memory"))
+    app.state.vec_available = False
 
     return TestClient(app, raise_server_exceptions=False)
 
