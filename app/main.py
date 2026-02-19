@@ -83,6 +83,12 @@ async def lifespan(app: FastAPI):
         compute_type=settings.whisper_compute_type,
     )
 
+    # MCP Manager (initialized before skills so expand tools can reference it)
+    from app.mcp.manager import McpManager
+    mcp_manager = McpManager(config_path=settings.mcp_config_path)
+    await mcp_manager.initialize()
+    app.state.mcp_manager = mcp_manager
+
     # Skills
     skill_registry = SkillRegistry(skills_dir=settings.skills_dir)
     skill_registry.load_skills()
@@ -91,14 +97,11 @@ async def lifespan(app: FastAPI):
         ollama_client=app.state.ollama_client,
         embed_model=settings.embedding_model if settings.semantic_search_enabled and vec_available else None,
         vec_available=vec_available,
+        settings=settings,
+        mcp_manager=mcp_manager,
+        daily_log=daily_log,
     )
     app.state.skill_registry = skill_registry
-
-    # MCP Manager
-    from app.mcp.manager import McpManager
-    mcp_manager = McpManager(config_path=settings.mcp_config_path)
-    await mcp_manager.initialize()
-    app.state.mcp_manager = mcp_manager
 
     # Scheduler Skill
     from apscheduler.schedulers.asyncio import AsyncIOScheduler

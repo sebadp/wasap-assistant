@@ -36,13 +36,16 @@ app/
   skills/              # Sistema de skills y tool calling
     models.py          # ToolDefinition, ToolCall, ToolResult, SkillMetadata
     loader.py          # Parser de SKILL.md (frontmatter con regex, sin PyYAML)
-    registry.py        # SkillRegistry (registro, schemas Ollama, ejecucion)
-    executor.py        # Tool calling loop (max 5 iteraciones)
+    registry.py        # SkillRegistry (registro, schemas Ollama, ejecucion) — get_skill(), get_tools_for_skill(), reload()
+    executor.py        # Tool calling loop (max 5 iteraciones) — reset_tools_cache()
+    router.py          # classify_intent, select_tools, TOOL_CATEGORIES — register_dynamic_category()
     tools/             # Handlers de tools builtin
       datetime_tools.py
       calculator_tools.py
       weather_tools.py
       notes_tools.py
+      selfcode_tools.py  # Auto-inspección: version, source, config, health, search
+      expand_tools.py    # Auto-expansión: Smithery registry, hot-install MCP, skill from URL
   commands/             # Sistema de comandos (/remember, /forget, etc)
   conversation/         # ConversationManager + Summarizer (con pre-compaction flush)
   database/             # SQLite init + sqlite-vec + Repository
@@ -91,7 +94,12 @@ tests/
 - Tool calling loop: LLM llama tools → se ejecutan → resultados vuelven al LLM → repite hasta texto o max 5 iteraciones
 - Dedup atomico: `processed_messages` tabla con INSERT OR IGNORE (sin race conditions)
 - Reply context: si el usuario responde a un mensaje, se inyecta el texto citado en el prompt
+- `_build_capabilities_section()` en router.py construye sección estructurada de capacidades (commands + skills + MCP) para el contexto LLM — reemplaza el summary plano anterior. Se auto-actualiza al agregar skills/commands/MCP servers
 - SKILL.md: frontmatter parseado con regex (sin PyYAML), instrucciones se cargan lazy en primer uso
+- `selfcode` skill: `register()` recibe `settings` (no `repository`). `_PROJECT_ROOT` resuelto una sola vez al importar. `_is_safe_path()` previene path traversal + bloquea archivos sensibles. `_SENSITIVE` hardcodeado oculta tokens de WhatsApp en `get_runtime_config`. `register_builtin_tools` acepta `settings=None` — selfcode solo se registra si `settings` no es None
+- Hot-reload: `McpManager` usa `_server_stacks: dict[str, AsyncExitStack]` (uno por servidor) en lugar de un stack global — permite `hot_add_server()` / `hot_remove_server()` sin restart. `hot_add_server` persiste config + llama `reset_tools_cache()` + `register_dynamic_category()`. `SkillRegistry.reload()` re-escanea `skills/` y limpia `_loaded_instructions`. `reset_tools_cache()` en executor.py pone `_cached_tools_map = None`
+- MCP HTTP transport: `McpManager._connect_server()` detecta `cfg["type"]` — `"http"` usa `streamable_http_client(url)` (3-tuple read/write/session_id), `"stdio"` usa `stdio_client` (2-tuple). Servidores Smithery son siempre tipo `"http"`
+- `expand` skill: `register()` recibe `mcp_manager` (no `repository`). MCP manager se inicializa ANTES que skills en `main.py` para que `expand_tools` pueda referenciar el manager. Smithery API: `GET https://registry.smithery.ai/servers?q=<query>` — no requiere auth
 - Calculator: AST safe eval con whitelist estricta, NO eval() directo
 - Docker: container corre como `appuser` (UID=1000), no root
 - Memoria en 3 capas: semántica (MEMORY.md), episódica reciente (daily logs), episódica histórica (snapshots)
@@ -99,6 +107,7 @@ tests/
 - Dedup de facts: `difflib.SequenceMatcher(ratio > 0.8)` contra memorias existentes
 - Session snapshots: `/clear` guarda últimos 15 msgs con slug LLM-generated en `data/memory/snapshots/`
 - Memory consolidation: LLM revisa memorias para duplicados/contradicciones después del flush
+- `/review-skill` command: sin args lista skills + MCP servers; con nombre muestra detalle (tools, estado, instrucciones para skills; tipo, estado, tools para MCP)
 - `CommandContext` tiene `ollama_client`, `daily_log` y `embed_model` para snapshot generation y auto-indexing
 - Búsqueda semántica: `_get_query_embedding()` se computa una vez y se reutiliza para memorias + notas
 - `init_db()` retorna `(conn, vec_available)` — fallback graceful si sqlite-vec no disponible
@@ -107,3 +116,4 @@ tests/
 - Embeddings best-effort: errores logueados, nunca propagados — la app funciona sin embeddings
 - MEMORY.md watcher: watchdog con sync guard (`threading.Event`) para prevenir loops
 - `MemoryFile.set_watcher()` conecta el guard; `on_created` maneja editores con atomic rename
+- `projects` skill: 4 tablas (`projects`, `project_tasks`, `project_activity`, `project_notes`) + `vec_project_notes` (sqlite-vec). `phone_number` en `projects` (no FK a `conversations`) — proyectos sobreviven `/clear`. `UNIQUE(phone_number, name)` — el LLM identifica proyectos por nombre. `project_tools.register()` recibe `repository`, `daily_log`, `ollama_client`, `embed_model`, `vec_available`. `set_current_user(phone)` module-level seteado per-request en `_handle_message`. `_resolve_project(name)` helper interno que busca COLLATE NOCASE. `update_task` a "done" loguea al `daily_log`. Si todas las tareas están done → sugiere `update_project_status`. `update_project_status` a archived/completed → registra resumen final automático. `_get_active_projects_summary()` en webhook/router.py — inyectada en Phase B (`asyncio.gather` con memorias/notas/summary/history). `register_builtin_tools` acepta `daily_log=None` — pasado desde `main.py`. Embeddings de project notes via `embed_project_note()` en indexer.py (best-effort). Búsqueda semántica en `search_project_notes` con fallback a list all.

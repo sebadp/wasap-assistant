@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING
 
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
+from mcp.client.streamable_http import streamable_http_client
 
 from app.skills.models import ToolCall, ToolDefinition, ToolResult
 
@@ -57,14 +58,21 @@ def _make_handler(session: ClientSession, tool_name: str):
 
 
 class McpManager:
-    """Manages connections to multiple MCP servers."""
+    """Manages connections to multiple MCP servers.
+
+    Uses per-server AsyncExitStack instances to support hot-add and
+    hot-remove of individual servers without restarting the process.
+    """
 
     def __init__(self, config_path: str = "data/mcp_servers.json"):
         self.config_path = config_path
-        self._exit_stack = AsyncExitStack()
+        # Per-server stacks allow individual connect/disconnect
+        self._server_stacks: dict[str, AsyncExitStack] = {}
         self._sessions: dict[str, ClientSession] = {}
         self._tools: dict[str, ToolDefinition] = {}
-        self._server_descriptions: dict[str, str] = {}  # server_name -> description
+        self._server_descriptions: dict[str, str] = {}
+        # Keep raw server configs for save/reload
+        self._server_configs: dict[str, dict] = {}
 
     async def initialize(self) -> None:
         """Load config and connect to all enabled servers."""
@@ -89,6 +97,7 @@ class McpManager:
             if "description" in cfg:
                 self._server_descriptions[name] = cfg["description"]
 
+            self._server_configs[name] = cfg
             await self._connect_server(name, cfg)
 
         if self._tools:
@@ -101,28 +110,46 @@ class McpManager:
             logger.info("MCP initialized: no tools loaded")
 
     async def _connect_server(self, name: str, cfg: dict) -> None:
-        """Connect to a single MCP server with timeout."""
-        server_params = StdioServerParameters(
-            command=cfg["command"],
-            args=cfg.get("args", []),
-            env={**os.environ, **(cfg.get("env") or {})},
-        )
+        """Connect to a single MCP server using a dedicated per-server exit stack.
 
+        Supports two transport types via the ``type`` config field:
+        - ``"stdio"`` (default): spawns a local process via command/args.
+        - ``"http"``: connects to a remote MCP server via Streamable HTTP
+          (used by Smithery-hosted servers).
+        """
+        server_stack = AsyncExitStack()
         try:
-            transport = await asyncio.wait_for(
-                self._exit_stack.enter_async_context(stdio_client(server_params)),
-                timeout=MCP_CONNECT_TIMEOUT,
-            )
-            read, write = transport
+            server_type = cfg.get("type", "stdio")
 
-            session = await self._exit_stack.enter_async_context(
+            if server_type == "http":
+                url = cfg["url"]
+                transport = await asyncio.wait_for(
+                    server_stack.enter_async_context(streamable_http_client(url)),
+                    timeout=MCP_CONNECT_TIMEOUT,
+                )
+                # streamable_http_client yields (read, write, get_session_id)
+                read, write, _ = transport
+            else:
+                server_params = StdioServerParameters(
+                    command=cfg["command"],
+                    args=cfg.get("args", []),
+                    env={**os.environ, **(cfg.get("env") or {})},
+                )
+                transport = await asyncio.wait_for(
+                    server_stack.enter_async_context(stdio_client(server_params)),
+                    timeout=MCP_CONNECT_TIMEOUT,
+                )
+                read, write = transport
+
+            session = await server_stack.enter_async_context(
                 ClientSession(read, write)
             )
 
             await asyncio.wait_for(session.initialize(), timeout=MCP_CONNECT_TIMEOUT)
 
+            self._server_stacks[name] = server_stack
             self._sessions[name] = session
-            logger.info("Connected to MCP server: %s", name)
+            logger.info("Connected to MCP server: %s (type=%s)", name, server_type)
 
             await self._load_tools(name, session)
 
@@ -132,8 +159,10 @@ class McpManager:
                 name,
                 MCP_CONNECT_TIMEOUT,
             )
+            await server_stack.aclose()
         except Exception as e:
             logger.error("Failed to connect to MCP server %s: %s", name, e)
+            await server_stack.aclose()
 
     async def _load_tools(self, server_name: str, session: ClientSession) -> None:
         """Fetch tools from the server and register them as ToolDefinitions."""
@@ -166,6 +195,136 @@ class McpManager:
             self._tools[tool.name] = tool_def
             logger.info("Registered MCP tool: %s (server: %s)", tool.name, server_name)
 
+    # ------------------------------------------------------------------
+    # Hot-reload public API
+    # ------------------------------------------------------------------
+
+    async def hot_add_server(self, name: str, cfg: dict) -> str:
+        """Connect a new MCP server at runtime without restarting.
+
+        Persists the config to disk if connection succeeds.
+        Returns a human-readable status message.
+        """
+        if name in self._sessions:
+            return f"Server '{name}' is already connected."
+
+        if "description" in cfg:
+            self._server_descriptions[name] = cfg["description"]
+
+        self._server_configs[name] = cfg
+        tools_before = len(self._tools)
+        await self._connect_server(name, cfg)
+
+        if name not in self._sessions:
+            self._server_configs.pop(name, None)
+            self._server_descriptions.pop(name, None)
+            return f"Failed to connect to server '{name}'. Check logs for details."
+
+        new_tools = len(self._tools) - tools_before
+        self._invalidate_tools_cache()
+        self._update_dynamic_categories(name)
+        self._persist_config()
+
+        return f"Connected '{name}': {new_tools} new tool(s) available."
+
+    async def hot_remove_server(self, name: str) -> str:
+        """Disconnect an MCP server and remove its tools at runtime.
+
+        Updates the persisted config (marks as disabled).
+        Returns a human-readable status message.
+        """
+        if name not in self._sessions:
+            return f"Server '{name}' is not connected."
+
+        # Remove tools registered by this server
+        to_remove = [k for k, v in self._tools.items() if v.skill_name == f"mcp::{name}"]
+        for k in to_remove:
+            del self._tools[k]
+
+        # Close per-server stack
+        if name in self._server_stacks:
+            try:
+                await self._server_stacks[name].aclose()
+            except Exception as e:
+                logger.warning("Error closing MCP server %s: %s", name, e)
+            del self._server_stacks[name]
+
+        del self._sessions[name]
+        self._server_descriptions.pop(name, None)
+
+        # Mark as disabled in persisted config (don't delete — allows re-enable)
+        if name in self._server_configs:
+            self._server_configs[name]["enabled"] = False
+        self._persist_config()
+        self._invalidate_tools_cache()
+
+        return f"Disconnected '{name}', removed {len(to_remove)} tool(s)."
+
+    def list_servers(self) -> list[dict]:
+        """Return status of all known servers (connected + disabled)."""
+        result = []
+        seen = set()
+
+        # Connected servers
+        for name in self._sessions:
+            seen.add(name)
+            tool_count = sum(
+                1 for t in self._tools.values() if t.skill_name == f"mcp::{name}"
+            )
+            result.append({
+                "name": name,
+                "status": "connected",
+                "tools": tool_count,
+                "description": self._server_descriptions.get(name, ""),
+            })
+
+        # Configured but not connected (disabled or failed)
+        for name, cfg in self._server_configs.items():
+            if name in seen:
+                continue
+            result.append({
+                "name": name,
+                "status": "disabled" if not cfg.get("enabled", True) else "disconnected",
+                "tools": 0,
+                "description": self._server_descriptions.get(name, ""),
+            })
+
+        return result
+
+    # ------------------------------------------------------------------
+    # Internal helpers
+    # ------------------------------------------------------------------
+
+    def _persist_config(self) -> None:
+        """Write current server configs back to disk."""
+        try:
+            os.makedirs(os.path.dirname(self.config_path) or ".", exist_ok=True)
+            data = {"servers": self._server_configs}
+            with open(self.config_path, "w") as f:
+                json.dump(data, f, indent=2)
+            logger.info("MCP config saved to %s", self.config_path)
+        except Exception as e:
+            logger.error("Failed to persist MCP config: %s", e)
+
+    @staticmethod
+    def _invalidate_tools_cache() -> None:
+        """Invalidate the executor-level tools map cache."""
+        from app.skills.executor import reset_tools_cache
+        reset_tools_cache()
+
+    def _update_dynamic_categories(self, server_name: str) -> None:
+        """Register newly added MCP tools into the router's TOOL_CATEGORIES."""
+        from app.skills.router import register_dynamic_category
+        tool_names = [
+            k for k, v in self._tools.items() if v.skill_name == f"mcp::{server_name}"
+        ]
+        if tool_names:
+            register_dynamic_category(server_name, tool_names)
+
+    # ------------------------------------------------------------------
+    # Existing read-only API (unchanged)
+    # ------------------------------------------------------------------
+
     def get_ollama_tools(self) -> list[dict]:
         """Return tool schemas in Ollama's expected format."""
         return [
@@ -182,10 +341,12 @@ class McpManager:
 
     async def cleanup(self) -> None:
         """Close all connections."""
-        try:
-            await self._exit_stack.aclose()
-        except Exception as e:
-            logger.error("Error during MCP cleanup: %s", e)
+        for name, stack in list(self._server_stacks.items()):
+            try:
+                await stack.aclose()
+            except Exception as e:
+                logger.error("Error closing MCP server %s: %s", name, e)
+        self._server_stacks.clear()
         self._sessions.clear()
         self._tools.clear()
         logger.info("MCP Manager cleanup complete")
@@ -218,10 +379,8 @@ class McpManager:
         if not self._tools:
             return None
 
-        # Group tools by server
         by_server: dict[str, list[ToolDefinition]] = {}
         for tool in self._tools.values():
-            # skill_name is "mcp::server_name"
             server = tool.skill_name.removeprefix("mcp::")
             by_server.setdefault(server, []).append(tool)
 

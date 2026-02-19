@@ -105,3 +105,31 @@ class SkillRegistry:
 
     def has_tools(self) -> bool:
         return len(self._tools) > 0
+
+    def get_skill(self, name: str) -> SkillMetadata | None:
+        return self._skills.get(name)
+
+    def get_tools_for_skill(self, skill_name: str) -> list[ToolDefinition]:
+        return [t for t in self._tools.values() if t.skill_name == skill_name]
+
+    def reload(self) -> int:
+        """Re-scan the skills directory and refresh SKILL.md metadata.
+
+        - Adds metadata for newly discovered skills.
+        - Updates metadata for existing skills (e.g. after editing SKILL.md).
+        - Clears the loaded-instructions cache so updated instructions are re-read.
+        - Does NOT re-register Python tool handlers (those require a process restart).
+
+        Returns the total number of skills found after reload.
+        """
+        self._loaded_instructions.clear()
+        new_skills = scan_skills_directory(self._skills_dir)
+        for skill in new_skills:
+            if skill.name not in self._skills:
+                logger.info("Hot-loaded new skill metadata: %s", skill.name)
+            self._skills[skill.name] = skill
+
+        from app.skills.executor import reset_tools_cache
+        reset_tools_cache()
+        logger.info("SkillRegistry reloaded: %d skills", len(new_skills))
+        return len(new_skills)

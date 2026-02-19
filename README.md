@@ -54,6 +54,7 @@ Ver [SETUP.md](SETUP.md) para la guía completa paso a paso.
 | `/forget <dato>` | Olvidar un recuerdo guardado |
 | `/memories` | Listar todos los recuerdos |
 | `/clear` | Guardar snapshot + borrar historial |
+| `/review-skill [nombre]` | Revisar skills y MCP servers instalados |
 | `/help` | Mostrar comandos disponibles |
 
 Las memorias persisten entre reinicios y se inyectan automáticamente en el contexto del LLM.
@@ -68,6 +69,8 @@ El asistente tiene capacidades más allá de conversar, usando tool calling nati
 | `calculator` | `calculate` | Cálculos matemáticos (evaluación segura via AST) |
 | `weather` | `get_weather` | Clima actual y pronóstico via wttr.in |
 | `notes` | `save_note`, `list_notes`, `search_notes`, `delete_note` | Notas persistentes en SQLite |
+| `selfcode` | `get_version_info`, `read_source_file`, `list_source_files`, `get_runtime_config`, `get_system_health`, `search_source_code`, `get_skill_details` | Auto-inspección: versión, código fuente, configuración y salud del sistema |
+| `expand` | `search_mcp_registry`, `get_mcp_server_info`, `install_from_smithery`, `install_mcp_server`, `remove_mcp_server`, `list_mcp_servers`, `preview_skill_from_url`, `install_skill_from_url`, `reload_capabilities` | Auto-expansión: buscar e instalar MCP servers (Smithery) y skills desde URLs en runtime |
 
 Los skills se definen con archivos `SKILL.md` en `skills/`. Para agregar un skill nuevo: crear una carpeta con `SKILL.md` + registrar los handlers en Python.
 
@@ -100,7 +103,9 @@ app/
 │       ├── datetime_tools.py
 │       ├── calculator_tools.py
 │       ├── weather_tools.py
-│       └── notes_tools.py
+│       ├── notes_tools.py
+│       ├── selfcode_tools.py
+│       └── expand_tools.py
 ├── embeddings/
 │   └── indexer.py           # Embed/backfill de memorias y notas (best-effort)
 ├── llm/
@@ -122,6 +127,8 @@ app/
 │   ├── watcher.py           # File watcher (watchdog) para edición manual de MEMORY.md
 │   ├── daily_log.py         # Daily logs + session snapshots
 │   └── consolidator.py      # Dedup/merge de memorias via LLM
+├── mcp/
+│   └── manager.py           # McpManager (MCP server connections, hot-add/remove)
 └── health/
     └── router.py            # GET /health
 
@@ -129,7 +136,9 @@ skills/                      # Definiciones de skills (SKILL.md)
 ├── datetime/SKILL.md
 ├── calculator/SKILL.md
 ├── weather/SKILL.md
-└── notes/SKILL.md
+├── notes/SKILL.md
+├── selfcode/SKILL.md
+└── expand/SKILL.md
 ```
 
 ### Stack

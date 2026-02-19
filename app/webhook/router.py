@@ -45,6 +45,7 @@ from app.webhook.security import validate_signature
 from app.whatsapp.client import WhatsAppClient
 
 if TYPE_CHECKING:
+    from app.commands.registry import CommandRegistry
     from app.mcp.manager import McpManager
 
 logger = logging.getLogger(__name__)
@@ -239,6 +240,82 @@ async def _get_relevant_notes(
     return []
 
 
+def _build_capabilities_section(
+    skill_registry: SkillRegistry,
+    command_registry: CommandRegistry,
+    mcp_manager: McpManager | None,
+) -> str | None:
+    """Build a rich, structured capabilities section for the LLM context.
+
+    Groups commands, skills (with their tools), and MCP servers so the
+    agent knows what it can do and when to use each capability.
+    """
+    sections: list[str] = []
+
+    # --- Commands (user-typed /slash commands) ---
+    commands = command_registry.list_commands()
+    if commands:
+        cmd_lines = ["Commands (the user types these directly — if they ask how to save info, mention /remember):"]
+        for cmd in commands:
+            cmd_lines.append(f"  /{cmd.name} — {cmd.description}")
+        sections.append("\n".join(cmd_lines))
+
+    # --- Skills (tool-calling) ---
+    skills = skill_registry.list_skills()
+    if skills:
+        skill_lines = ["Skills (you call these via tool calling):"]
+        for skill in skills:
+            tool_names = [t.name for t in skill_registry.get_tools_for_skill(skill.name)]
+            tools_str = ", ".join(tool_names) if tool_names else "no tools registered"
+            skill_lines.append(f"  {skill.name} — {skill.description}")
+            skill_lines.append(f"    Tools: {tools_str}")
+        sections.append("\n".join(skill_lines))
+
+    # --- MCP Servers ---
+    if mcp_manager:
+        mcp_tools = mcp_manager.get_tools()
+        if mcp_tools:
+            by_server: dict[str, list[str]] = {}
+            for tool in mcp_tools.values():
+                server = tool.skill_name.removeprefix("mcp::")
+                by_server.setdefault(server, []).append(f"{tool.name}: {tool.description}")
+
+            mcp_lines = ["MCP Servers (external integrations):"]
+            for server_name, tool_descs in by_server.items():
+                desc = mcp_manager._server_descriptions.get(server_name, "")
+                header = f"  {server_name} ({desc})" if desc else f"  {server_name}"
+                mcp_lines.append(header)
+                for td in tool_descs:
+                    mcp_lines.append(f"    - {td}")
+            sections.append("\n".join(mcp_lines))
+
+    if not sections:
+        return None
+
+    header = "You have the following capabilities. Use them proactively when the user's message is relevant."
+    return header + "\n\n" + "\n\n".join(sections)
+
+
+async def _get_active_projects_summary(phone_number: str, repository) -> str | None:
+    """Build a brief projects status line for the LLM context. Returns None if no active projects."""
+    try:
+        projects = await repository.list_projects(phone_number, status="active")
+        if not projects:
+            return None
+        capped = projects[:5]
+        lines = ["Active projects:"]
+        for p in capped:
+            progress = await repository.get_project_progress(p.id)
+            total = progress["total"]
+            done = progress["done"]
+            pct = int(done / total * 100) if total > 0 else 0
+            lines.append(f"  - {p.name}: {done}/{total} tasks ({pct}%)")
+        return "\n".join(lines)
+    except Exception:
+        logger.warning("Failed to fetch active projects summary", exc_info=True)
+        return None
+
+
 def _build_context(
     system_prompt: str,
     memories: list[str],
@@ -247,12 +324,15 @@ def _build_context(
     skills_summary: str | None,
     summary: str | None,
     history: list[ChatMessage],
+    projects_summary: str | None = None,
 ) -> list[ChatMessage]:
     """Build LLM context from pre-fetched data (sync, no DB calls)."""
     context = [ChatMessage(role="system", content=system_prompt)]
     if memories:
         memory_block = "Important user information:\n" + "\n".join(f"- {m}" for m in memories)
         context.append(ChatMessage(role="system", content=memory_block))
+    if projects_summary:
+        context.append(ChatMessage(role="system", content=projects_summary))
     if relevant_notes:
         notes_block = "Relevant notes:\n" + "\n".join(
             f"- [{n.id}] {n.title}: {n.content[:200]}" for n in relevant_notes
@@ -444,19 +524,17 @@ async def _handle_message(
         daily_log.load_recent(days=settings.daily_log_days),
     )
 
-    # Phase B (parallel): search memories || search notes || get summary || get history
-    memories, relevant_notes, summary, history = await asyncio.gather(
+    # Phase B (parallel): search memories || search notes || get summary || get history || active projects
+    memories, relevant_notes, summary, history, projects_summary = await asyncio.gather(
         _get_memories(user_text, settings, ollama_client, repository, vec_available, query_embedding),
         _get_relevant_notes(query_embedding, settings, repository, vec_available),
         repository.get_latest_summary(conv_id),
         repository.get_recent_messages(conv_id, settings.conversation_max_messages),
+        _get_active_projects_summary(msg.from_number, repository),
     )
 
-    # Skills summary (sync, fast)
-    skills_summary = skill_registry.get_tools_summary() if skill_registry.has_tools() else None
-    mcp_summary = mcp_manager.get_tools_summary() if mcp_manager else None
-    if mcp_summary:
-        skills_summary = f"{skills_summary}\n\n{mcp_summary}" if skills_summary else mcp_summary
+    # Capabilities summary (sync, fast)
+    skills_summary = _build_capabilities_section(skill_registry, command_registry, mcp_manager)
 
     # Phase C: await classify_task (should be mostly done by now)
     pre_classified: list[str] | None = None
@@ -470,11 +548,14 @@ async def _handle_message(
     context = _build_context(
         system_prompt_with_date, memories, relevant_notes, daily_logs,
         skills_summary, summary, history,
+        projects_summary=projects_summary,
     )
 
-    # Set current user context for tools that need it (e.g. scheduler)
+    # Set current user context for tools that need it (e.g. scheduler, projects)
     from app.skills.tools.scheduler_tools import set_current_user
+    from app.skills.tools.project_tools import set_current_user as set_project_user
     set_current_user(msg.from_number, received_at=now)
+    set_project_user(msg.from_number)
 
     try:
         if has_tools:

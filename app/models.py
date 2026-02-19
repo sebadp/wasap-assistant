@@ -40,3 +40,32 @@ class Memory(BaseModel):
     category: str | None = None
     active: bool = True
     created_at: str = ""
+
+
+class Project(BaseModel):
+    id: int
+    phone_number: str
+    name: str
+    description: str = ""
+    status: str = "active"
+    created_at: str = ""
+    updated_at: str = ""
+
+
+class ProjectTask(BaseModel):
+    id: int
+    project_id: int
+    title: str
+    description: str = ""
+    status: str = "pending"
+    priority: str = "medium"
+    due_date: str | None = None
+    created_at: str = ""
+    updated_at: str = ""
+
+
+class ProjectNote(BaseModel):
+    id: int
+    project_id: int
+    content: str
+    created_at: str = ""
