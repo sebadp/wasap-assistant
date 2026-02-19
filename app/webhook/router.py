@@ -45,6 +45,7 @@ from app.webhook.security import validate_signature
 from app.whatsapp.client import WhatsAppClient
 
 if TYPE_CHECKING:
+    from app.commands.registry import CommandRegistry
     from app.mcp.manager import McpManager
 
 logger = logging.getLogger(__name__)
@@ -237,6 +238,62 @@ async def _get_relevant_notes(
         except Exception:
             logger.warning("Semantic note search failed", exc_info=True)
     return []
+
+
+def _build_capabilities_section(
+    skill_registry: SkillRegistry,
+    command_registry: CommandRegistry,
+    mcp_manager: McpManager | None,
+) -> str | None:
+    """Build a rich, structured capabilities section for the LLM context.
+
+    Groups commands, skills (with their tools), and MCP servers so the
+    agent knows what it can do and when to use each capability.
+    """
+    sections: list[str] = []
+
+    # --- Commands (user-typed /slash commands) ---
+    commands = command_registry.list_commands()
+    if commands:
+        cmd_lines = ["Commands (the user types these directly — if they ask how to save info, mention /remember):"]
+        for cmd in commands:
+            cmd_lines.append(f"  /{cmd.name} — {cmd.description}")
+        sections.append("\n".join(cmd_lines))
+
+    # --- Skills (tool-calling) ---
+    skills = skill_registry.list_skills()
+    if skills:
+        skill_lines = ["Skills (you call these via tool calling):"]
+        for skill in skills:
+            tool_names = [t.name for t in skill_registry.get_tools_for_skill(skill.name)]
+            tools_str = ", ".join(tool_names) if tool_names else "no tools registered"
+            skill_lines.append(f"  {skill.name} — {skill.description}")
+            skill_lines.append(f"    Tools: {tools_str}")
+        sections.append("\n".join(skill_lines))
+
+    # --- MCP Servers ---
+    if mcp_manager:
+        mcp_tools = mcp_manager.get_tools()
+        if mcp_tools:
+            by_server: dict[str, list[str]] = {}
+            for tool in mcp_tools.values():
+                server = tool.skill_name.removeprefix("mcp::")
+                by_server.setdefault(server, []).append(f"{tool.name}: {tool.description}")
+
+            mcp_lines = ["MCP Servers (external integrations):"]
+            for server_name, tool_descs in by_server.items():
+                desc = mcp_manager._server_descriptions.get(server_name, "")
+                header = f"  {server_name} ({desc})" if desc else f"  {server_name}"
+                mcp_lines.append(header)
+                for td in tool_descs:
+                    mcp_lines.append(f"    - {td}")
+            sections.append("\n".join(mcp_lines))
+
+    if not sections:
+        return None
+
+    header = "You have the following capabilities. Use them proactively when the user's message is relevant."
+    return header + "\n\n" + "\n\n".join(sections)
 
 
 def _build_context(
@@ -452,11 +509,8 @@ async def _handle_message(
         repository.get_recent_messages(conv_id, settings.conversation_max_messages),
     )
 
-    # Skills summary (sync, fast)
-    skills_summary = skill_registry.get_tools_summary() if skill_registry.has_tools() else None
-    mcp_summary = mcp_manager.get_tools_summary() if mcp_manager else None
-    if mcp_summary:
-        skills_summary = f"{skills_summary}\n\n{mcp_summary}" if skills_summary else mcp_summary
+    # Capabilities summary (sync, fast)
+    skills_summary = _build_capabilities_section(skill_registry, command_registry, mcp_manager)
 
     # Phase C: await classify_task (should be mostly done by now)
     pre_classified: list[str] | None = None

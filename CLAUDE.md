@@ -94,6 +94,7 @@ tests/
 - Tool calling loop: LLM llama tools → se ejecutan → resultados vuelven al LLM → repite hasta texto o max 5 iteraciones
 - Dedup atomico: `processed_messages` tabla con INSERT OR IGNORE (sin race conditions)
 - Reply context: si el usuario responde a un mensaje, se inyecta el texto citado en el prompt
+- `_build_capabilities_section()` en router.py construye sección estructurada de capacidades (commands + skills + MCP) para el contexto LLM — reemplaza el summary plano anterior. Se auto-actualiza al agregar skills/commands/MCP servers
 - SKILL.md: frontmatter parseado con regex (sin PyYAML), instrucciones se cargan lazy en primer uso
 - `selfcode` skill: `register()` recibe `settings` (no `repository`). `_PROJECT_ROOT` resuelto una sola vez al importar. `_is_safe_path()` previene path traversal + bloquea archivos sensibles. `_SENSITIVE` hardcodeado oculta tokens de WhatsApp en `get_runtime_config`. `register_builtin_tools` acepta `settings=None` — selfcode solo se registra si `settings` no es None
 - Hot-reload: `McpManager` usa `_server_stacks: dict[str, AsyncExitStack]` (uno por servidor) en lugar de un stack global — permite `hot_add_server()` / `hot_remove_server()` sin restart. `hot_add_server` persiste config + llama `reset_tools_cache()` + `register_dynamic_category()`. `SkillRegistry.reload()` re-escanea `skills/` y limpia `_loaded_instructions`. `reset_tools_cache()` en executor.py pone `_cached_tools_map = None`
