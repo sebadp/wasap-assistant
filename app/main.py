@@ -91,6 +91,7 @@ async def lifespan(app: FastAPI):
         ollama_client=app.state.ollama_client,
         embed_model=settings.embedding_model if settings.semantic_search_enabled and vec_available else None,
         vec_available=vec_available,
+        settings=settings,
     )
     app.state.skill_registry = skill_registry
 

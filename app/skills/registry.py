@@ -105,3 +105,9 @@ class SkillRegistry:
 
     def has_tools(self) -> bool:
         return len(self._tools) > 0
+
+    def get_skill(self, name: str) -> SkillMetadata | None:
+        return self._skills.get(name)
+
+    def get_tools_for_skill(self, skill_name: str) -> list[ToolDefinition]:
+        return [t for t in self._tools.values() if t.skill_name == skill_name]

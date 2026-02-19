@@ -14,6 +14,7 @@ def register_builtin_tools(
     ollama_client: OllamaClient | None = None,
     embed_model: str | None = None,
     vec_available: bool = False,
+    settings=None,
 ) -> None:
     from app.skills.tools.calculator_tools import register as register_calculator
     from app.skills.tools.datetime_tools import register as register_datetime
@@ -23,6 +24,7 @@ def register_builtin_tools(
     from app.skills.tools.news_tools import register as register_news
     from app.skills.tools.scheduler_tools import register as register_scheduler
     from app.skills.tools.tool_manager_tools import register as register_tool_manager
+    from app.skills.tools.selfcode_tools import register as register_selfcode
 
     register_datetime(registry)
     register_calculator(registry)
@@ -37,3 +39,9 @@ def register_builtin_tools(
     register_news(registry, repository)
     register_scheduler(registry)
     register_tool_manager(registry)
+    if settings is not None:
+        register_selfcode(
+            registry, settings,
+            ollama_client=ollama_client,
+            vec_available=vec_available,
+        )

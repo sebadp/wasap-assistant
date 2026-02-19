@@ -36,13 +36,15 @@ app/
   skills/              # Sistema de skills y tool calling
     models.py          # ToolDefinition, ToolCall, ToolResult, SkillMetadata
     loader.py          # Parser de SKILL.md (frontmatter con regex, sin PyYAML)
-    registry.py        # SkillRegistry (registro, schemas Ollama, ejecucion)
+    registry.py        # SkillRegistry (registro, schemas Ollama, ejecucion) — get_skill(), get_tools_for_skill()
     executor.py        # Tool calling loop (max 5 iteraciones)
+    router.py          # classify_intent, select_tools, TOOL_CATEGORIES (con selfcode)
     tools/             # Handlers de tools builtin
       datetime_tools.py
       calculator_tools.py
       weather_tools.py
       notes_tools.py
+      selfcode_tools.py  # Auto-inspección: version, source, config, health, search
   commands/             # Sistema de comandos (/remember, /forget, etc)
   conversation/         # ConversationManager + Summarizer (con pre-compaction flush)
   database/             # SQLite init + sqlite-vec + Repository
@@ -92,6 +94,7 @@ tests/
 - Dedup atomico: `processed_messages` tabla con INSERT OR IGNORE (sin race conditions)
 - Reply context: si el usuario responde a un mensaje, se inyecta el texto citado en el prompt
 - SKILL.md: frontmatter parseado con regex (sin PyYAML), instrucciones se cargan lazy en primer uso
+- `selfcode` skill: `register()` recibe `settings` (no `repository`). `_PROJECT_ROOT` resuelto una sola vez al importar. `_is_safe_path()` previene path traversal + bloquea archivos sensibles. `_SENSITIVE` hardcodeado oculta tokens de WhatsApp en `get_runtime_config`. `register_builtin_tools` acepta `settings=None` — selfcode solo se registra si `settings` no es None
 - Calculator: AST safe eval con whitelist estricta, NO eval() directo
 - Docker: container corre como `appuser` (UID=1000), no root
 - Memoria en 3 capas: semántica (MEMORY.md), episódica reciente (daily logs), episódica histórica (snapshots)

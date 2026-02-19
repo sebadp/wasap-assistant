@@ -68,6 +68,7 @@ El asistente tiene capacidades más allá de conversar, usando tool calling nati
 | `calculator` | `calculate` | Cálculos matemáticos (evaluación segura via AST) |
 | `weather` | `get_weather` | Clima actual y pronóstico via wttr.in |
 | `notes` | `save_note`, `list_notes`, `search_notes`, `delete_note` | Notas persistentes en SQLite |
+| `selfcode` | `get_version_info`, `read_source_file`, `list_source_files`, `get_runtime_config`, `get_system_health`, `search_source_code`, `get_skill_details` | Auto-inspección: versión, código fuente, configuración y salud del sistema |
 
 Los skills se definen con archivos `SKILL.md` en `skills/`. Para agregar un skill nuevo: crear una carpeta con `SKILL.md` + registrar los handlers en Python.
 
@@ -100,7 +101,8 @@ app/
 │       ├── datetime_tools.py
 │       ├── calculator_tools.py
 │       ├── weather_tools.py
-│       └── notes_tools.py
+│       ├── notes_tools.py
+│       └── selfcode_tools.py
 ├── embeddings/
 │   └── indexer.py           # Embed/backfill de memorias y notas (best-effort)
 ├── llm/
@@ -129,7 +131,8 @@ skills/                      # Definiciones de skills (SKILL.md)
 ├── datetime/SKILL.md
 ├── calculator/SKILL.md
 ├── weather/SKILL.md
-└── notes/SKILL.md
+├── notes/SKILL.md
+└── selfcode/SKILL.md
 ```
 
 ### Stack

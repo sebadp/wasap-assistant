@@ -29,6 +29,11 @@ TOOL_CATEGORIES: dict[str, list[str]] = {
                "get_file_contents", "list_pull_requests", "create_pull_request",
                "create_or_update_file"],
     "tools": ["list_tool_categories", "list_category_tools"],
+    "selfcode": [
+        "get_version_info", "read_source_file", "list_source_files",
+        "get_runtime_config", "get_system_health",
+        "search_source_code", "get_skill_details",
+    ],
 }
 
 DEFAULT_CATEGORIES = ["time", "math", "weather", "search"]
@@ -36,7 +41,7 @@ DEFAULT_CATEGORIES = ["time", "math", "weather", "search"]
 CLASSIFIER_PROMPT = (
     "Classify this message into tool categories. "
     "Reply with ONLY category names separated by commas, or \"none\".\n"
-    "Categories: time, math, weather, search, news, notes, files, memory, github, tools, none\n\n"
+    "Categories: time, math, weather, search, news, notes, files, memory, github, tools, selfcode, none\n\n"
     "Message: {user_message}"
 )
 
