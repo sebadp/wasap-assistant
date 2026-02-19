@@ -1,5 +1,15 @@
 # WasAP — Convenciones del Proyecto
 
+> **Mapa del proyecto** → `AGENTS.md` (dónde está cada cosa, workflow, skills activos)
+> Este archivo documenta **convenciones de código y patrones arquitectónicos**.
+
+## Protocolo de Documentación (OBLIGATORIO al terminar una feature)
+1. Crear `docs/features/<nombre>.md` (template: `docs/features/TEMPLATE.md`)
+2. Crear `docs/testing/<nombre>_testing.md` (template: `docs/testing/TEMPLATE.md`)
+3. Para features complejas: crear `docs/exec-plans/<nombre>.md` **antes** de implementar
+4. Actualizar `CLAUDE.md` con patrones que deben preservarse
+5. Actualizar `AGENTS.md` si se agrega un skill, módulo o comando nuevo
+
 ## Stack
 - **Framework**: FastAPI (async, lifespan pattern)
 - **LLM**: Ollama con **qwen3:8b** (chat) y **llava:7b** (vision)

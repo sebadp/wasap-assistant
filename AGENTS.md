@@ -1,0 +1,178 @@
+# WasAP — AGENTS.md: Mapa del Proyecto
+
+> **Este archivo es el índice de navegación del proyecto, para agentes y humanos.**
+> No contiene implementación: contiene dónde encontrar cada cosa, cómo trabajar, y qué crear al terminar una feature.
+> Para convenciones técnicas detalladas → `CLAUDE.md`
+
+---
+
+## 1. Mapa de Documentación
+
+| Qué buscás | Dónde está |
+|---|---|
+| Convenciones de código y patrones arquitectónicos | `CLAUDE.md` |
+| Visión del producto, fases completadas, roadmap | `PRODUCT_PLAN.md` |
+| Setup inicial y configuración del entorno | `SETUP.md` |
+| Guía de testing manual completa | `docs/testing/manual_testing_guide.md` |
+| Planes de implementación (futuros y en curso) | `docs/exec-plans/` |
+| Walkthroughs de features implementadas | `docs/features/` |
+| Definiciones de skills (capabilities del agente) | `skills/*/SKILL.md` |
+| Tests automatizados | `tests/` |
+
+---
+
+## 2. Mapa de Código: Quién Posee Qué
+
+Antes de modificar un módulo, identificar su dominio. Las reglas de un dominio están en `CLAUDE.md`.
+
+| Dominio | Archivos clave | No tocar sin leer |
+|---|---|---|
+| Pipeline principal de mensajes | `app/webhook/router.py` | Fases A/B/C/D paralelas, `_build_context()` |
+| Tool calling loop | `app/skills/executor.py` | Cache `_cached_tools_map`, `_run_tool_call()` |
+| Skills registry | `app/skills/registry.py`, `skills/*/SKILL.md` | Frontmatter parsing con regex (sin PyYAML) |
+| MCP servers | `app/mcp/` | `_server_stacks` (por servidor), hot-reload |
+| Memoria semántica | `app/memory/`, `app/embeddings/indexer.py` | Sync guard, best-effort pattern |
+| Conversación + summarizer | `app/conversation/` | Pre-compaction flush antes de borrar msgs |
+| Comandos `/` | `app/commands/` | `CommandContext` (no pasar `repository` directo) |
+| Base de datos | `app/database/` | sqlite-vec, serialización de vectores |
+| WhatsApp API | `app/whatsapp/` | HMAC validation, rate limiter |
+| LLM client | `app/llm/client.py` | `think: True` incompatible con tools en qwen3 |
+
+---
+
+## 3. Workflow de Desarrollo (Ciclo Humano → Agente)
+
+### Roles
+
+- **Humano (Arquitecto)**: define la intención, revisa el plan, aprueba el merge.
+- **Agente (Ejecutor)**: implementa, testea, documenta.
+- Si el agente falla → no se fuerza el código: se mejoran las restricciones o herramientas.
+
+### Ciclo por Feature
+
+```
+1. PLAN        →  Crear docs/exec-plans/<feature>.md con el plan
+2. IMPLEMENTAR →  Código en la rama correspondiente
+3. TESTS       →  .venv/bin/python -m pytest tests/ -v (todos pasan)
+4. DOCUMENTAR  →  [VER SECCIÓN 4 — OBLIGATORIO]
+5. PR          →  Short-lived, auto-revisado, merge rápido
+```
+
+### Regla de Oro
+
+> **Una feature no está terminada si no tiene documentación.**
+> Si no está en el repositorio, no existe para el próximo agente.
+
+---
+
+## 4. Protocolo de Documentación (Obligatorio al Terminar)
+
+Después de implementar cualquier feature o cambio arquitectónico significativo:
+
+### 4.1 Siempre crear
+
+| Artefacto | Dónde | Template |
+|---|---|---|
+| Walkthrough de la feature | `docs/features/<nombre>.md` | `docs/features/TEMPLATE.md` |
+| Guía de testing manual | `docs/testing/<nombre>_testing.md` | `docs/testing/TEMPLATE.md` |
+
+### 4.2 Siempre actualizar
+
+| Documento | Cuándo |
+|---|---|
+| `PRODUCT_PLAN.md` | Al completar una Fase nueva |
+| `CLAUDE.md` | Al establecer un patrón arquitectónico nuevo que debe preservarse |
+| `AGENTS.md` (este archivo) | Al agregar un skill, comando, o módulo nuevo |
+| `skills/<name>/SKILL.md` | Al cambiar las tools o instrucciones de un skill |
+
+### 4.3 Exec Plans (antes de implementar)
+
+Para features complejas (>3 archivos afectados), crear primero:
+
+```
+docs/exec-plans/<feature>.md
+```
+
+El exec plan contiene: objetivo, archivos a modificar, schema de datos si aplica, orden de implementación. Ver `docs/exec-plans/eval_implementation_plan.md` como ejemplo.
+
+---
+
+## 5. Sistema de Skills: Scope y Contención
+
+Los skills son la **unidad de extensión del sistema**. Mantienen el scope de los agentes acotado: cada skill posee un dominio claro, el LLM sabe qué herramientas usar para qué problema.
+
+### 5.1 Skills activos y sus dominios
+
+| Skill | Dominio | Tools clave |
+|---|---|---|
+| `calculator` | Evaluaciones matemáticas (AST safe eval) | `calculate` |
+| `datetime` | Fecha/hora y conversión de timezones | `get_current_datetime`, `convert_timezone` |
+| `weather` | Clima actual y pronóstico (wttr.in) | `get_weather` |
+| `notes` | CRUD de notas personales (SQLite) | `save_note`, `list_notes`, `search_notes`, `delete_note` |
+| `projects` | Proyectos, tareas y seguimiento | `create_project`, `add_task`, `update_task`, ... |
+| `search` | Búsqueda web (DuckDuckGo) | `web_search` |
+| `news` | Noticias con preferencias guardadas | `search_news`, `add_news_preference` |
+| `scheduler` | Recordatorios vía APScheduler | `schedule_reminder`, `list_reminders` |
+| `selfcode` | Auto-inspección del sistema | `get_version`, `get_runtime_config`, `search_code` |
+| `expand` | Auto-expansión: MCP + skills dinámicos | `search_mcp_tools`, `install_mcp_server`, `create_skill` |
+
+### 5.2 Cuándo crear un nuevo skill
+
+Crear un skill cuando:
+- La funcionalidad forma un dominio coherente (no una tool suelta)
+- El LLM necesita instrucciones específicas para usarla bien
+- La funcionalidad no encaja en ningún skill existente
+
+No crear un skill cuando:
+- Es una pequeña extensión de un skill existente → agregar tool al SKILL.md existente
+- Es lógica interna que el usuario no interactúa directamente
+
+### 5.3 Anatomía de un skill
+
+```
+skills/<name>/
+  SKILL.md          ← Frontmatter YAML (name, description, version, tools) + instrucciones en prosa
+app/skills/tools/
+  <name>_tools.py   ← Handlers Python de las tools del skill
+```
+
+El `SKILL.md` define la "personalidad" del skill: cuándo usarlo, cómo responder, qué no hacer.
+
+---
+
+## 6. Estado Actual y Próximos Pasos
+
+### Fases completadas (7/7)
+
+| Fase | Descripción |
+|---|---|
+| 1 | MVP — Chat funcional via WhatsApp + Ollama |
+| 2 | Persistencia y memoria (SQLite + MEMORY.md) |
+| 3 | UX y multimedia (audio, imagen, formato) |
+| 4 | Skills y herramientas (tool calling loop) |
+| 5 | Memoria avanzada (daily logs, flush, snapshots, consolidation) |
+| 6 | Búsqueda semántica y RAG (sqlite-vec, embeddings) |
+| 7 | Performance optimization (parallelismo, caches) |
+
+### Próxima dirección documentada
+
+`docs/exec-plans/eval_implementation_plan.md` — Arquitectura de Evaluación y Mejora Continua:
+
+1. **Guardrails** — Validación pre-entrega (language match, PII, no vacío)
+2. **Trazabilidad** — Spans jerárquicos en SQLite (traces, trace_spans, trace_scores)
+3. **Evaluación en 3 capas** — Señales implícitas + DeepEval + feedback humano
+4. **Dataset vivo** — Curación automática de golden/failure pairs
+5. **Auto-evolución** — Memorias de auto-corrección + prompt versioning
+6. **Self-eval skill** — El agente diagnostica sus propias fallas via WhatsApp
+
+---
+
+## 7. Principios del Proyecto
+
+1. **Local-first**: LLM corre local via Ollama, cero costo operativo
+2. **Skills como unidad de extensión**: agregar capacidad = `SKILL.md` + handler Python
+3. **Best-effort para I/O no crítico**: embeddings, trazas, daily logs — nunca bloquean el pipeline
+4. **Paralelismo en el critical path**: fases A/B/C en `router.py` con `asyncio.gather`
+5. **Documentación como parte de la implementación**: una feature sin docs no está terminada
+6. **Scope acotado por skills**: el agente sabe qué puede hacer porque está declarado en `skills/*/SKILL.md`
+7. **Restricciones mecánicas sobre voluntad**: los linters, tests y patrones de código previenen la entropía
