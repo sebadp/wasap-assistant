@@ -16,6 +16,9 @@ from app.config import Settings
 from app.conversation.manager import ConversationManager
 from app.conversation.summarizer import maybe_summarize
 from app.formatting.whatsapp import markdown_to_whatsapp
+from app.profiles.discovery import maybe_discover_profile_updates
+from app.profiles.onboarding import handle_onboarding_message
+from app.profiles.prompt_builder import build_system_prompt
 from app.dependencies import (
     get_command_registry,
     get_conversation_manager,
@@ -292,20 +295,40 @@ async def _handle_message(
             await wa_client.send_message(msg.from_number, "Sorry, I couldn't process that audio. Please try again.")
             return
 
-    # Handle image: llava describes → qwen3 responds
+    # Load user profile early (after audio transcription, so audio can feed into onboarding)
+    profile_row = await repository.get_user_profile(msg.from_number)
+    in_onboarding = (
+        settings.onboarding_enabled
+        and profile_row["onboarding_state"] != "complete"
+    )
+
+    # Handle image: llava describes → used as onboarding answer OR qwen3 responds normally
     if msg.type == "image" and msg.media_id:
         try:
             image_bytes = await wa_client.download_media(msg.media_id)
             image_b64 = base64.b64encode(image_bytes).decode()
 
-            # Step 1: llava describes the image (English is fine)
+            # Step 1: llava describes the image
             vision_messages = [
                 ChatMessage(role="user", content="Describe this image in detail.", images=[image_b64]),
             ]
             description = await ollama_client.chat(vision_messages, model=settings.vision_model)
             logger.info("Vision description [%s]: %s", msg.from_number, description[:120])
 
-            # Step 2: pass description to qwen3 with conversation context
+            if in_onboarding:
+                # During onboarding: use image description as the user's answer to current step
+                user_text = description
+                next_state, reply, new_data = await handle_onboarding_message(
+                    user_text,
+                    profile_row["onboarding_state"],
+                    profile_row["data"],
+                    ollama_client,
+                )
+                await repository.save_user_profile(msg.from_number, next_state, new_data)
+                await wa_client.send_message(msg.from_number, reply)
+                return
+
+            # Normal image flow: pass description to qwen3 with conversation context
             user_text = msg.text or "Describe what you see in this image"
             history_text = f"[Image] {user_text}"
             await conversation.add_message(msg.from_number, "user", history_text, msg.message_id)
@@ -365,17 +388,37 @@ async def _handle_message(
             logger.exception("Failed to send WhatsApp message")
         return
 
+    # Onboarding interception: handle before normal flow
+    if in_onboarding:
+        try:
+            next_state, reply, new_data = await handle_onboarding_message(
+                msg.text,
+                profile_row["onboarding_state"],
+                profile_row["data"],
+                ollama_client,
+            )
+            await repository.save_user_profile(msg.from_number, next_state, new_data)
+            await wa_client.send_message(msg.from_number, reply)
+        except Exception:
+            logger.exception("Onboarding step failed")
+            await wa_client.send_message(
+                msg.from_number,
+                "Sorry, something went wrong. Please try again.",
+            )
+        return
+
     # Normal message flow (text or transcribed audio)
     user_text = msg.text
     if msg.type == "audio":
         user_text = f"[Audio] {msg.text}"
 
-    # Inject current date into system prompt (date only — for current time
-    # the LLM should call get_current_datetime, which is more reliable than
-    # the LLM trying to do timezone math from a UTC timestamp)
+    # Inject current date + user profile into system prompt
+    # (date only — for current time the LLM should call get_current_datetime)
     now = datetime.datetime.now(datetime.timezone.utc)
     current_date = now.strftime("%Y-%m-%d")
-    system_prompt_with_date = f"{settings.system_prompt}\nCurrent Date: {current_date}"
+    system_prompt_with_date = build_system_prompt(
+        settings.system_prompt, profile_row["data"], current_date,
+    )
 
     # Reply context: prepend quoted message if replying (sequential, needs result before Phase A)
     if msg.reply_to_message_id:
@@ -453,6 +496,20 @@ async def _handle_message(
         await wa_client.send_message(msg.from_number, markdown_to_whatsapp(reply))
     except Exception:
         logger.exception("Failed to send WhatsApp message")
+
+    # Increment profile message count and maybe run progressive discovery
+    if settings.onboarding_enabled:
+        new_count = await repository.increment_profile_message_count(msg.from_number)
+        _track_task(asyncio.create_task(
+            maybe_discover_profile_updates(
+                msg.from_number,
+                new_count,
+                settings.profile_discovery_interval,
+                repository,
+                ollama_client,
+                settings,
+            )
+        ))
 
     # Summarize in background if needed
     _track_task(asyncio.create_task(

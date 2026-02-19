@@ -75,4 +75,8 @@ class Settings(BaseSettings):
     semantic_search_top_k: int = 10
     memory_file_watch_enabled: bool = True
 
+    # User profiles & onboarding (Phase 8)
+    onboarding_enabled: bool = True
+    profile_discovery_interval: int = 10  # messages between progressive discovery runs
+
     model_config = {"env_file": ".env"}

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import struct
 
 import aiosqlite
@@ -304,6 +305,70 @@ class Repository:
             Note(id=r[0], title=r[1], content=r[2], created_at=r[3])
             for r in rows
         ]
+
+    # --- User Profiles ---
+
+    async def get_user_profile(self, phone_number: str) -> dict:
+        """Return user profile dict, creating the row if it doesn't exist yet."""
+        cursor = await self._conn.execute(
+            "SELECT onboarding_state, data, message_count FROM user_profiles WHERE phone_number = ?",
+            (phone_number,),
+        )
+        row = await cursor.fetchone()
+        if row:
+            return {
+                "onboarding_state": row[0],
+                "data": json.loads(row[1]),
+                "message_count": row[2],
+            }
+        # Create on first access
+        await self._conn.execute(
+            "INSERT OR IGNORE INTO user_profiles (phone_number) VALUES (?)",
+            (phone_number,),
+        )
+        await self._conn.commit()
+        return {"onboarding_state": "pending", "data": {}, "message_count": 0}
+
+    async def save_user_profile(self, phone_number: str, state: str, data: dict) -> None:
+        """Upsert user profile state and data."""
+        await self._conn.execute(
+            "INSERT INTO user_profiles (phone_number, onboarding_state, data, updated_at) "
+            "VALUES (?, ?, ?, datetime('now')) "
+            "ON CONFLICT(phone_number) DO UPDATE SET "
+            "onboarding_state = excluded.onboarding_state, "
+            "data = excluded.data, "
+            "updated_at = excluded.updated_at",
+            (phone_number, state, json.dumps(data, ensure_ascii=False)),
+        )
+        await self._conn.commit()
+
+    async def increment_profile_message_count(self, phone_number: str) -> int:
+        """Atomically increment message_count and return the new value."""
+        await self._conn.execute(
+            "INSERT INTO user_profiles (phone_number, message_count) VALUES (?, 1) "
+            "ON CONFLICT(phone_number) DO UPDATE SET "
+            "message_count = message_count + 1, updated_at = datetime('now')",
+            (phone_number,),
+        )
+        await self._conn.commit()
+        cursor = await self._conn.execute(
+            "SELECT message_count FROM user_profiles WHERE phone_number = ?",
+            (phone_number,),
+        )
+        row = await cursor.fetchone()
+        return row[0] if row else 1
+
+    async def reset_user_profile(self, phone_number: str) -> None:
+        """Reset profile to pending state (for /setup command)."""
+        await self._conn.execute(
+            "INSERT INTO user_profiles (phone_number, onboarding_state, data, message_count) "
+            "VALUES (?, 'pending', '{}', 0) "
+            "ON CONFLICT(phone_number) DO UPDATE SET "
+            "onboarding_state = 'pending', data = '{}', message_count = 0, "
+            "updated_at = datetime('now')",
+            (phone_number,),
+        )
+        await self._conn.commit()
 
     async def get_unembedded_notes(self) -> list[tuple[int, str, str]]:
         cursor = await self._conn.execute(

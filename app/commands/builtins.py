@@ -117,6 +117,14 @@ async def _save_session_snapshot(conv_id: int, context: CommandContext) -> None:
     logger.info("Saved session snapshot: %s", path.name)
 
 
+async def cmd_setup(args: str, context: CommandContext) -> str:
+    await context.repository.reset_user_profile(context.phone_number)
+    return (
+        "Tu perfil ha sido reiniciado. "
+        "Envíame cualquier mensaje y empezamos de cero."
+    )
+
+
 async def cmd_help(args: str, context: CommandContext) -> str:
     registry: CommandRegistry = context.registry
     lines = ["*Available commands:*"]
@@ -181,6 +189,12 @@ def register_builtins(registry: CommandRegistry) -> None:
         description="Borrar historial de conversación",
         usage="/clear",
         handler=cmd_clear,
+    ))
+    registry.register(CommandSpec(
+        name="setup",
+        description="Reiniciar tu perfil y volver a empezar el onboarding",
+        usage="/setup",
+        handler=cmd_setup,
     ))
     registry.register(CommandSpec(
         name="help",
