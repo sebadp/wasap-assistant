@@ -296,6 +296,26 @@ def _build_capabilities_section(
     return header + "\n\n" + "\n\n".join(sections)
 
 
+async def _get_active_projects_summary(phone_number: str, repository) -> str | None:
+    """Build a brief projects status line for the LLM context. Returns None if no active projects."""
+    try:
+        projects = await repository.list_projects(phone_number, status="active")
+        if not projects:
+            return None
+        capped = projects[:5]
+        lines = ["Active projects:"]
+        for p in capped:
+            progress = await repository.get_project_progress(p.id)
+            total = progress["total"]
+            done = progress["done"]
+            pct = int(done / total * 100) if total > 0 else 0
+            lines.append(f"  - {p.name}: {done}/{total} tasks ({pct}%)")
+        return "\n".join(lines)
+    except Exception:
+        logger.warning("Failed to fetch active projects summary", exc_info=True)
+        return None
+
+
 def _build_context(
     system_prompt: str,
     memories: list[str],
@@ -304,12 +324,15 @@ def _build_context(
     skills_summary: str | None,
     summary: str | None,
     history: list[ChatMessage],
+    projects_summary: str | None = None,
 ) -> list[ChatMessage]:
     """Build LLM context from pre-fetched data (sync, no DB calls)."""
     context = [ChatMessage(role="system", content=system_prompt)]
     if memories:
         memory_block = "Important user information:\n" + "\n".join(f"- {m}" for m in memories)
         context.append(ChatMessage(role="system", content=memory_block))
+    if projects_summary:
+        context.append(ChatMessage(role="system", content=projects_summary))
     if relevant_notes:
         notes_block = "Relevant notes:\n" + "\n".join(
             f"- [{n.id}] {n.title}: {n.content[:200]}" for n in relevant_notes
@@ -501,12 +524,13 @@ async def _handle_message(
         daily_log.load_recent(days=settings.daily_log_days),
     )
 
-    # Phase B (parallel): search memories || search notes || get summary || get history
-    memories, relevant_notes, summary, history = await asyncio.gather(
+    # Phase B (parallel): search memories || search notes || get summary || get history || active projects
+    memories, relevant_notes, summary, history, projects_summary = await asyncio.gather(
         _get_memories(user_text, settings, ollama_client, repository, vec_available, query_embedding),
         _get_relevant_notes(query_embedding, settings, repository, vec_available),
         repository.get_latest_summary(conv_id),
         repository.get_recent_messages(conv_id, settings.conversation_max_messages),
+        _get_active_projects_summary(msg.from_number, repository),
     )
 
     # Capabilities summary (sync, fast)
@@ -524,11 +548,14 @@ async def _handle_message(
     context = _build_context(
         system_prompt_with_date, memories, relevant_notes, daily_logs,
         skills_summary, summary, history,
+        projects_summary=projects_summary,
     )
 
-    # Set current user context for tools that need it (e.g. scheduler)
+    # Set current user context for tools that need it (e.g. scheduler, projects)
     from app.skills.tools.scheduler_tools import set_current_user
+    from app.skills.tools.project_tools import set_current_user as set_project_user
     set_current_user(msg.from_number, received_at=now)
+    set_project_user(msg.from_number)
 
     try:
         if has_tools:

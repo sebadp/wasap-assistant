@@ -39,6 +39,12 @@ TOOL_CATEGORIES: dict[str, list[str]] = {
         "install_mcp_server", "remove_mcp_server", "list_mcp_servers",
         "preview_skill_from_url", "install_skill_from_url", "reload_capabilities",
     ],
+    "projects": [
+        "create_project", "list_projects", "get_project",
+        "add_task", "update_task", "delete_task",
+        "project_progress", "update_project_status",
+        "add_project_note", "search_project_notes",
+    ],
 }
 
 DEFAULT_CATEGORIES = ["time", "math", "weather", "search"]
@@ -46,7 +52,7 @@ DEFAULT_CATEGORIES = ["time", "math", "weather", "search"]
 CLASSIFIER_PROMPT = (
     "Classify this message into tool categories. "
     "Reply with ONLY category names separated by commas, or \"none\".\n"
-    "Categories: time, math, weather, search, news, notes, files, memory, github, tools, selfcode, expand, none\n\n"
+    "Categories: time, math, weather, search, news, notes, files, memory, github, tools, selfcode, expand, projects, none\n\n"
     "Message: {user_message}"
 )
 

@@ -99,6 +99,7 @@ async def lifespan(app: FastAPI):
         vec_available=vec_available,
         settings=settings,
         mcp_manager=mcp_manager,
+        daily_log=daily_log,
     )
     app.state.skill_registry = skill_registry
 

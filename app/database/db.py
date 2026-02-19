@@ -61,6 +61,51 @@ CREATE TABLE IF NOT EXISTS user_profiles (
     created_at        TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at        TEXT NOT NULL DEFAULT (datetime('now'))
 );
+
+CREATE TABLE IF NOT EXISTS projects (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    phone_number TEXT NOT NULL,
+    name         TEXT NOT NULL,
+    description  TEXT NOT NULL DEFAULT '',
+    status       TEXT NOT NULL DEFAULT 'active'
+                 CHECK (status IN ('active', 'archived', 'completed')),
+    created_at   TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at   TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_projects_phone ON projects(phone_number, status);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_projects_phone_name ON projects(phone_number, name);
+
+CREATE TABLE IF NOT EXISTS project_tasks (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    project_id  INTEGER NOT NULL REFERENCES projects(id),
+    title       TEXT NOT NULL,
+    description TEXT NOT NULL DEFAULT '',
+    status      TEXT NOT NULL DEFAULT 'pending'
+                CHECK (status IN ('pending', 'in_progress', 'done')),
+    priority    TEXT NOT NULL DEFAULT 'medium'
+                CHECK (priority IN ('low', 'medium', 'high')),
+    due_date    TEXT,
+    created_at  TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at  TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_tasks_project ON project_tasks(project_id, status);
+
+CREATE TABLE IF NOT EXISTS project_activity (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    project_id INTEGER NOT NULL REFERENCES projects(id),
+    action     TEXT NOT NULL,
+    detail     TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_activity_project ON project_activity(project_id, created_at);
+
+CREATE TABLE IF NOT EXISTS project_notes (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    project_id INTEGER NOT NULL REFERENCES projects(id),
+    content    TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_pnotes_project ON project_notes(project_id);
 """
 
 VEC_SCHEMA_MEMORIES = (
@@ -69,6 +114,10 @@ VEC_SCHEMA_MEMORIES = (
 )
 VEC_SCHEMA_NOTES = (
     "CREATE VIRTUAL TABLE IF NOT EXISTS vec_notes "
+    "USING vec0(note_id INTEGER PRIMARY KEY, embedding float[{dims}])"
+)
+VEC_SCHEMA_PROJECT_NOTES = (
+    "CREATE VIRTUAL TABLE IF NOT EXISTS vec_project_notes "
     "USING vec0(note_id INTEGER PRIMARY KEY, embedding float[{dims}])"
 )
 
@@ -103,6 +152,7 @@ async def init_db(db_path: str, embedding_dims: int = 768) -> tuple[aiosqlite.Co
         # Create vector tables
         await conn.execute(VEC_SCHEMA_MEMORIES.format(dims=embedding_dims))
         await conn.execute(VEC_SCHEMA_NOTES.format(dims=embedding_dims))
+        await conn.execute(VEC_SCHEMA_PROJECT_NOTES.format(dims=embedding_dims))
         await conn.commit()
         vec_available = True
         logger.info("sqlite-vec loaded successfully (dims=%d)", embedding_dims)

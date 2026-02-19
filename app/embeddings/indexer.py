@@ -63,6 +63,21 @@ async def remove_note_embedding(
         logger.warning("Failed to delete embedding for note %d", note_id, exc_info=True)
 
 
+async def embed_project_note(
+    note_id: int,
+    content: str,
+    repository: Repository,
+    ollama_client: OllamaClient,
+    model: str,
+) -> None:
+    """Compute and store embedding for a project note. Best-effort."""
+    try:
+        embeddings = await ollama_client.embed([content], model=model)
+        await repository.save_project_note_embedding(note_id, embeddings[0])
+    except Exception:
+        logger.warning("Failed to embed project note %d", note_id, exc_info=True)
+
+
 async def backfill_embeddings(
     repository: Repository,
     ollama_client: OllamaClient,
