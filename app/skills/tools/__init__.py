@@ -15,6 +15,7 @@ def register_builtin_tools(
     embed_model: str | None = None,
     vec_available: bool = False,
     settings=None,
+    mcp_manager=None,
 ) -> None:
     from app.skills.tools.calculator_tools import register as register_calculator
     from app.skills.tools.datetime_tools import register as register_datetime
@@ -25,6 +26,7 @@ def register_builtin_tools(
     from app.skills.tools.scheduler_tools import register as register_scheduler
     from app.skills.tools.tool_manager_tools import register as register_tool_manager
     from app.skills.tools.selfcode_tools import register as register_selfcode
+    from app.skills.tools.expand_tools import register as register_expand
 
     register_datetime(registry)
     register_calculator(registry)
@@ -45,3 +47,5 @@ def register_builtin_tools(
             ollama_client=ollama_client,
             vec_available=vec_available,
         )
+    if settings is not None and mcp_manager is not None:
+        register_expand(registry, mcp_manager, settings)

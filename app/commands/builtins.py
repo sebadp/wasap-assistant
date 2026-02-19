@@ -125,6 +125,99 @@ async def cmd_setup(args: str, context: CommandContext) -> str:
     )
 
 
+async def cmd_review_skill(args: str, context: CommandContext) -> str:
+    name = args.strip()
+
+    # No args → list all skills and MCP servers
+    if not name:
+        lines = []
+
+        if context.skill_registry:
+            skills = context.skill_registry.list_skills()
+            if skills:
+                lines.append("*Skills:*")
+                for s in skills:
+                    tool_count = len(context.skill_registry.get_tools_for_skill(s.name))
+                    lines.append(f"- 🔧 {s.name} v{s.version} ({tool_count} tools) — {s.description}")
+
+        if context.mcp_manager:
+            servers = context.mcp_manager.list_servers()
+            if servers:
+                if lines:
+                    lines.append("")
+                lines.append("*MCP Servers:*")
+                for s in servers:
+                    icon = "🟢" if s["status"] == "connected" else "🔴"
+                    desc = f" — {s['description']}" if s.get("description") else ""
+                    lines.append(f"- {icon} {s['name']} ({s['status']}, {s['tools']} tools){desc}")
+
+        if not lines:
+            return "No skills or MCP servers installed."
+
+        lines.append("\nUse /review-skill <name> for details.")
+        return "\n".join(lines)
+
+    # Check if it's a skill
+    if context.skill_registry:
+        skill = context.skill_registry.get_skill(name)
+        if skill:
+            lines = [
+                f"*Skill: {skill.name}*",
+                f"Version: {skill.version}",
+                f"Description: {skill.description}",
+                "",
+                "*Tools:*",
+            ]
+            registered_tools = context.skill_registry.get_tools_for_skill(skill.name)
+            registered_names = {t.name for t in registered_tools}
+            for tool_name in skill.tools:
+                status = "✓" if tool_name in registered_names else "✗"
+                tool = next((t for t in registered_tools if t.name == tool_name), None)
+                desc = f" — {tool.description}" if tool else ""
+                lines.append(f"  {status} {tool_name}{desc}")
+            # Tools registered but not in SKILL.md
+            extra = registered_names - set(skill.tools)
+            for tool_name in sorted(extra):
+                tool = next(t for t in registered_tools if t.name == tool_name)
+                lines.append(f"  ✓ {tool_name} — {tool.description}")
+
+            if skill.instructions:
+                lines.append("")
+                lines.append("*Instructions:*")
+                lines.append(skill.instructions)
+
+            return "\n".join(lines)
+
+    # Check if it's an MCP server
+    if context.mcp_manager:
+        servers = context.mcp_manager.list_servers()
+        match = next((s for s in servers if s["name"] == name), None)
+        if match:
+            cfg = context.mcp_manager._server_configs.get(name, {})
+            server_type = cfg.get("type", "stdio")
+            lines = [
+                f"*MCP Server: {match['name']}*",
+                f"Status: {match['status']}",
+                f"Type: {server_type}",
+            ]
+            if match.get("description"):
+                lines.append(f"Description: {match['description']}")
+
+            # List tools from this server
+            tools = context.mcp_manager.get_tools()
+            server_tools = [t for t in tools.values() if t.skill_name == f"mcp::{name}"]
+            if server_tools:
+                lines.append(f"\n*Tools ({len(server_tools)}):*")
+                for t in server_tools:
+                    lines.append(f"  - {t.name}: {t.description}")
+            else:
+                lines.append("\nNo tools available.")
+
+            return "\n".join(lines)
+
+    return f"No skill or MCP server found with name '{name}'."
+
+
 async def cmd_help(args: str, context: CommandContext) -> str:
     registry: CommandRegistry = context.registry
     lines = ["*Available commands:*"]
@@ -195,6 +288,12 @@ def register_builtins(registry: CommandRegistry) -> None:
         description="Reiniciar tu perfil y volver a empezar el onboarding",
         usage="/setup",
         handler=cmd_setup,
+    ))
+    registry.register(CommandSpec(
+        name="review-skill",
+        description="Review installed skills or MCP servers",
+        usage="/review-skill [nombre]",
+        handler=cmd_review_skill,
     ))
     registry.register(CommandSpec(
         name="help",

@@ -36,15 +36,16 @@ app/
   skills/              # Sistema de skills y tool calling
     models.py          # ToolDefinition, ToolCall, ToolResult, SkillMetadata
     loader.py          # Parser de SKILL.md (frontmatter con regex, sin PyYAML)
-    registry.py        # SkillRegistry (registro, schemas Ollama, ejecucion) — get_skill(), get_tools_for_skill()
-    executor.py        # Tool calling loop (max 5 iteraciones)
-    router.py          # classify_intent, select_tools, TOOL_CATEGORIES (con selfcode)
+    registry.py        # SkillRegistry (registro, schemas Ollama, ejecucion) — get_skill(), get_tools_for_skill(), reload()
+    executor.py        # Tool calling loop (max 5 iteraciones) — reset_tools_cache()
+    router.py          # classify_intent, select_tools, TOOL_CATEGORIES — register_dynamic_category()
     tools/             # Handlers de tools builtin
       datetime_tools.py
       calculator_tools.py
       weather_tools.py
       notes_tools.py
       selfcode_tools.py  # Auto-inspección: version, source, config, health, search
+      expand_tools.py    # Auto-expansión: Smithery registry, hot-install MCP, skill from URL
   commands/             # Sistema de comandos (/remember, /forget, etc)
   conversation/         # ConversationManager + Summarizer (con pre-compaction flush)
   database/             # SQLite init + sqlite-vec + Repository
@@ -95,6 +96,9 @@ tests/
 - Reply context: si el usuario responde a un mensaje, se inyecta el texto citado en el prompt
 - SKILL.md: frontmatter parseado con regex (sin PyYAML), instrucciones se cargan lazy en primer uso
 - `selfcode` skill: `register()` recibe `settings` (no `repository`). `_PROJECT_ROOT` resuelto una sola vez al importar. `_is_safe_path()` previene path traversal + bloquea archivos sensibles. `_SENSITIVE` hardcodeado oculta tokens de WhatsApp en `get_runtime_config`. `register_builtin_tools` acepta `settings=None` — selfcode solo se registra si `settings` no es None
+- Hot-reload: `McpManager` usa `_server_stacks: dict[str, AsyncExitStack]` (uno por servidor) en lugar de un stack global — permite `hot_add_server()` / `hot_remove_server()` sin restart. `hot_add_server` persiste config + llama `reset_tools_cache()` + `register_dynamic_category()`. `SkillRegistry.reload()` re-escanea `skills/` y limpia `_loaded_instructions`. `reset_tools_cache()` en executor.py pone `_cached_tools_map = None`
+- MCP HTTP transport: `McpManager._connect_server()` detecta `cfg["type"]` — `"http"` usa `streamable_http_client(url)` (3-tuple read/write/session_id), `"stdio"` usa `stdio_client` (2-tuple). Servidores Smithery son siempre tipo `"http"`
+- `expand` skill: `register()` recibe `mcp_manager` (no `repository`). MCP manager se inicializa ANTES que skills en `main.py` para que `expand_tools` pueda referenciar el manager. Smithery API: `GET https://registry.smithery.ai/servers?q=<query>` — no requiere auth
 - Calculator: AST safe eval con whitelist estricta, NO eval() directo
 - Docker: container corre como `appuser` (UID=1000), no root
 - Memoria en 3 capas: semántica (MEMORY.md), episódica reciente (daily logs), episódica histórica (snapshots)
@@ -102,6 +106,7 @@ tests/
 - Dedup de facts: `difflib.SequenceMatcher(ratio > 0.8)` contra memorias existentes
 - Session snapshots: `/clear` guarda últimos 15 msgs con slug LLM-generated en `data/memory/snapshots/`
 - Memory consolidation: LLM revisa memorias para duplicados/contradicciones después del flush
+- `/review-skill` command: sin args lista skills + MCP servers; con nombre muestra detalle (tools, estado, instrucciones para skills; tipo, estado, tools para MCP)
 - `CommandContext` tiene `ollama_client`, `daily_log` y `embed_model` para snapshot generation y auto-indexing
 - Búsqueda semántica: `_get_query_embedding()` se computa una vez y se reutiliza para memorias + notas
 - `init_db()` retorna `(conn, vec_available)` — fallback graceful si sqlite-vec no disponible

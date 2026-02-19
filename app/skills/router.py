@@ -34,6 +34,11 @@ TOOL_CATEGORIES: dict[str, list[str]] = {
         "get_runtime_config", "get_system_health",
         "search_source_code", "get_skill_details",
     ],
+    "expand": [
+        "search_mcp_registry", "get_mcp_server_info", "install_from_smithery",
+        "install_mcp_server", "remove_mcp_server", "list_mcp_servers",
+        "preview_skill_from_url", "install_skill_from_url", "reload_capabilities",
+    ],
 }
 
 DEFAULT_CATEGORIES = ["time", "math", "weather", "search"]
@@ -41,9 +46,25 @@ DEFAULT_CATEGORIES = ["time", "math", "weather", "search"]
 CLASSIFIER_PROMPT = (
     "Classify this message into tool categories. "
     "Reply with ONLY category names separated by commas, or \"none\".\n"
-    "Categories: time, math, weather, search, news, notes, files, memory, github, tools, selfcode, none\n\n"
+    "Categories: time, math, weather, search, news, notes, files, memory, github, tools, selfcode, expand, none\n\n"
     "Message: {user_message}"
 )
+
+
+def register_dynamic_category(category: str, tool_names: list[str]) -> None:
+    """Add or update a category in TOOL_CATEGORIES at runtime.
+
+    Used by McpManager when hot-adding servers so the classifier can
+    route messages to the new tools.
+    """
+    existing = TOOL_CATEGORIES.get(category, [])
+    # Merge without duplicates, preserving order
+    merged = list(existing)
+    for name in tool_names:
+        if name not in merged:
+            merged.append(name)
+    TOOL_CATEGORIES[category] = merged
+    logger.info("Dynamic category registered: %s (%d tools)", category, len(merged))
 
 
 async def classify_intent(

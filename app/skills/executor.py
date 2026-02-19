@@ -48,6 +48,17 @@ def _get_cached_tools_map(
     return _cached_tools_map
 
 
+def reset_tools_cache() -> None:
+    """Invalidate the cached tools map so it rebuilds on the next request.
+
+    Call this after hot-adding or hot-removing MCP servers, or after
+    reloading skills, to ensure the executor picks up the new tools.
+    """
+    global _cached_tools_map
+    _cached_tools_map = None
+    logger.info("Tools cache invalidated")
+
+
 async def _run_tool_call(
     tc: dict,
     skill_registry: SkillRegistry,
