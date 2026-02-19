@@ -1,26 +1,54 @@
 # Environment
 .env
+.env.*
+!.env.example
 
 # Python
 __pycache__/
 *.py[cod]
 *$py.class
+*.so
+*.egg
 *.egg-info/
 dist/
 build/
+.eggs/
+
+# Virtual environment
+.venv/
+venv/
+env/
+
+# SQLite databases
+*.db
+*.db-shm
+*.db-wal
 
 # IDE
 .idea/
 .vscode/
 *.swp
 *.swo
+*~
 
 # OS
 .DS_Store
 Thumbs.db
 
-# Data (SQLite DB, personal memories)
+# Data (SQLite DB, personal memories, logs)
 data/
 
-# Docker
+# Docker volumes
 ollama_data/
+
+# Testing / coverage
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Type checking / linting
+.mypy_cache/
+.ruff_cache/
+
+# Scripts personales
+fix_nvidia.sh
