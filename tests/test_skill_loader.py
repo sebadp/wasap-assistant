@@ -1,6 +1,4 @@
-from pathlib import Path
-
-from app.skills.loader import parse_frontmatter, load_skill_metadata, scan_skills_directory
+from app.skills.loader import load_skill_metadata, parse_frontmatter, scan_skills_directory
 
 
 def test_parse_frontmatter_basic():

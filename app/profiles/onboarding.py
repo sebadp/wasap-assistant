@@ -61,7 +61,9 @@ async def handle_onboarding_message(
     if state == "naming":
         # Extract confirmed name from user reply
         assistant_name = await _extract_field(
-            "assistant name chosen by the user", user_reply, ollama_client,
+            "assistant name chosen by the user",
+            user_reply,
+            ollama_client,
         )
         if not assistant_name:
             assistant_name = "Wasi"
@@ -184,7 +186,10 @@ async def _extract_field(field_description: str, user_reply: str, ollama_client)
         f"User message: {user_reply}"
     )
     messages = [
-        ChatMessage(role="system", content="You are a precise information extractor. Output only the requested value."),
+        ChatMessage(
+            role="system",
+            content="You are a precise information extractor. Output only the requested value.",
+        ),
         ChatMessage(role="user", content=prompt),
     ]
     response = await ollama_client.chat_with_tools(messages, think=False)

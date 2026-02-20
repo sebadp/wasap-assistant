@@ -18,7 +18,7 @@ async def test_sync_empty_memories(memory_file):
     await memory_file.sync([])
     content = memory_file._path.read_text()
     assert "# Memories" in content
-    lines = [l for l in content.strip().split("\n") if l.startswith("- ")]
+    lines = [line for line in content.strip().split("\n") if line.startswith("- ")]
     assert len(lines) == 0
 
 

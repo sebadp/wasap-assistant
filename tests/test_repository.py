@@ -1,6 +1,3 @@
-import pytest
-
-
 async def test_get_or_create_conversation(repository):
     conv_id = await repository.get_or_create_conversation("5491112345678")
     assert conv_id is not None
@@ -133,6 +130,7 @@ async def test_delete_old_messages(repository):
 
 # --- Deduplication ---
 
+
 async def test_try_claim_message_first_time(repository):
     result = await repository.try_claim_message("wamid.new")
     assert result is False  # Not a duplicate
@@ -145,6 +143,7 @@ async def test_try_claim_message_duplicate(repository):
 
 
 # --- Reply context ---
+
 
 async def test_get_message_by_wa_id(repository):
     conv_id = await repository.get_or_create_conversation("123")
@@ -162,6 +161,7 @@ async def test_get_message_by_wa_id_not_found(repository):
 
 
 # --- Notes ---
+
 
 async def test_save_and_list_notes(repository):
     note_id = await repository.save_note("Test Title", "Test content")
@@ -203,3 +203,65 @@ async def test_delete_note(repository):
 async def test_delete_nonexistent_note(repository):
     deleted = await repository.delete_note(999)
     assert deleted is False
+
+
+# --- Dashboard queries (Iteración 6) ---
+
+
+async def _insert_trace(conn, trace_id: str, status: str = "completed") -> None:
+    """Helper to insert a trace row directly."""
+    await conn.execute(
+        "INSERT INTO traces (id, phone_number, input_text, message_type, status) "
+        "VALUES (?, '123', 'test', 'text', ?)",
+        (trace_id, status),
+    )
+    await conn.commit()
+
+
+async def test_get_failure_trend_returns_empty_when_no_traces(repository):
+    rows = await repository.get_failure_trend(days=7)
+    assert rows == []
+
+
+async def test_get_failure_trend_counts_correctly(repository):
+    await _insert_trace(repository._conn, "t1", "completed")
+    await _insert_trace(repository._conn, "t2", "failed")
+    await _insert_trace(repository._conn, "t3", "completed")
+
+    rows = await repository.get_failure_trend(days=30)
+    assert len(rows) == 1  # all inserted today
+    row = rows[0]
+    assert row["total"] == 3
+    assert row["failed"] == 1
+
+
+async def test_get_score_distribution_returns_empty_when_no_scores(repository):
+    rows = await repository.get_score_distribution()
+    assert rows == []
+
+
+async def test_get_score_distribution_groups_by_check(repository):
+    await _insert_trace(repository._conn, "trace_sd1", "completed")
+    await repository._conn.execute(
+        "INSERT INTO trace_scores (trace_id, name, value, source) VALUES (?, ?, ?, ?)",
+        ("trace_sd1", "language_match", 1.0, "system"),
+    )
+    await repository._conn.execute(
+        "INSERT INTO trace_scores (trace_id, name, value, source) VALUES (?, ?, ?, ?)",
+        ("trace_sd1", "language_match", 0.0, "system"),
+    )
+    await repository._conn.execute(
+        "INSERT INTO trace_scores (trace_id, name, value, source) VALUES (?, ?, ?, ?)",
+        ("trace_sd1", "not_empty", 1.0, "system"),
+    )
+    await repository._conn.commit()
+
+    rows = await repository.get_score_distribution()
+    assert len(rows) == 2
+
+    by_check = {r["check"]: r for r in rows}
+    assert "language_match" in by_check
+    assert by_check["language_match"]["count"] == 2
+    assert by_check["language_match"]["failures"] == 1
+    assert "not_empty" in by_check
+    assert by_check["not_empty"]["failures"] == 0

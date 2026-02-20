@@ -1,4 +1,5 @@
 """Tests for OllamaClient.embed() and sqlite-vec setup."""
+
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -20,9 +21,7 @@ async def test_embed_returns_vectors(ollama_client):
     mock_response = MagicMock()
     mock_response.status_code = 200
     mock_response.raise_for_status = MagicMock()
-    mock_response.json.return_value = {
-        "embeddings": [[0.1] * 768, [0.2] * 768]
-    }
+    mock_response.json.return_value = {"embeddings": [[0.1] * 768, [0.2] * 768]}
     ollama_client._http.post = AsyncMock(return_value=mock_response)
 
     result = await ollama_client.embed(["hello", "world"], model="nomic-embed-text")

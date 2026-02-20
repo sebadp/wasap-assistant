@@ -1,4 +1,4 @@
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock
 
 from app.llm.client import ChatResponse
 from app.skills.router import (
@@ -26,9 +26,7 @@ def _make_tools_map(names: list[str]) -> dict[str, dict]:
 
 def _mock_ollama(response_text: str) -> AsyncMock:
     client = AsyncMock()
-    client.chat_with_tools = AsyncMock(
-        return_value=ChatResponse(content=response_text)
-    )
+    client.chat_with_tools = AsyncMock(return_value=ChatResponse(content=response_text))
     client.chat = AsyncMock(return_value="plain reply")
     return client
 
@@ -111,11 +109,7 @@ def test_select_multiple_categories():
 
 def test_select_respects_max_tools():
     # Create tools for many categories
-    all_names = (
-        TOOL_CATEGORIES["time"]
-        + TOOL_CATEGORIES["notes"]
-        + TOOL_CATEGORIES["weather"]
-    )
+    all_names = TOOL_CATEGORIES["time"] + TOOL_CATEGORIES["notes"] + TOOL_CATEGORIES["weather"]
     tools_map = _make_tools_map(all_names)
     result = select_tools(["time", "notes", "weather"], tools_map, max_tools=3)
     assert len(result) == 3

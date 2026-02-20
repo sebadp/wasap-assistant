@@ -27,7 +27,7 @@ Antes de modificar un módulo, identificar su dominio. Las reglas de un dominio 
 
 | Dominio | Archivos clave | No tocar sin leer |
 |---|---|---|
-| Pipeline principal de mensajes | `app/webhook/router.py` | Fases A/B/C/D paralelas, `_build_context()` |
+| Pipeline principal de mensajes | `app/webhook/router.py` | Fases A/B/C/D paralelas, `_build_context()`, `_run_normal_flow()` |
 | Tool calling loop | `app/skills/executor.py` | Cache `_cached_tools_map`, `_run_tool_call()` |
 | Skills registry | `app/skills/registry.py`, `skills/*/SKILL.md` | Frontmatter parsing con regex (sin PyYAML) |
 | MCP servers | `app/mcp/` | `_server_stacks` (por servidor), hot-reload |
@@ -37,6 +37,8 @@ Antes de modificar un módulo, identificar su dominio. Las reglas de un dominio 
 | Base de datos | `app/database/` | sqlite-vec, serialización de vectores |
 | WhatsApp API | `app/whatsapp/` | HMAC validation, rate limiter |
 | LLM client | `app/llm/client.py` | `think: True` incompatible con tools en qwen3 |
+| Guardrails | `app/guardrails/` | Fail-open, single-shot remediation, langdetect umbral 30 chars |
+| Trazabilidad | `app/tracing/` | contextvars propagation, best-effort recorder |
 
 ---
 
@@ -154,16 +156,21 @@ El `SKILL.md` define la "personalidad" del skill: cuándo usarlo, cómo responde
 | 6 | Búsqueda semántica y RAG (sqlite-vec, embeddings) |
 | 7 | Performance optimization (parallelismo, caches) |
 
-### Próxima dirección documentada
+### Eval — Arquitectura de Evaluación y Mejora Continua
 
-`docs/exec-plans/eval_implementation_plan.md` — Arquitectura de Evaluación y Mejora Continua:
+Plan completo: `docs/exec-plans/eval_implementation_plan.md`
 
-1. **Guardrails** — Validación pre-entrega (language match, PII, no vacío)
-2. **Trazabilidad** — Spans jerárquicos en SQLite (traces, trace_spans, trace_scores)
-3. **Evaluación en 3 capas** — Señales implícitas + DeepEval + feedback humano
-4. **Dataset vivo** — Curación automática de golden/failure pairs
-5. **Auto-evolución** — Memorias de auto-corrección + prompt versioning
-6. **Self-eval skill** — El agente diagnostica sus propias fallas via WhatsApp
+| Iteración | Estado | Descripción |
+|---|---|---|
+| 0 | ✅ | `WhatsAppClient.send_message()` retorna `wa_message_id` |
+| 1 | ✅ | Guardrails determinísticos + Trazabilidad estructurada (SQLite) |
+| 2 | ✅ | Señales de usuario: reacciones WA, `/feedback`, `/rate`, detección de correcciones |
+| 3 | ✅ | Dataset vivo: `eval_dataset` + curación automática 3-tier + exportador JSONL |
+| 4 | ✅ | Eval skill (`skills/eval/`) + 9 tools + evaluadores offline con Ollama |
+| 5 | ✅ | Auto-evolución: memorias de auto-corrección + prompt versioning + `/approve-prompt` |
+| 6 | ✅ | LLM guardrails, span instrumentation de tools, cleanup job, dashboard queries |
+
+Docs: `docs/features/eval_guardrails_tracing.md`, `docs/features/eval_user_signals.md`, `docs/features/eval_dataset.md`, `docs/features/eval_skill.md`, `docs/features/eval_auto_evolution.md`, `docs/features/eval_maduración.md`
 
 ---
 

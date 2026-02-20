@@ -1,15 +1,13 @@
 """Tests for user profile onboarding, discovery, and prompt building."""
+
 from __future__ import annotations
 
 from unittest.mock import AsyncMock, MagicMock
-
-import pytest
 
 from app.llm.client import ChatResponse
 from app.profiles.discovery import _parse_json_safe, maybe_discover_profile_updates
 from app.profiles.onboarding import handle_onboarding_message
 from app.profiles.prompt_builder import build_system_prompt
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -45,7 +43,7 @@ async def test_onboarding_step_1_extracts_name():
     # LLM extract returns "Alice", then asks occupation
     ollama = MagicMock()
     responses = [
-        ChatResponse(content="Alice"),           # _extract_field call
+        ChatResponse(content="Alice"),  # _extract_field call
         ChatResponse(content="What do you do?"),  # _ask_occupation call
     ]
     ollama.chat_with_tools = AsyncMock(side_effect=responses)
@@ -84,7 +82,7 @@ async def test_onboarding_step_3_extracts_use_cases():
     ollama = MagicMock()
     responses = [
         ChatResponse(content="coding help and research"),  # _extract_field
-        ChatResponse(content="How about Aria or Nova?"),   # _propose_names
+        ChatResponse(content="How about Aria or Nova?"),  # _propose_names
     ]
     ollama.chat_with_tools = AsyncMock(side_effect=responses)
 
@@ -101,7 +99,7 @@ async def test_onboarding_step_3_extracts_use_cases():
 async def test_onboarding_naming_extracts_assistant_name():
     ollama = MagicMock()
     responses = [
-        ChatResponse(content="Aria"),          # _extract_field
+        ChatResponse(content="Aria"),  # _extract_field
         ChatResponse(content="Welcome! I'm Aria, ready to help!"),  # _generate_welcome
     ]
     ollama.chat_with_tools = AsyncMock(side_effect=responses)
@@ -121,7 +119,7 @@ async def test_onboarding_naming_fallback_name():
     """If extraction returns empty string, default to 'Wasi'."""
     ollama = MagicMock()
     responses = [
-        ChatResponse(content=""),   # extraction fails → empty
+        ChatResponse(content=""),  # extraction fails → empty
         ChatResponse(content="Welcome! I'm Wasi!"),
     ]
     ollama.chat_with_tools = AsyncMock(side_effect=responses)
@@ -140,7 +138,7 @@ async def test_onboarding_preserves_existing_data():
     """Data from previous steps should be preserved at each transition."""
     ollama = MagicMock()
     responses = [
-        ChatResponse(content=""),              # extraction returns nothing
+        ChatResponse(content=""),  # extraction returns nothing
         ChatResponse(content="What do you do?"),
     ]
     ollama.chat_with_tools = AsyncMock(side_effect=responses)
@@ -229,7 +227,9 @@ async def test_save_user_profile(repository):
 
 async def test_save_user_profile_upsert(repository):
     await repository.save_user_profile("5491100000004", "step_1", {"name": "D"})
-    await repository.save_user_profile("5491100000004", "complete", {"name": "D", "assistant_name": "Nova"})
+    await repository.save_user_profile(
+        "5491100000004", "complete", {"name": "D", "assistant_name": "Nova"}
+    )
     profile = await repository.get_user_profile("5491100000004")
     assert profile["onboarding_state"] == "complete"
     assert profile["data"]["assistant_name"] == "Nova"
@@ -245,7 +245,9 @@ async def test_increment_profile_message_count(repository):
 
 
 async def test_reset_user_profile(repository):
-    await repository.save_user_profile("5491100000006", "complete", {"name": "E", "assistant_name": "Max"})
+    await repository.save_user_profile(
+        "5491100000006", "complete", {"name": "E", "assistant_name": "Max"}
+    )
     await repository.increment_profile_message_count("5491100000006")
     await repository.reset_user_profile("5491100000006")
     profile = await repository.get_user_profile("5491100000006")

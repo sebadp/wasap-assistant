@@ -1,4 +1,5 @@
 """Tests for sqlite-vec repository methods."""
+
 import pytest
 
 from app.database.db import init_db
@@ -107,5 +108,8 @@ async def test_get_unembedded_notes(vec_repo):
 
 async def test_init_db_returns_vec_available():
     conn, vec_available = await init_db(":memory:")
+    if not vec_available:
+        await conn.close()
+        pytest.skip("sqlite-vec not available in this environment")
     assert vec_available is True
     await conn.close()

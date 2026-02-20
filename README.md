@@ -239,7 +239,10 @@ Variables de entorno (ver [.env.example](.env.example)):
 ## Tests
 
 ```bash
-# Con el venv local
+# Con el venv local (requiere make dev primero)
+make test
+
+# O directo
 .venv/bin/python -m pytest tests/ -v
 
 # Con Docker
@@ -247,6 +250,38 @@ docker compose run --rm wasap python -m pytest tests/ -v
 ```
 
 316 tests cubriendo: repository, conversation manager, comandos, parser, markdown memory, summarizer, daily logs, memory flush, session snapshots, consolidator, embeddings, sqlite-vec, semantic search, memory watcher, webhook (verificación, mensajes, comandos), health check, cliente Ollama, cliente WhatsApp, validación de firma, skill loader, skill registry, tool executor, tool router, MCP, y cada skill (datetime, calculator, weather, notes, search, news, scheduler, tools).
+
+## Desarrollo local
+
+```bash
+# Instalar deps + pre-commit hooks
+make dev
+
+# Lint + typecheck + tests (todo junto antes de commitear)
+make check
+
+# Por separado
+make lint       # ruff check
+make format     # ruff format
+make typecheck  # mypy app/
+make test       # pytest
+```
+
+## CI/CD
+
+Tres jobs en GitHub Actions (`.github/workflows/ci.yml`), trigger en push/PR a `master`:
+
+| Job | Qué hace |
+|-----|----------|
+| `lint` | `ruff check` + `ruff format --check` |
+| `typecheck` | `mypy app/` |
+| `test` | `pytest` (depende de que pasen lint y typecheck) |
+
+En PRs también corre `.github/workflows/ai-review.yml`:
+- **AI Code Review**: analiza el diff con Gemini 2.0-flash y postea un comment
+- **AI PR Description**: genera título y cuerpo del PR automáticamente (solo en PRs nuevos)
+
+Requiere configurar el secret `GEMINI_API_KEY` en GitHub → Settings → Secrets → Actions.
 
 ## Docker
 
@@ -288,5 +323,6 @@ sudo chown -R $(id -u):$(id -g) data/
 - [x] **Fase 4**: Skills y herramientas (tool calling, datetime, calculator, weather, notes) + reliability (dedup atómico, reply context, graceful shutdown)
 - [x] **Fase 5**: Memoria avanzada (daily logs, pre-compaction flush, session snapshots, consolidación)
 - [x] **Fase 6**: Búsqueda semántica (embeddings, sqlite-vec, RAG, MEMORY.md bidireccional)
+- [x] **Fase 7**: CI/CD — pre-commit hooks (ruff, mypy, pytest) + GitHub Actions + AI code review
 
 Ver [PRODUCT_PLAN.md](PRODUCT_PLAN.md) para el detalle de cada fase.

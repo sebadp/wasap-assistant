@@ -79,4 +79,18 @@ class Settings(BaseSettings):
     onboarding_enabled: bool = True
     profile_discovery_interval: int = 10  # messages between progressive discovery runs
 
+    # Guardrails (Fase 1)
+    guardrails_enabled: bool = True
+    guardrails_language_check: bool = True
+    guardrails_pii_check: bool = True
+    guardrails_llm_checks: bool = False  # Activar en Iteración 6
+
+    # Tracing (Fase 2)
+    tracing_enabled: bool = True
+    tracing_sample_rate: float = 1.0  # 1.0 = trace everything
+    trace_retention_days: int = 90
+
+    # Evaluation (Fase 3+)
+    eval_auto_curate: bool = True
+
     model_config = {"env_file": ".env"}

@@ -52,12 +52,18 @@ class WhatsAppClient:
             )
         resp.raise_for_status()
 
-    async def send_message(self, to: str, text: str) -> None:
+    async def send_message(self, to: str, text: str) -> str | None:
+        """Send message (splitting if needed). Returns wa_message_id of first chunk."""
         chunks = split_message(text)
-        for chunk in chunks:
-            await self._send_single_message(to, chunk)
+        first_id: str | None = None
+        for i, chunk in enumerate(chunks):
+            msg_id = await self._send_single_message(to, chunk)
+            if i == 0:
+                first_id = msg_id
+        return first_id
 
-    async def _send_single_message(self, to: str, text: str) -> None:
+    async def _send_single_message(self, to: str, text: str) -> str | None:
+        """Send a single message chunk. Returns wa_message_id from Graph API, or None."""
         to = self._normalize_ar_number(to)
         url = f"{self._base_url}/messages"
         payload = {
@@ -71,6 +77,10 @@ class WhatsAppClient:
             logger.error("Send failed [%s] %s: %s", to, resp.status_code, resp.text)
         self._check_auth_error(resp)
         logger.info("Outgoing  [%s]: %s", to, text[:80])
+        try:
+            return resp.json()["messages"][0]["id"]
+        except (KeyError, IndexError):
+            return None
 
     async def mark_as_read(self, message_id: str) -> None:
         url = f"{self._base_url}/messages"

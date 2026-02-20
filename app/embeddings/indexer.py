@@ -1,4 +1,5 @@
 """High-level embedding operations for memories and notes."""
+
 from __future__ import annotations
 
 import logging
@@ -94,11 +95,13 @@ async def backfill_embeddings(
         texts = [content for _, content in batch]
         try:
             embeddings = await ollama_client.embed(texts, model=model)
-            for (mem_id, _), emb in zip(batch, embeddings):
+            for (mem_id, _), emb in zip(batch, embeddings, strict=False):
                 await repository.save_embedding(mem_id, emb)
                 count += 1
         except Exception:
-            logger.warning("Failed to backfill memory batch %d-%d", i, i + len(batch), exc_info=True)
+            logger.warning(
+                "Failed to backfill memory batch %d-%d", i, i + len(batch), exc_info=True
+            )
 
     if count:
         logger.info("Backfilled %d memory embeddings", count)
@@ -121,7 +124,7 @@ async def backfill_note_embeddings(
         texts = [f"{title}: {content}" for _, title, content in batch]
         try:
             embeddings = await ollama_client.embed(texts, model=model)
-            for (note_id, _, _), emb in zip(batch, embeddings):
+            for (note_id, _, _), emb in zip(batch, embeddings, strict=False):
                 await repository.save_note_embedding(note_id, emb)
                 count += 1
         except Exception:

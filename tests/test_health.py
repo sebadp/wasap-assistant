@@ -16,9 +16,7 @@ def test_health_ok(client):
 def test_health_ollama_down(client):
     import httpx
 
-    client.app.state.ollama_client._http.get = AsyncMock(
-        side_effect=httpx.ConnectError("refused")
-    )
+    client.app.state.ollama_client._http.get = AsyncMock(side_effect=httpx.ConnectError("refused"))
 
     resp = client.get("/health")
     assert resp.status_code == 200

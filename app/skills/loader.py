@@ -31,7 +31,7 @@ def parse_frontmatter(text: str) -> tuple[dict[str, str | list[str]], str]:
             val = result.get(current_key)
             if not isinstance(val, list):
                 result[current_key] = []
-            result[current_key].append(list_match.group(1).strip())
+            result[current_key].append(list_match.group(1).strip())  # type: ignore[union-attr]
             continue
 
         # Key-value pair

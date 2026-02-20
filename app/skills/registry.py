@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 import logging
-from typing import Any, Callable, Awaitable
+from collections.abc import Awaitable, Callable
+from typing import Any
 
 from app.skills.loader import scan_skills_directory
 from app.skills.models import SkillMetadata, ToolCall, ToolDefinition, ToolResult
@@ -44,14 +45,16 @@ class SkillRegistry:
         """Return tool schemas in Ollama's expected format."""
         tools = []
         for tool in self._tools.values():
-            tools.append({
-                "type": "function",
-                "function": {
-                    "name": tool.name,
-                    "description": tool.description,
-                    "parameters": tool.parameters,
-                },
-            })
+            tools.append(
+                {
+                    "type": "function",
+                    "function": {
+                        "name": tool.name,
+                        "description": tool.description,
+                        "parameters": tool.parameters,
+                    },
+                }
+            )
         return tools
 
     def get_tools_summary(self) -> str:
@@ -142,6 +145,7 @@ class SkillRegistry:
             self._skills[skill.name] = skill
 
         from app.skills.executor import reset_tools_cache
+
         reset_tools_cache()
         logger.info("SkillRegistry reloaded: %d skills", len(new_skills))
         return len(new_skills)

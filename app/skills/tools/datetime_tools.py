@@ -1,13 +1,13 @@
 from __future__ import annotations
 
+import logging
 from datetime import datetime
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from app.skills.registry import SkillRegistry
 
-
-import logging
 logger = logging.getLogger(__name__)
+
 
 def register(registry: SkillRegistry) -> None:
     async def get_current_datetime(timezone: str = "UTC") -> str:
@@ -22,9 +22,7 @@ def register(registry: SkillRegistry) -> None:
         logger.info(f"Current datetime: {result}")
         return result
 
-    async def convert_timezone(
-        time: str, from_timezone: str, to_timezone: str
-    ) -> str:
+    async def convert_timezone(time: str, from_timezone: str, to_timezone: str) -> str:
         logger.info(f"convert_timezone: {time} from {from_timezone} to {to_timezone}")
         try:
             from_tz = ZoneInfo(from_timezone)

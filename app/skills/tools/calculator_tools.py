@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import ast
+import logging
 import math
 import operator
 
@@ -58,15 +59,15 @@ def _safe_eval_node(node: ast.AST) -> float:
         if op_type not in _ALLOWED_OPERATORS:
             raise ValueError(f"Unsupported operator: {op_type.__name__}")
         operand = _safe_eval_node(node.operand)
-        return _ALLOWED_OPERATORS[op_type](operand)
+        return _ALLOWED_OPERATORS[op_type](operand)  # type: ignore[operator]
 
     if isinstance(node, ast.BinOp):
-        op_type = type(node.op)
+        op_type = type(node.op)  # type: ignore[assignment]
         if op_type not in _ALLOWED_OPERATORS:
             raise ValueError(f"Unsupported operator: {op_type.__name__}")
         left = _safe_eval_node(node.left)
         right = _safe_eval_node(node.right)
-        return _ALLOWED_OPERATORS[op_type](left, right)
+        return _ALLOWED_OPERATORS[op_type](left, right)  # type: ignore[operator]
 
     if isinstance(node, ast.Call):
         if not isinstance(node.func, ast.Name):
@@ -75,7 +76,7 @@ def _safe_eval_node(node: ast.AST) -> float:
         if func_name not in _ALLOWED_FUNCTIONS:
             raise ValueError(f"Unknown function: {func_name}")
         args = [_safe_eval_node(arg) for arg in node.args]
-        return _ALLOWED_FUNCTIONS[func_name](*args)
+        return _ALLOWED_FUNCTIONS[func_name](*args)  # type: ignore[operator]
 
     raise ValueError(f"Unsupported expression: {type(node).__name__}")
 
@@ -86,9 +87,8 @@ def safe_eval(expression: str) -> float:
     return _safe_eval_node(tree)
 
 
-import logging
-
 logger = logging.getLogger(__name__)
+
 
 def register(registry: SkillRegistry) -> None:
 

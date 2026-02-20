@@ -1,16 +1,16 @@
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock, MagicMock
 from zoneinfo import ZoneInfo
 
 from app.skills.tools import scheduler_tools
 from app.skills.tools.scheduler_tools import (
-    schedule_task,
     list_schedules,
+    schedule_task,
     set_current_user,
     set_scheduler,
 )
 
-UTC = timezone.utc
+UTC = UTC
 
 
 def _setup_scheduler(received_at: datetime | None = None):

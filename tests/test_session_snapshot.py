@@ -97,7 +97,7 @@ async def test_clear_empty_conversation_no_snapshot(repository, tmp_path):
     daily_log = DailyLog(memory_dir=str(tmp_path / "memory"))
     memory_file = MemoryFile(path=str(tmp_path / "MEMORY.md"))
 
-    conv_id = await repository.get_or_create_conversation("5491112345678")
+    await repository.get_or_create_conversation("5491112345678")
 
     ollama = AsyncMock()
 

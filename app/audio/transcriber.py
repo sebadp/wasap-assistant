@@ -12,7 +12,9 @@ logger = logging.getLogger(__name__)
 
 class Transcriber:
     def __init__(self, model_size: str = "base", device: str = "cpu", compute_type: str = "int8"):
-        logger.info("Loading Whisper model: %s (device=%s, compute=%s)", model_size, device, compute_type)
+        logger.info(
+            "Loading Whisper model: %s (device=%s, compute=%s)", model_size, device, compute_type
+        )
         self._model = WhisperModel(model_size, device=device, compute_type=compute_type)
 
     def transcribe(self, audio_bytes: bytes) -> str:

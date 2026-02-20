@@ -268,18 +268,27 @@ Una vez que el chat funciona, probá los comandos:
 ## Tests automatizados
 
 ```bash
-# Desde la máquina host (con el venv)
+# Setup inicial (crea .venv, instala deps + pre-commit hooks)
+make dev
+
+# Correr todo: lint + typecheck + tests
+make check
+
+# Solo tests
+make test
+
+# O directo con el venv
 .venv/bin/python -m pytest tests/ -v
 
-# O desde el container
-docker compose exec wasap pytest tests/ -v
-```
-
-Para correr tests dentro del container, el Dockerfile ya incluye las dependencias. Si querés correr los tests de dev, podés agregar un step de build o montar el directorio:
-
-```bash
+# Desde el container Docker
 docker compose run --rm wasap python -m pytest tests/ -v
 ```
+
+Los pre-commit hooks corren automáticamente en cada `git commit`:
+1. **ruff** — lint con autofix
+2. **ruff-format** — formateo
+3. **mypy** — type checking sobre `app/`
+4. **pytest** — tests completos
 
 ---
 

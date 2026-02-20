@@ -108,6 +108,97 @@ CREATE TABLE IF NOT EXISTS project_notes (
 CREATE INDEX IF NOT EXISTS idx_pnotes_project ON project_notes(project_id);
 """
 
+TRACING_SCHEMA = """
+CREATE TABLE IF NOT EXISTS traces (
+    id            TEXT PRIMARY KEY,
+    phone_number  TEXT NOT NULL,
+    input_text    TEXT NOT NULL,
+    output_text   TEXT,
+    wa_message_id TEXT,
+    message_type  TEXT NOT NULL DEFAULT 'text'
+                  CHECK (message_type IN ('text', 'audio', 'image')),
+    status        TEXT NOT NULL DEFAULT 'started'
+                  CHECK (status IN ('started', 'completed', 'failed')),
+    started_at    TEXT NOT NULL DEFAULT (datetime('now')),
+    completed_at  TEXT,
+    metadata      TEXT NOT NULL DEFAULT '{}'
+);
+CREATE INDEX IF NOT EXISTS idx_traces_phone ON traces(phone_number, started_at);
+CREATE INDEX IF NOT EXISTS idx_traces_status ON traces(status);
+CREATE INDEX IF NOT EXISTS idx_traces_wa_msg ON traces(wa_message_id);
+
+CREATE TABLE IF NOT EXISTS trace_spans (
+    id           TEXT PRIMARY KEY,
+    trace_id     TEXT NOT NULL REFERENCES traces(id),
+    parent_id    TEXT REFERENCES trace_spans(id),
+    name         TEXT NOT NULL,
+    kind         TEXT NOT NULL DEFAULT 'span'
+                 CHECK (kind IN ('span', 'generation', 'tool', 'guardrail')),
+    input        TEXT,
+    output       TEXT,
+    status       TEXT NOT NULL DEFAULT 'started'
+                 CHECK (status IN ('started', 'completed', 'failed')),
+    started_at   TEXT NOT NULL DEFAULT (datetime('now')),
+    completed_at TEXT,
+    latency_ms   REAL,
+    metadata     TEXT NOT NULL DEFAULT '{}'
+);
+CREATE INDEX IF NOT EXISTS idx_spans_trace ON trace_spans(trace_id);
+CREATE INDEX IF NOT EXISTS idx_spans_kind ON trace_spans(kind);
+
+CREATE TABLE IF NOT EXISTS trace_scores (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    trace_id   TEXT NOT NULL REFERENCES traces(id),
+    span_id    TEXT REFERENCES trace_spans(id),
+    name       TEXT NOT NULL,
+    value      REAL NOT NULL,
+    source     TEXT NOT NULL DEFAULT 'system'
+               CHECK (source IN ('system', 'user', 'llm_judge', 'human')),
+    comment    TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_scores_trace ON trace_scores(trace_id);
+CREATE INDEX IF NOT EXISTS idx_scores_name ON trace_scores(name, value);
+"""
+
+DATASET_SCHEMA = """
+CREATE TABLE IF NOT EXISTS eval_dataset (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    trace_id     TEXT REFERENCES traces(id),
+    entry_type   TEXT NOT NULL CHECK (entry_type IN ('golden', 'failure', 'correction')),
+    input_text   TEXT NOT NULL,
+    output_text  TEXT,
+    expected_output TEXT,
+    metadata     TEXT NOT NULL DEFAULT '{}',
+    created_at   TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_dataset_type ON eval_dataset(entry_type);
+CREATE INDEX IF NOT EXISTS idx_dataset_trace ON eval_dataset(trace_id);
+
+CREATE TABLE IF NOT EXISTS eval_dataset_tags (
+    dataset_id  INTEGER NOT NULL REFERENCES eval_dataset(id) ON DELETE CASCADE,
+    tag         TEXT NOT NULL,
+    PRIMARY KEY (dataset_id, tag)
+);
+CREATE INDEX IF NOT EXISTS idx_dataset_tag_name ON eval_dataset_tags(tag);
+"""
+
+PROMPT_SCHEMA = """
+CREATE TABLE IF NOT EXISTS prompt_versions (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    prompt_name TEXT NOT NULL,
+    version     INTEGER NOT NULL,
+    content     TEXT NOT NULL,
+    is_active   INTEGER NOT NULL DEFAULT 0,
+    scores      TEXT NOT NULL DEFAULT '{}',
+    created_by  TEXT NOT NULL DEFAULT 'human',
+    approved_at TEXT,
+    created_at  TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_prompt_version ON prompt_versions(prompt_name, version);
+CREATE INDEX IF NOT EXISTS idx_prompt_active ON prompt_versions(prompt_name, is_active);
+"""
+
 VEC_SCHEMA_MEMORIES = (
     "CREATE VIRTUAL TABLE IF NOT EXISTS vec_memories "
     "USING vec0(memory_id INTEGER PRIMARY KEY, embedding float[{dims}])"
@@ -131,11 +222,14 @@ async def init_db(db_path: str, embedding_dims: int = 768) -> tuple[aiosqlite.Co
     # the main thread (needed for enable_load_extension during init)
     conn = await aiosqlite.connect(db_path, check_same_thread=False)
     await conn.execute("PRAGMA journal_mode=WAL")
-    await conn.execute("PRAGMA synchronous=NORMAL")   # Faster, safe with WAL
-    await conn.execute("PRAGMA cache_size=-32000")    # 32MB page cache in memory
-    await conn.execute("PRAGMA temp_store=MEMORY")    # Temp tables in RAM
+    await conn.execute("PRAGMA synchronous=NORMAL")  # Faster, safe with WAL
+    await conn.execute("PRAGMA cache_size=-32000")  # 32MB page cache in memory
+    await conn.execute("PRAGMA temp_store=MEMORY")  # Temp tables in RAM
     await conn.execute("PRAGMA foreign_keys=ON")
     await conn.executescript(SCHEMA)
+    await conn.executescript(TRACING_SCHEMA)
+    await conn.executescript(DATASET_SCHEMA)
+    await conn.executescript(PROMPT_SCHEMA)
     await conn.commit()
 
     # Try to load sqlite-vec
@@ -145,9 +239,9 @@ async def init_db(db_path: str, embedding_dims: int = 768) -> tuple[aiosqlite.Co
 
         ext_path = sqlite_vec.loadable_path()
         # Load extension via the raw connection (safe during init — no concurrent queries)
-        conn._connection.enable_load_extension(True)
-        conn._connection.load_extension(ext_path)
-        conn._connection.enable_load_extension(False)
+        conn._connection.enable_load_extension(True)  # type: ignore[union-attr]
+        conn._connection.load_extension(ext_path)  # type: ignore[union-attr]
+        conn._connection.enable_load_extension(False)  # type: ignore[union-attr]
 
         # Create vector tables
         await conn.execute(VEC_SCHEMA_MEMORIES.format(dims=embedding_dims))

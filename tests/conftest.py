@@ -78,9 +78,7 @@ async def conversation_manager(repository) -> ConversationManager:
 def client(settings: Settings) -> TestClient:
     mock_response = MagicMock()
     mock_response.raise_for_status = MagicMock()
-    mock_response.json.return_value = {
-        "message": {"role": "assistant", "content": "Mock reply"}
-    }
+    mock_response.json.return_value = {"message": {"role": "assistant", "content": "Mock reply"}}
 
     mock_http = AsyncMock()
     mock_http.post = AsyncMock(return_value=mock_response)
@@ -130,7 +128,12 @@ def client(settings: Settings) -> TestClient:
     app.state.daily_log = DailyLog(memory_dir=str(Path(tmp_dir) / "memory"))
     app.state.vec_available = False
 
-    return TestClient(app, raise_server_exceptions=False)
+    yield TestClient(app, raise_server_exceptions=False)
+
+    # Teardown: stop the aiosqlite worker thread to prevent process hang.
+    # aiosqlite 0.22+ uses a non-daemon Thread; without closing it, pytest
+    # hangs waiting for the thread after all tests complete.
+    conn.stop()
 
 
 def make_whatsapp_payload(

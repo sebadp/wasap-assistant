@@ -1,6 +1,4 @@
-from datetime import datetime, timedelta, timezone
-from pathlib import Path
-from unittest.mock import patch
+from datetime import UTC, datetime, timedelta
 
 from app.memory.daily_log import DailyLog
 
@@ -9,7 +7,7 @@ async def test_append_creates_file(tmp_path):
     log = DailyLog(memory_dir=str(tmp_path))
     await log.append("Test entry")
 
-    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    today = datetime.now(UTC).strftime("%Y-%m-%d")
     file_path = tmp_path / f"{today}.md"
     assert file_path.exists()
     content = file_path.read_text()
@@ -22,7 +20,7 @@ async def test_append_multiple_entries(tmp_path):
     await log.append("First entry")
     await log.append("Second entry")
 
-    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    today = datetime.now(UTC).strftime("%Y-%m-%d")
     file_path = tmp_path / f"{today}.md"
     content = file_path.read_text()
     assert "First entry" in content
@@ -35,7 +33,7 @@ async def test_append_includes_timestamp(tmp_path):
     log = DailyLog(memory_dir=str(tmp_path))
     await log.append("Timed entry")
 
-    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    today = datetime.now(UTC).strftime("%Y-%m-%d")
     file_path = tmp_path / f"{today}.md"
     content = file_path.read_text()
     # Should have format "- HH:MM — entry"
@@ -58,7 +56,7 @@ async def test_load_recent_returns_today(tmp_path):
 
 
 async def test_load_recent_returns_multiple_days(tmp_path):
-    today = datetime.now(timezone.utc)
+    today = datetime.now(UTC)
     yesterday = today - timedelta(days=1)
 
     # Write yesterday's log manually
@@ -104,6 +102,6 @@ async def test_append_creates_directory(tmp_path):
     log = DailyLog(memory_dir=str(tmp_path / "new" / "dir"))
     await log.append("Entry in new dir")
 
-    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    today = datetime.now(UTC).strftime("%Y-%m-%d")
     file_path = tmp_path / "new" / "dir" / f"{today}.md"
     assert file_path.exists()

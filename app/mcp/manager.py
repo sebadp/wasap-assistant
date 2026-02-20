@@ -45,9 +45,9 @@ def _make_handler(session: ClientSession, tool_name: str):
                 elif content.type == "image":
                     text_parts.append(f"[Image: {content.mimeType}]")
                 elif content.type == "resource":
-                    text_parts.append(f"[Resource: {content.uri}]")
+                    text_parts.append(f"[Resource: {content.uri}]")  # type: ignore[attr-defined]
             return "\n".join(text_parts)
-        except asyncio.TimeoutError:
+        except TimeoutError:
             logger.error("MCP tool %s timed out after %.0fs", tool_name, MCP_TOOL_TIMEOUT)
             return f"Error: tool {tool_name} timed out"
         except Exception as e:
@@ -81,7 +81,7 @@ class McpManager:
             return
 
         try:
-            with open(self.config_path, "r") as f:
+            with open(self.config_path) as f:
                 data = json.load(f)
         except Exception as e:
             logger.error("Failed to load MCP config: %s", e)
@@ -140,11 +140,9 @@ class McpManager:
                     server_stack.enter_async_context(stdio_client(server_params)),
                     timeout=MCP_CONNECT_TIMEOUT,
                 )
-                read, write = transport
+                read, write = transport  # type: ignore[misc]
 
-            session = await server_stack.enter_async_context(
-                ClientSession(read, write)
-            )
+            session = await server_stack.enter_async_context(ClientSession(read, write))
 
             await asyncio.wait_for(session.initialize(), timeout=MCP_CONNECT_TIMEOUT)
 
@@ -154,7 +152,7 @@ class McpManager:
 
             await self._load_tools(name, session)
 
-        except asyncio.TimeoutError:
+        except TimeoutError:
             logger.error(
                 "MCP server %s timed out during connection (%.0fs)",
                 name,
@@ -168,9 +166,7 @@ class McpManager:
     async def _load_tools(self, server_name: str, session: ClientSession) -> None:
         """Fetch tools from the server and register them as ToolDefinitions."""
         try:
-            result = await asyncio.wait_for(
-                session.list_tools(), timeout=MCP_CONNECT_TIMEOUT
-            )
+            result = await asyncio.wait_for(session.list_tools(), timeout=MCP_CONNECT_TIMEOUT)
         except Exception as e:
             logger.error("Failed to list tools for server %s: %s", server_name, e)
             return
@@ -269,26 +265,28 @@ class McpManager:
         # Connected servers
         for name in self._sessions:
             seen.add(name)
-            tool_count = sum(
-                1 for t in self._tools.values() if t.skill_name == f"mcp::{name}"
+            tool_count = sum(1 for t in self._tools.values() if t.skill_name == f"mcp::{name}")
+            result.append(
+                {
+                    "name": name,
+                    "status": "connected",
+                    "tools": tool_count,
+                    "description": self._server_descriptions.get(name, ""),
+                }
             )
-            result.append({
-                "name": name,
-                "status": "connected",
-                "tools": tool_count,
-                "description": self._server_descriptions.get(name, ""),
-            })
 
         # Configured but not connected (disabled or failed)
         for name, cfg in self._server_configs.items():
             if name in seen:
                 continue
-            result.append({
-                "name": name,
-                "status": "disabled" if not cfg.get("enabled", True) else "disconnected",
-                "tools": 0,
-                "description": self._server_descriptions.get(name, ""),
-            })
+            result.append(
+                {
+                    "name": name,
+                    "status": "disabled" if not cfg.get("enabled", True) else "disconnected",
+                    "tools": 0,
+                    "description": self._server_descriptions.get(name, ""),
+                }
+            )
 
         return result
 
@@ -311,14 +309,14 @@ class McpManager:
     def _invalidate_tools_cache() -> None:
         """Invalidate the executor-level tools map cache."""
         from app.skills.executor import reset_tools_cache
+
         reset_tools_cache()
 
     def _update_dynamic_categories(self, server_name: str) -> None:
         """Register newly added MCP tools into the router's TOOL_CATEGORIES."""
         from app.skills.router import register_dynamic_category
-        tool_names = [
-            k for k, v in self._tools.items() if v.skill_name == f"mcp::{server_name}"
-        ]
+
+        tool_names = [k for k, v in self._tools.items() if v.skill_name == f"mcp::{server_name}"]
         if tool_names:
             register_dynamic_category(server_name, tool_names)
 
@@ -382,7 +380,7 @@ class McpManager:
 
         by_server: dict[str, list[ToolDefinition]] = {}
         for tool in self._tools.values():
-            server = tool.skill_name.removeprefix("mcp::")
+            server = tool.skill_name.removeprefix("mcp::")  # type: ignore[union-attr]
             by_server.setdefault(server, []).append(tool)
 
         lines = ["Available MCP capabilities:"]

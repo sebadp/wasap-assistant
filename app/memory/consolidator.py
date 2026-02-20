@@ -57,7 +57,7 @@ async def consolidate_memories(
         text = response.strip()
         if text.startswith("```"):
             lines = text.split("\n")
-            lines = [l for l in lines if not l.strip().startswith("```")]
+            lines = [line for line in lines if not line.strip().startswith("```")]
             text = "\n".join(lines)
         data = json.loads(text)
     except (json.JSONDecodeError, ValueError):
@@ -84,9 +84,12 @@ async def consolidate_memories(
                 # Remove embedding (best-effort)
                 try:
                     from app.embeddings.indexer import remove_memory_embedding
+
                     await remove_memory_embedding(memory_id, repository)
                 except Exception:
-                    logger.warning("Failed to delete embedding for consolidated memory %d", memory_id)
+                    logger.warning(
+                        "Failed to delete embedding for consolidated memory %d", memory_id
+                    )
 
     # Sync MEMORY.md if any were removed
     if removed_count > 0:

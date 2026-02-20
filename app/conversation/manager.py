@@ -13,7 +13,9 @@ class ConversationManager:
     async def _get_conv_id(self, phone_number: str) -> int:
         """Return conversation ID, creating it if needed. Result is cached."""
         if phone_number not in self._conv_id_cache:
-            self._conv_id_cache[phone_number] = await self._repo.get_or_create_conversation(phone_number)
+            self._conv_id_cache[phone_number] = await self._repo.get_or_create_conversation(
+                phone_number
+            )
         return self._conv_id_cache[phone_number]
 
     async def is_duplicate(self, wa_message_id: str) -> bool:
@@ -56,11 +58,15 @@ class ConversationManager:
             )
             context.append(ChatMessage(role="system", content=notes_block))
         if daily_logs:
-            context.append(ChatMessage(role="system", content=f"Recent activity log:\n{daily_logs}"))
+            context.append(
+                ChatMessage(role="system", content=f"Recent activity log:\n{daily_logs}")
+            )
         if skills_summary:
             context.append(ChatMessage(role="system", content=skills_summary))
         if summary:
-            context.append(ChatMessage(role="system", content=f"Previous conversation summary:\n{summary}"))
+            context.append(
+                ChatMessage(role="system", content=f"Previous conversation summary:\n{summary}")
+            )
         context.extend(history)
         return context
 

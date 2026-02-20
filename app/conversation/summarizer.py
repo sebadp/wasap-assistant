@@ -82,7 +82,7 @@ async def flush_to_memory(
         if text.startswith("```"):
             lines = text.split("\n")
             # Remove first line (```json) and last line (```)
-            lines = [l for l in lines if not l.strip().startswith("```")]
+            lines = [line for line in lines if not line.strip().startswith("```")]
             text = "\n".join(lines)
         data = json.loads(text)
     except (json.JSONDecodeError, ValueError):
@@ -109,8 +109,13 @@ async def flush_to_memory(
         if embed_model:
             try:
                 from app.embeddings.indexer import embed_memory
+
                 await embed_memory(
-                    memory_id, fact.strip(), repository, ollama_client, embed_model,
+                    memory_id,
+                    fact.strip(),
+                    repository,
+                    ollama_client,
+                    embed_model,
                 )
             except Exception:
                 logger.warning("Failed to embed extracted fact %d", memory_id)
@@ -158,7 +163,11 @@ async def maybe_summarize(
         if flush_enabled and daily_log and memory_file:
             try:
                 new_facts_count = await flush_to_memory(
-                    old_messages, repository, ollama_client, daily_log, memory_file,
+                    old_messages,
+                    repository,
+                    ollama_client,
+                    daily_log,
+                    memory_file,
                     embed_model=embed_model,
                 )
             except Exception:
@@ -190,6 +199,7 @@ async def maybe_summarize(
         if new_facts_count > 0 and daily_log and memory_file:
             try:
                 from app.memory.consolidator import consolidate_memories
+
                 await consolidate_memories(repository, ollama_client, memory_file)
             except Exception:
                 logger.exception("Memory consolidation failed for conversation %d", conversation_id)

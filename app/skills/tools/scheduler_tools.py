@@ -119,7 +119,9 @@ async def list_schedules() -> str:
 
     output = ["**Active Schedules:**"]
     for job in jobs:
-        next_run = job.next_run_time.strftime("%Y-%m-%d %H:%M:%S %Z") if job.next_run_time else "N/A"
+        next_run = (
+            job.next_run_time.strftime("%Y-%m-%d %H:%M:%S %Z") if job.next_run_time else "N/A"
+        )
         output.append(f"- ID: `{job.id}` | Time: {next_run} | Task: {job.name}")
 
     return "\n".join(output)

@@ -1,5 +1,11 @@
 from unittest.mock import patch
 
+import pytest
+
+pytest.importorskip(
+    "duckduckgo_search", reason="duckduckgo_search not installed in this environment"
+)
+
 from app.skills.models import ToolCall
 from app.skills.registry import SkillRegistry
 from app.skills.tools.search_tools import register

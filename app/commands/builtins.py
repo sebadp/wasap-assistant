@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from app.commands.context import CommandContext
 from app.commands.registry import CommandRegistry, CommandSpec
@@ -20,9 +20,13 @@ async def cmd_remember(args: str, context: CommandContext) -> str:
     # Embed the new memory (best-effort)
     if context.ollama_client and context.embed_model:
         from app.embeddings.indexer import embed_memory
+
         await embed_memory(
-            memory_id, args.strip(), context.repository,
-            context.ollama_client, context.embed_model,
+            memory_id,
+            args.strip(),
+            context.repository,
+            context.ollama_client,
+            context.embed_model,
         )
 
     return f"Remembered: {args.strip()}"
@@ -40,6 +44,7 @@ async def cmd_forget(args: str, context: CommandContext) -> str:
     # Remove embedding (best-effort)
     if context.embed_model:
         from app.embeddings.indexer import remove_memory_embedding
+
         await remove_memory_embedding(memory_id, context.repository)
 
     return f"Forgot: {args.strip()}"
@@ -98,10 +103,10 @@ async def _save_session_snapshot(conv_id: int, context: CommandContext) -> None:
         if not slug:
             raise ValueError("Empty slug")
     except Exception:
-        slug = datetime.now(timezone.utc).strftime("%H%M%S")
+        slug = datetime.now(UTC).strftime("%H%M%S")
 
     # Format snapshot content
-    date_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    date_str = datetime.now(UTC).strftime("%Y-%m-%d")
     lines = [f"# {slug}", f"## {date_str}", ""]
     for m in messages:
         label = "User" if m.role == "user" else "Assistant"
@@ -119,10 +124,7 @@ async def _save_session_snapshot(conv_id: int, context: CommandContext) -> None:
 
 async def cmd_setup(args: str, context: CommandContext) -> str:
     await context.repository.reset_user_profile(context.phone_number)
-    return (
-        "Tu perfil ha sido reiniciado. "
-        "Envíame cualquier mensaje y empezamos de cero."
-    )
+    return "Tu perfil ha sido reiniciado. Envíame cualquier mensaje y empezamos de cero."
 
 
 async def cmd_review_skill(args: str, context: CommandContext) -> str:
@@ -138,7 +140,9 @@ async def cmd_review_skill(args: str, context: CommandContext) -> str:
                 lines.append("*Skills:*")
                 for s in skills:
                     tool_count = len(context.skill_registry.get_tools_for_skill(s.name))
-                    lines.append(f"- 🔧 {s.name} v{s.version} ({tool_count} tools) — {s.description}")
+                    lines.append(
+                        f"- 🔧 {s.name} v{s.version} ({tool_count} tools) — {s.description}"
+                    )
 
         if context.mcp_manager:
             servers = context.mcp_manager.list_servers()
@@ -218,6 +222,96 @@ async def cmd_review_skill(args: str, context: CommandContext) -> str:
     return f"No skill or MCP server found with name '{name}'."
 
 
+async def cmd_feedback(args: str, context: CommandContext) -> str:
+    """Tag the last interaction with human feedback (free text)."""
+    if not args.strip():
+        return "Uso: /feedback <comentario>\nEjemplo: /feedback La respuesta estuvo bien pero faltó más detalle"
+
+    trace_id = await context.repository.get_latest_trace_id(context.phone_number)
+    if not trace_id:
+        return "No encontré una interacción reciente para evaluar."
+
+    # Analyze sentiment to assign a numeric score
+    sentiment_value = 0.5  # default: neutral
+    if context.ollama_client:
+        try:
+            result = await context.ollama_client.chat(
+                [
+                    ChatMessage(
+                        role="user",
+                        content=(
+                            "Rate the sentiment of this feedback about an AI response on a scale of 0.0 to 1.0. "
+                            "0.0=very negative, 0.5=neutral, 1.0=very positive. "
+                            "Reply ONLY with the number, nothing else.\n\n"
+                            f"Feedback: {args.strip()}"
+                        ),
+                    )
+                ]
+            )
+            sentiment_value = max(0.0, min(1.0, float(result.strip())))
+        except (ValueError, Exception):
+            pass  # keep default 0.5
+
+    await context.repository.save_trace_score(
+        trace_id=trace_id,
+        name="human_feedback",
+        value=sentiment_value,
+        source="human",
+        comment=args.strip(),
+    )
+    return "Gracias por el feedback. Lo voy a tener en cuenta para mejorar."
+
+
+async def cmd_rate(args: str, context: CommandContext) -> str:
+    """Rate the last response on a 1-5 scale."""
+    try:
+        score = int(args.strip())
+        if not 1 <= score <= 5:
+            raise ValueError
+    except ValueError:
+        return "Uso: /rate <1-5>\nEjemplo: /rate 4"
+
+    trace_id = await context.repository.get_latest_trace_id(context.phone_number)
+    if not trace_id:
+        return "No encontré una interacción reciente para evaluar."
+
+    await context.repository.save_trace_score(
+        trace_id=trace_id,
+        name="human_rating",
+        value=score / 5.0,
+        source="human",
+        comment=f"{score}/5",
+    )
+    return f"Calificación {score}/5 registrada. ¡Gracias!"
+
+
+async def cmd_approve_prompt(args: str, context: CommandContext) -> str:
+    """Activate a proposed prompt version."""
+    parts = args.strip().split()
+    if len(parts) != 2:
+        return "Uso: /approve-prompt <nombre> <versión>\nEjemplo: /approve-prompt system_prompt 3"
+
+    prompt_name, version_str = parts
+    try:
+        version = int(version_str)
+    except ValueError:
+        return "La versión debe ser un número."
+
+    row = await context.repository.get_prompt_version(prompt_name, version)
+    if not row:
+        return f"No encontré la versión {version} del prompt '{prompt_name}'."
+    if row["is_active"]:
+        return "Esa versión ya está activa."
+
+    await context.repository.activate_prompt_version(prompt_name, version)
+
+    from app.eval.prompt_manager import invalidate_prompt_cache
+
+    invalidate_prompt_cache(prompt_name)
+
+    return f"Prompt '{prompt_name}' v{version} activado. Los próximos mensajes usarán la nueva versión."
+
+
 async def cmd_help(args: str, context: CommandContext) -> str:
     registry: CommandRegistry = context.registry
     lines = ["*Available commands:*"]
@@ -253,51 +347,91 @@ async def cmd_help(args: str, context: CommandContext) -> str:
 
 
 def register_builtins(registry: CommandRegistry) -> None:
-    registry.register(CommandSpec(
-        name="remember",
-        description="Guardar información importante",
-        usage="/remember <dato>",
-        handler=cmd_remember,
-    ))
-    registry.register(CommandSpec(
-        name="forget",
-        description="Olvidar un recuerdo guardado",
-        usage="/forget <dato>",
-        handler=cmd_forget,
-    ))
-    registry.register(CommandSpec(
-        name="memories",
-        description="Listar todos los recuerdos",
-        usage="/memories",
-        handler=cmd_memories,
-    ))
-    registry.register(CommandSpec(
-        name="memory",
-        description="Listar todos los recuerdos",
-        usage="/memory",
-        handler=cmd_memories,
-    ))
-    registry.register(CommandSpec(
-        name="clear",
-        description="Borrar historial de conversación",
-        usage="/clear",
-        handler=cmd_clear,
-    ))
-    registry.register(CommandSpec(
-        name="setup",
-        description="Reiniciar tu perfil y volver a empezar el onboarding",
-        usage="/setup",
-        handler=cmd_setup,
-    ))
-    registry.register(CommandSpec(
-        name="review-skill",
-        description="Ver skills instalados o servidores MCP",
-        usage="/review-skill [nombre]",
-        handler=cmd_review_skill,
-    ))
-    registry.register(CommandSpec(
-        name="help",
-        description="Mostrar comandos disponibles",
-        usage="/help",
-        handler=cmd_help,
-    ))
+    registry.register(
+        CommandSpec(
+            name="remember",
+            description="Guardar información importante",
+            usage="/remember <dato>",
+            handler=cmd_remember,
+        )
+    )
+    registry.register(
+        CommandSpec(
+            name="forget",
+            description="Olvidar un recuerdo guardado",
+            usage="/forget <dato>",
+            handler=cmd_forget,
+        )
+    )
+    registry.register(
+        CommandSpec(
+            name="memories",
+            description="Listar todos los recuerdos",
+            usage="/memories",
+            handler=cmd_memories,
+        )
+    )
+    registry.register(
+        CommandSpec(
+            name="memory",
+            description="Listar todos los recuerdos",
+            usage="/memory",
+            handler=cmd_memories,
+        )
+    )
+    registry.register(
+        CommandSpec(
+            name="clear",
+            description="Borrar historial de conversación",
+            usage="/clear",
+            handler=cmd_clear,
+        )
+    )
+    registry.register(
+        CommandSpec(
+            name="setup",
+            description="Reiniciar tu perfil y volver a empezar el onboarding",
+            usage="/setup",
+            handler=cmd_setup,
+        )
+    )
+    registry.register(
+        CommandSpec(
+            name="review-skill",
+            description="Ver skills instalados o servidores MCP",
+            usage="/review-skill [nombre]",
+            handler=cmd_review_skill,
+        )
+    )
+    registry.register(
+        CommandSpec(
+            name="feedback",
+            description="Dar feedback sobre la última respuesta (texto libre)",
+            usage="/feedback <comentario>",
+            handler=cmd_feedback,
+        )
+    )
+    registry.register(
+        CommandSpec(
+            name="rate",
+            description="Calificar la última respuesta del 1 al 5",
+            usage="/rate <1-5>",
+            handler=cmd_rate,
+        )
+    )
+    registry.register(
+        CommandSpec(
+            name="approve-prompt",
+            description="Activar una versión de prompt propuesta por el agente",
+            usage="/approve-prompt <nombre> <versión>",
+            handler=cmd_approve_prompt,
+        )
+    )
+    registry.register(
+        CommandSpec(
+            name="help",
+            description="Mostrar comandos disponibles",
+            usage="/help",
+            handler=cmd_help,
+        )
+    )

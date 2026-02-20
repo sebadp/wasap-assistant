@@ -1,4 +1,3 @@
-from app.commands.context import CommandContext
 from app.commands.builtins import (
     cmd_clear,
     cmd_forget,
@@ -6,8 +5,8 @@ from app.commands.builtins import (
     cmd_memories,
     cmd_remember,
 )
+from app.commands.context import CommandContext
 from app.commands.parser import parse_command
-
 
 # --- Parser tests ---
 
@@ -191,6 +190,7 @@ async def test_cmd_help_with_skills(repository, memory_file, command_registry, t
 async def test_cmd_help_with_mcp(repository, memory_file, command_registry):
     """When mcp_manager has tools, /help shows MCP integrations."""
     from unittest.mock import MagicMock
+
     from app.skills.models import ToolDefinition
 
     async def h(**kwargs):
@@ -201,12 +201,18 @@ async def test_cmd_help_with_mcp(repository, memory_file, command_registry):
     mcp_manager._server_descriptions = {"filesystem": "Read and write files"}
     tools = {
         "read_file": ToolDefinition(
-            name="read_file", description="Read a file",
-            parameters={}, handler=h, skill_name="mcp::filesystem",
+            name="read_file",
+            description="Read a file",
+            parameters={},
+            handler=h,
+            skill_name="mcp::filesystem",
         ),
         "write_file": ToolDefinition(
-            name="write_file", description="Write a file",
-            parameters={}, handler=h, skill_name="mcp::filesystem",
+            name="write_file",
+            description="Write a file",
+            parameters={},
+            handler=h,
+            skill_name="mcp::filesystem",
         ),
     }
     mcp_manager.get_tools.return_value = tools

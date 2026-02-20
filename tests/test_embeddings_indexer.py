@@ -1,4 +1,5 @@
 """Tests for auto-indexing lifecycle (6C)."""
+
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -6,12 +7,12 @@ import pytest
 from app.database.db import init_db
 from app.database.repository import Repository
 from app.embeddings.indexer import (
-    embed_memory,
-    remove_memory_embedding,
-    embed_note,
-    remove_note_embedding,
     backfill_embeddings,
     backfill_note_embeddings,
+    embed_memory,
+    embed_note,
+    remove_memory_embedding,
+    remove_note_embedding,
 )
 from app.llm.client import OllamaClient
 
@@ -98,7 +99,7 @@ async def test_remove_note_embedding_deletes(vec_repo, mock_ollama):
 
 async def test_backfill_skips_already_embedded(vec_repo, mock_ollama):
     id1 = await vec_repo.add_memory("Already embedded")
-    id2 = await vec_repo.add_memory("Not embedded")
+    await vec_repo.add_memory("Not embedded")
 
     await vec_repo.save_embedding(id1, [0.1] * 768)
 

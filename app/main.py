@@ -1,4 +1,3 @@
-import asyncio
 import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -16,13 +15,14 @@ from app.database.repository import Repository
 from app.health.router import router as health_router
 from app.llm.client import OllamaClient
 from app.logging_config import configure_logging
-from app.models import ChatMessage
 from app.memory.daily_log import DailyLog
 from app.memory.markdown import MemoryFile
+from app.models import ChatMessage
 from app.skills.registry import SkillRegistry
 from app.skills.tools import register_builtin_tools
 from app.webhook.rate_limiter import RateLimiter
-from app.webhook.router import router as webhook_router, wait_for_in_flight
+from app.webhook.router import router as webhook_router
+from app.webhook.router import wait_for_in_flight
 from app.whatsapp.client import WhatsAppClient
 
 logger = logging.getLogger(__name__)
@@ -30,7 +30,7 @@ logger = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    settings = Settings()
+    settings = Settings()  # type: ignore[call-arg]
 
     configure_logging(level=settings.log_level, json_format=settings.log_json)
 
@@ -85,6 +85,7 @@ async def lifespan(app: FastAPI):
 
     # MCP Manager (initialized before skills so expand tools can reference it)
     from app.mcp.manager import McpManager
+
     mcp_manager = McpManager(config_path=settings.mcp_config_path)
     await mcp_manager.initialize()
     app.state.mcp_manager = mcp_manager
@@ -93,9 +94,12 @@ async def lifespan(app: FastAPI):
     skill_registry = SkillRegistry(skills_dir=settings.skills_dir)
     skill_registry.load_skills()
     register_builtin_tools(
-        skill_registry, repository,
+        skill_registry,
+        repository,
         ollama_client=app.state.ollama_client,
-        embed_model=settings.embedding_model if settings.semantic_search_enabled and vec_available else None,
+        embed_model=settings.embedding_model
+        if settings.semantic_search_enabled and vec_available
+        else None,
         vec_available=vec_available,
         settings=settings,
         mcp_manager=mcp_manager,
@@ -105,6 +109,7 @@ async def lifespan(app: FastAPI):
 
     # Scheduler Skill
     from apscheduler.schedulers.asyncio import AsyncIOScheduler
+
     from app.skills.tools.scheduler_tools import set_scheduler
 
     scheduler = AsyncIOScheduler()
@@ -112,12 +117,37 @@ async def lifespan(app: FastAPI):
     set_scheduler(scheduler, app.state.whatsapp_client)
     app.state.scheduler = scheduler
 
+    # Trace cleanup job: daily purge of traces older than trace_retention_days
+    if settings.tracing_enabled:
+
+        async def _cleanup_old_traces() -> None:
+            try:
+                deleted = await repository.cleanup_old_traces(days=settings.trace_retention_days)
+                logger.info("Trace cleanup: deleted %d old traces", deleted)
+            except Exception:
+                logger.exception("Trace cleanup job failed")
+
+        scheduler.add_job(
+            _cleanup_old_traces,
+            trigger="cron",
+            hour=3,
+            minute=0,
+            id="trace_cleanup",
+            replace_existing=True,
+        )
+        logger.info(
+            "Scheduled trace cleanup job (daily at 03:00, retention=%d days)",
+            settings.trace_retention_days,
+        )
+
     # Memory file watcher (bidirectional sync)
     memory_watcher = None
     if settings.memory_file_watch_enabled:
         try:
             import asyncio
+
             from app.memory.watcher import MemoryWatcher
+
             memory_watcher = MemoryWatcher(
                 memory_file=memory_file,
                 repository=repository,
@@ -127,6 +157,7 @@ async def lifespan(app: FastAPI):
             memory_watcher.start()
         except ImportError:
             import logging
+
             logging.getLogger(__name__).warning(
                 "watchdog not installed, MEMORY.md file watching disabled. "
                 "Install with: pip install watchdog"
@@ -136,23 +167,32 @@ async def lifespan(app: FastAPI):
     # Backfill embeddings at startup
     if vec_available and settings.semantic_search_enabled:
         from app.embeddings.indexer import backfill_embeddings, backfill_note_embeddings
+
         try:
             await backfill_embeddings(
-                repository, app.state.ollama_client, settings.embedding_model,
+                repository,
+                app.state.ollama_client,
+                settings.embedding_model,
             )
             await backfill_note_embeddings(
-                repository, app.state.ollama_client, settings.embedding_model,
+                repository,
+                app.state.ollama_client,
+                settings.embedding_model,
             )
         except Exception:
             import logging
-            logging.getLogger(__name__).warning("Embedding backfill failed at startup", exc_info=True)
+
+            logging.getLogger(__name__).warning(
+                "Embedding backfill failed at startup", exc_info=True
+            )
 
     # Warmup: pre-load Ollama models to avoid cold-start on first message
     try:
         await asyncio.gather(
             app.state.ollama_client.embed(["warmup"], model=settings.embedding_model),
             app.state.ollama_client.chat_with_tools(
-                [ChatMessage(role="user", content="hi")], think=False,
+                [ChatMessage(role="user", content="hi")],
+                think=False,
             ),
         )
         logger.info("Ollama models warmed up")
