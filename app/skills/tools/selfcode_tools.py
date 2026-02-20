@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 # Resolve project root once at import time (wasap-assistant/)
 _PROJECT_ROOT = Path(__file__).resolve().parents[3]
 
-_SENSITIVE = {"whatsapp_access_token", "whatsapp_app_secret", "whatsapp_verify_token"}
+_SENSITIVE = {"whatsapp_access_token", "whatsapp_app_secret", "whatsapp_verify_token", "ngrok_authtoken"}
 
 _BLOCKED_NAME_PATTERNS = {".env", "secret", "token", "password", ".key", ".pem"}
 
@@ -29,7 +29,7 @@ def _is_safe_path(path: Path) -> bool:
     except Exception:
         return False
 
-    if not str(resolved).startswith(str(_PROJECT_ROOT)):
+    if not resolved.is_relative_to(_PROJECT_ROOT):
         return False
 
     name_lower = resolved.name.lower()
@@ -124,7 +124,7 @@ def register(
         def _list() -> str:
             target = (_PROJECT_ROOT / directory).resolve() if directory else _PROJECT_ROOT
 
-            if not str(target).startswith(str(_PROJECT_ROOT)):
+            if not target.is_relative_to(_PROJECT_ROOT):
                 return f"Access denied: '{directory}' is outside project root."
 
             if not target.exists():
@@ -215,6 +215,7 @@ def register(
                         "grep", "-rn",
                         "--include=*.py",
                         "--include=*.md",
+                        "--",
                         pattern,
                         str(_PROJECT_ROOT),
                     ],

@@ -49,10 +49,10 @@ TOOL_CATEGORIES: dict[str, list[str]] = {
 
 DEFAULT_CATEGORIES = ["time", "math", "weather", "search"]
 
-CLASSIFIER_PROMPT = (
+_CLASSIFIER_PROMPT_TEMPLATE = (
     "Classify this message into tool categories. "
     "Reply with ONLY category names separated by commas, or \"none\".\n"
-    "Categories: time, math, weather, search, news, notes, files, memory, github, tools, selfcode, expand, projects, none\n\n"
+    "Categories: {categories}, none\n\n"
     "Message: {user_message}"
 )
 
@@ -78,7 +78,10 @@ async def classify_intent(
     ollama_client: OllamaClient,
 ) -> list[str]:
     """Call the LLM without tools/think to classify the user message into categories."""
-    prompt = CLASSIFIER_PROMPT.format(user_message=user_message)
+    categories_str = ", ".join(TOOL_CATEGORIES.keys())
+    prompt = _CLASSIFIER_PROMPT_TEMPLATE.format(
+        categories=categories_str, user_message=user_message
+    )
     messages = [ChatMessage(role="user", content=prompt)]
 
     try:

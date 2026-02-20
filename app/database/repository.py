@@ -559,10 +559,18 @@ class Repository:
         return cursor.rowcount > 0
 
     async def delete_project_task(self, task_id: int) -> bool:
+        # Fetch project_id before deleting so we can touch updated_at
+        row = await (await self._conn.execute(
+            "SELECT project_id FROM project_tasks WHERE id = ?", (task_id,)
+        )).fetchone()
         cursor = await self._conn.execute(
             "DELETE FROM project_tasks WHERE id = ?",
             (task_id,),
         )
+        if cursor.rowcount > 0 and row:
+            await self._conn.execute(
+                "UPDATE projects SET updated_at = datetime('now') WHERE id = ?", (row[0],)
+            )
         await self._conn.commit()
         return cursor.rowcount > 0
 
@@ -576,7 +584,7 @@ class Repository:
         pending = counts.get("pending", 0)
         in_progress = counts.get("in_progress", 0)
         done = counts.get("done", 0)
-        total = pending + in_progress + done
+        total = sum(counts.values())
         return {"pending": pending, "in_progress": in_progress, "done": done, "total": total}
 
     # --- Project Activity ---

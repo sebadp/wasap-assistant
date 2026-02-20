@@ -291,7 +291,7 @@ def register_builtins(registry: CommandRegistry) -> None:
     ))
     registry.register(CommandSpec(
         name="review-skill",
-        description="Review installed skills or MCP servers",
+        description="Ver skills instalados o servidores MCP",
         usage="/review-skill [nombre]",
         handler=cmd_review_skill,
     ))
