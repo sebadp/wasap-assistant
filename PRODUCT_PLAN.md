@@ -341,6 +341,18 @@ Phase C: categories = await classify_task  ← ya casi listo
 Phase D: _build_context() → chat_with_tools (LLM principal, ~3-8s)
 ```
 
+### Fase 8: Evaluación y Mejora Continua 🔄
+> Arquitectura de evaluación estructurada para medir y mejorar sistemáticamente la calidad del asistente.
+
+- **Guardrails**: Validación pre-entrega (idioma, longitud, alucinaciones, PII)
+- **Trazabilidad Estructurada**: Spans jerárquicos de todo el pipeline (SQLite)
+- **Evaluación en 3 Capas**:
+  - *Capa 1* (Implícita): Reacciones de WhatsApp, correcciones del usuario
+  - *Capa 2* (Automática): G-Eval offline para testear métricas
+  - *Capa 3* (Explícita): Comando `/feedback` para human-in-the-loop
+- **Dataset vivo y Auto-evolución**: Creación de un dataset de interacciones y prompts dinámicos
+- Ver detalle en `docs/exec-plans/eval_implementation_plan.md`
+
 ---
 
 ## 5. Modelo de Datos (SQLite)

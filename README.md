@@ -324,5 +324,6 @@ sudo chown -R $(id -u):$(id -g) data/
 - [x] **Fase 5**: Memoria avanzada (daily logs, pre-compaction flush, session snapshots, consolidación)
 - [x] **Fase 6**: Búsqueda semántica (embeddings, sqlite-vec, RAG, MEMORY.md bidireccional)
 - [x] **Fase 7**: CI/CD — pre-commit hooks (ruff, mypy, pytest) + GitHub Actions + AI code review
+- [ ] **Fase 8**: Evaluación y Mejora Continua (Guardrails, Trazabilidad, Evaluación en 3 capas, Dataset vivo, Auto-evolución)
 
 Ver [PRODUCT_PLAN.md](PRODUCT_PLAN.md) para el detalle de cada fase.
