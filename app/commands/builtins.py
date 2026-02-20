@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from app.commands.context import CommandContext
 from app.commands.registry import CommandRegistry, CommandSpec
@@ -98,10 +98,10 @@ async def _save_session_snapshot(conv_id: int, context: CommandContext) -> None:
         if not slug:
             raise ValueError("Empty slug")
     except Exception:
-        slug = datetime.now(timezone.utc).strftime("%H%M%S")
+        slug = datetime.now(UTC).strftime("%H%M%S")
 
     # Format snapshot content
-    date_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    date_str = datetime.now(UTC).strftime("%Y-%m-%d")
     lines = [f"# {slug}", f"## {date_str}", ""]
     for m in messages:
         label = "User" if m.role == "user" else "Assistant"

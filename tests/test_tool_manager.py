@@ -1,6 +1,6 @@
 from app.skills.registry import SkillRegistry
-from app.skills.tools.tool_manager_tools import register
 from app.skills.router import TOOL_CATEGORIES
+from app.skills.tools.tool_manager_tools import register
 
 
 def _make_registry() -> SkillRegistry:

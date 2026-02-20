@@ -45,9 +45,9 @@ def _make_handler(session: ClientSession, tool_name: str):
                 elif content.type == "image":
                     text_parts.append(f"[Image: {content.mimeType}]")
                 elif content.type == "resource":
-                    text_parts.append(f"[Resource: {content.uri}]")
+                    text_parts.append(f"[Resource: {content.uri}]")  # type: ignore[attr-defined]
             return "\n".join(text_parts)
-        except asyncio.TimeoutError:
+        except TimeoutError:
             logger.error("MCP tool %s timed out after %.0fs", tool_name, MCP_TOOL_TIMEOUT)
             return f"Error: tool {tool_name} timed out"
         except Exception as e:
@@ -81,7 +81,7 @@ class McpManager:
             return
 
         try:
-            with open(self.config_path, "r") as f:
+            with open(self.config_path) as f:
                 data = json.load(f)
         except Exception as e:
             logger.error("Failed to load MCP config: %s", e)
@@ -140,7 +140,7 @@ class McpManager:
                     server_stack.enter_async_context(stdio_client(server_params)),
                     timeout=MCP_CONNECT_TIMEOUT,
                 )
-                read, write = transport
+                read, write = transport  # type: ignore[misc]
 
             session = await server_stack.enter_async_context(
                 ClientSession(read, write)
@@ -154,7 +154,7 @@ class McpManager:
 
             await self._load_tools(name, session)
 
-        except asyncio.TimeoutError:
+        except TimeoutError:
             logger.error(
                 "MCP server %s timed out during connection (%.0fs)",
                 name,
@@ -382,7 +382,7 @@ class McpManager:
 
         by_server: dict[str, list[ToolDefinition]] = {}
         for tool in self._tools.values():
-            server = tool.skill_name.removeprefix("mcp::")
+            server = tool.skill_name.removeprefix("mcp::")  # type: ignore[union-attr]
             by_server.setdefault(server, []).append(tool)
 
         lines = ["Available MCP capabilities:"]

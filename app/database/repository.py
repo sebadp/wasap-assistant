@@ -31,7 +31,7 @@ class Repository:
             (phone_number,),
         )
         await self._conn.commit()
-        return cursor.lastrowid
+        return cursor.lastrowid  # type: ignore[return-value]
 
     async def save_message(
         self,
@@ -45,7 +45,7 @@ class Repository:
             (conversation_id, role, content, wa_message_id),
         )
         await self._conn.commit()
-        return cursor.lastrowid
+        return cursor.lastrowid  # type: ignore[return-value]
 
     async def get_recent_messages(
         self, conversation_id: int, limit: int
@@ -56,7 +56,7 @@ class Repository:
             (conversation_id, limit),
         )
         rows = await cursor.fetchall()
-        return [ChatMessage(role=r[0], content=r[1]) for r in reversed(rows)]
+        return [ChatMessage(role=r[0], content=r[1]) for r in reversed(rows)]  # type: ignore[call-overload]
 
     async def get_message_count(self, conversation_id: int) -> int:
         cursor = await self._conn.execute(
@@ -64,7 +64,7 @@ class Repository:
             (conversation_id,),
         )
         row = await cursor.fetchone()
-        return row[0]
+        return row[0]  # type: ignore[index]
 
     async def is_duplicate(self, wa_message_id: str) -> bool:
         cursor = await self._conn.execute(
@@ -107,7 +107,7 @@ class Repository:
             (content, category),
         )
         await self._conn.commit()
-        return cursor.lastrowid
+        return cursor.lastrowid  # type: ignore[return-value]
 
     async def remove_memory(self, content: str) -> bool:
         cursor = await self._conn.execute(
@@ -180,7 +180,7 @@ class Repository:
             (title, content),
         )
         await self._conn.commit()
-        return cursor.lastrowid
+        return cursor.lastrowid  # type: ignore[return-value]
 
     async def list_notes(self) -> list[Note]:
         cursor = await self._conn.execute(
@@ -388,7 +388,7 @@ class Repository:
             (phone_number, name, description),
         )
         await self._conn.commit()
-        return cursor.lastrowid
+        return cursor.lastrowid  # type: ignore[return-value]
 
     async def get_project(self, project_id: int) -> Project | None:
         cursor = await self._conn.execute(
@@ -488,7 +488,7 @@ class Repository:
             (project_id,),
         )
         await self._conn.commit()
-        return cursor.lastrowid
+        return cursor.lastrowid  # type: ignore[return-value]
 
     async def get_project_task(self, task_id: int) -> ProjectTask | None:
         cursor = await self._conn.execute(
@@ -616,7 +616,7 @@ class Repository:
             (project_id, content),
         )
         await self._conn.commit()
-        return cursor.lastrowid
+        return cursor.lastrowid  # type: ignore[return-value]
 
     async def list_project_notes(self, project_id: int) -> list[ProjectNote]:
         cursor = await self._conn.execute(
@@ -851,14 +851,14 @@ class Repository:
                 json.dumps(metadata or {}),
             ),
         )
-        dataset_id = cursor.lastrowid
+        dataset_id = cursor.lastrowid  # type: ignore[assignment]
         if tags and dataset_id:
             await self._conn.executemany(
                 "INSERT OR IGNORE INTO eval_dataset_tags (dataset_id, tag) VALUES (?, ?)",
                 [(dataset_id, tag) for tag in tags],
             )
         await self._conn.commit()
-        return dataset_id
+        return dataset_id  # type: ignore[return-value]
 
     async def get_dataset_entries(
         self,
@@ -935,7 +935,7 @@ class Repository:
             (prompt_name, version, content, created_by),
         )
         await self._conn.commit()
-        return cursor.lastrowid
+        return cursor.lastrowid  # type: ignore[return-value]
 
     async def get_active_prompt_version(self, prompt_name: str) -> dict | None:
         cursor = await self._conn.execute(

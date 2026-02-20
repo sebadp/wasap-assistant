@@ -16,16 +16,11 @@ from app.commands.parser import parse_command
 from app.config import Settings
 from app.conversation.manager import ConversationManager
 from app.conversation.summarizer import maybe_summarize
-from app.eval.dataset import add_correction_pair, maybe_curate_to_dataset
-from app.eval.prompt_manager import get_active_prompt
-from app.formatting.whatsapp import markdown_to_whatsapp
-from app.profiles.discovery import maybe_discover_profile_updates
-from app.profiles.onboarding import handle_onboarding_message
-from app.profiles.prompt_builder import build_system_prompt
 from app.dependencies import (
     get_command_registry,
     get_conversation_manager,
     get_daily_log,
+    get_mcp_manager,
     get_memory_file,
     get_ollama_client,
     get_rate_limiter,
@@ -35,11 +30,16 @@ from app.dependencies import (
     get_transcriber,
     get_vec_available,
     get_whatsapp_client,
-    get_mcp_manager,
 )
+from app.eval.dataset import add_correction_pair, maybe_curate_to_dataset
+from app.eval.prompt_manager import get_active_prompt
+from app.formatting.whatsapp import markdown_to_whatsapp
 from app.llm.client import OllamaClient
 from app.memory.daily_log import DailyLog
 from app.models import ChatMessage, Note, WhatsAppMessage
+from app.profiles.discovery import maybe_discover_profile_updates
+from app.profiles.onboarding import handle_onboarding_message
+from app.profiles.prompt_builder import build_system_prompt
 from app.skills.executor import execute_tool_loop
 from app.skills.registry import SkillRegistry
 from app.skills.router import classify_intent
@@ -289,7 +289,7 @@ def _build_capabilities_section(
         if mcp_tools:
             by_server: dict[str, list[str]] = {}
             for tool in mcp_tools.values():
-                server = tool.skill_name.removeprefix("mcp::")
+                server = tool.skill_name.removeprefix("mcp::")  # type: ignore[union-attr]
                 by_server.setdefault(server, []).append(f"{tool.name}: {tool.description}")
 
             mcp_lines = ["MCP Servers (external integrations):"]
@@ -690,7 +690,7 @@ async def _handle_message(
 
     # Inject current date + user profile into system prompt
     # (date only — for current time the LLM should call get_current_datetime)
-    now = datetime.datetime.now(datetime.timezone.utc)
+    now = datetime.datetime.now(datetime.UTC)
     current_date = now.strftime("%Y-%m-%d")
     base_prompt = await get_active_prompt("system_prompt", repository, settings.system_prompt)
     system_prompt_with_date = build_system_prompt(
@@ -827,8 +827,8 @@ async def _handle_message(
         )
 
         # Set current user context for tools that need it (e.g. scheduler, projects)
-        from app.skills.tools.scheduler_tools import set_current_user
         from app.skills.tools.project_tools import set_current_user as set_project_user
+        from app.skills.tools.scheduler_tools import set_current_user
         set_current_user(msg.from_number, received_at=now)
         set_project_user(msg.from_number)
 

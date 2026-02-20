@@ -1,5 +1,4 @@
 """Unit tests for individual guardrail checks."""
-import pytest
 
 from app.guardrails.checks import (
     check_excessive_length,

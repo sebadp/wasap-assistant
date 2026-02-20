@@ -4,7 +4,7 @@ import pytest
 from app.database.db import init_db
 from app.database.repository import Repository
 from app.memory.markdown import MemoryFile
-from app.memory.watcher import parse_memory_file, MemoryWatcher
+from app.memory.watcher import MemoryWatcher, parse_memory_file
 
 
 def test_parse_memory_file_basic():

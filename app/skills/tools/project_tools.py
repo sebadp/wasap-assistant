@@ -109,7 +109,7 @@ def register(
                 detail_str = f": {detail}" if detail else ""
                 lines.append(f"  {ts[:10]} — {action}{detail_str}")
 
-        return "\n".join(l for l in lines if l)
+        return "\n".join(line for line in lines if line)
 
     async def add_task(
         project_name: str,

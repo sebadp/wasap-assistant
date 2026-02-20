@@ -1,11 +1,11 @@
 """Tests for semantic memory search integration."""
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
 from app.database.db import init_db
 from app.database.repository import Repository
-from app.embeddings.indexer import embed_memory, backfill_embeddings
+from app.embeddings.indexer import backfill_embeddings, embed_memory
 from app.llm.client import OllamaClient
 from app.webhook.router import _get_memories
 

@@ -1,11 +1,10 @@
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
-import pytest
 
 from app.skills.models import ToolCall
 from app.skills.registry import SkillRegistry
-from app.skills.tools.weather_tools import register, OPENMETEO_GEOCODING_URL, OPENMETEO_FORECAST_URL
+from app.skills.tools.weather_tools import register
 
 
 def _make_registry():
@@ -58,7 +57,7 @@ async def test_get_weather_success():
     # Patch the _resolve_and_fetch helper function
     with patch("app.skills.tools.weather_tools._resolve_and_fetch", new_callable=AsyncMock) as mock_resolve:
         mock_resolve.side_effect = [mock_geo_resp, mock_weather_resp]
-        
+
         result = await reg.execute_tool(ToolCall(name="get_weather", arguments={"city": "Buenos Aires"}))
 
     assert result.success
@@ -66,7 +65,7 @@ async def test_get_weather_success():
     assert "22.5°C" in result.content
     assert "Partly cloudy" in result.content
     assert "18.0°C - 28.0°C" in result.content
-    
+
     assert mock_resolve.call_count == 2
 
 

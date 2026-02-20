@@ -239,9 +239,9 @@ async def init_db(db_path: str, embedding_dims: int = 768) -> tuple[aiosqlite.Co
 
         ext_path = sqlite_vec.loadable_path()
         # Load extension via the raw connection (safe during init — no concurrent queries)
-        conn._connection.enable_load_extension(True)
-        conn._connection.load_extension(ext_path)
-        conn._connection.enable_load_extension(False)
+        conn._connection.enable_load_extension(True)  # type: ignore[union-attr]
+        conn._connection.load_extension(ext_path)  # type: ignore[union-attr]
+        conn._connection.enable_load_extension(False)  # type: ignore[union-attr]
 
         # Create vector tables
         await conn.execute(VEC_SCHEMA_MEMORIES.format(dims=embedding_dims))

@@ -3,13 +3,10 @@ from __future__ import annotations
 
 from unittest.mock import AsyncMock, MagicMock
 
-import pytest
-
 from app.llm.client import ChatResponse
 from app.profiles.discovery import _parse_json_safe, maybe_discover_profile_updates
 from app.profiles.onboarding import handle_onboarding_message
 from app.profiles.prompt_builder import build_system_prompt
-
 
 # ---------------------------------------------------------------------------
 # Helpers

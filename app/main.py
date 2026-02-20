@@ -1,4 +1,3 @@
-import asyncio
 import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -16,13 +15,14 @@ from app.database.repository import Repository
 from app.health.router import router as health_router
 from app.llm.client import OllamaClient
 from app.logging_config import configure_logging
-from app.models import ChatMessage
 from app.memory.daily_log import DailyLog
 from app.memory.markdown import MemoryFile
+from app.models import ChatMessage
 from app.skills.registry import SkillRegistry
 from app.skills.tools import register_builtin_tools
 from app.webhook.rate_limiter import RateLimiter
-from app.webhook.router import router as webhook_router, wait_for_in_flight
+from app.webhook.router import router as webhook_router
+from app.webhook.router import wait_for_in_flight
 from app.whatsapp.client import WhatsAppClient
 
 logger = logging.getLogger(__name__)
@@ -30,7 +30,7 @@ logger = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    settings = Settings()
+    settings = Settings()  # type: ignore[call-arg]
 
     configure_logging(level=settings.log_level, json_format=settings.log_json)
 
@@ -105,6 +105,7 @@ async def lifespan(app: FastAPI):
 
     # Scheduler Skill
     from apscheduler.schedulers.asyncio import AsyncIOScheduler
+
     from app.skills.tools.scheduler_tools import set_scheduler
 
     scheduler = AsyncIOScheduler()
@@ -139,6 +140,7 @@ async def lifespan(app: FastAPI):
     if settings.memory_file_watch_enabled:
         try:
             import asyncio
+
             from app.memory.watcher import MemoryWatcher
             memory_watcher = MemoryWatcher(
                 memory_file=memory_file,

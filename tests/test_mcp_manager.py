@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -9,7 +9,6 @@ pytest.importorskip("mcp", reason="mcp package not installed in this environment
 
 from app.mcp.manager import McpManager, _make_handler
 from app.skills.models import ToolCall
-
 
 # --- _make_handler tests (closure bug regression) ---
 

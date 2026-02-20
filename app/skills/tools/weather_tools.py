@@ -30,7 +30,7 @@ async def _resolve_and_fetch(client: httpx.AsyncClient, url: str, params: dict) 
         # 0, 0 means any family (AF_UNSPEC), any socktype (SOCK_STREAM)
         addrs = socket.getaddrinfo(hostname, port, 0, socket.SOCK_STREAM)
     except socket.gaierror as e:
-        raise httpx.ConnectError(f"DNS resolution failed for {hostname}: {e}")
+        raise httpx.ConnectError(f"DNS resolution failed for {hostname}: {e}") from e
 
     # Sort addresses: Try IPv6 first (AF_INET6 = 10)
     # This is a heuristic for this specific IPv6-only environment
@@ -43,18 +43,18 @@ async def _resolve_and_fetch(client: httpx.AsyncClient, url: str, params: dict) 
             # Construct new URL with IP
             new_netloc = f"[{ip}]:{port}" if family == socket.AF_INET6 else f"{ip}:{port}"
             new_url = parsed._replace(netloc=new_netloc).geturl()
-            
+
             # Host header is critical for SNI/Virtual Hosts
             headers = {"Host": hostname}
-            
+
             logger.info(f"Trying IP {ip} for {hostname}...")
-            resp = await client.get(new_url, params=params, headers=headers)
+            resp = await client.get(new_url, params=params, headers=headers)  # type: ignore[arg-type]
             return resp
         except (httpx.ConnectError, httpx.ReadTimeout, httpx.WriteTimeout) as e:
             logger.warning(f"Failed to connect to {ip}: {e}")
             last_exc = e
             continue
-    
+
     raise last_exc or httpx.ConnectError(f"All addresses failed for {hostname}")
 
 
@@ -65,16 +65,16 @@ def register(registry: SkillRegistry) -> None:
         """
         try:
             # Verify SSL is strict but we trust OpenMeteo
-            # Disable verification because we connect via IP (due to IPv6 environment issues) 
+            # Disable verification because we connect via IP (due to IPv6 environment issues)
             # and the cert is valid for hostname but not IP.
             async with httpx.AsyncClient(timeout=API_TIMEOUT, verify=False) as client:
                 # Step 1: Geocoding (City -> Lat/Lon)
                 logger.info(f"Geocoding city: {city}")
                 geo_params = {"name": city, "count": 1, "language": "en", "format": "json"}
-                
+
                 # Use custom resolver
                 geo_resp = await _resolve_and_fetch(client, OPENMETEO_GEOCODING_URL, geo_params)
-                
+
                 geo_resp.raise_for_status()
                 geo_data = geo_resp.json()
                 logger.info(f"Geocoding response: {geo_data}")
@@ -99,10 +99,10 @@ def register(registry: SkillRegistry) -> None:
                     "timezone": "auto",
                     "forecast_days": 1,
                 }
-                
+
                 # Use custom resolver
                 weather_resp = await _resolve_and_fetch(client, OPENMETEO_FORECAST_URL, forecast_params)
-                
+
                 weather_resp.raise_for_status()
                 weather_data = weather_resp.json()
                 logger.info("Forecast received successfully")

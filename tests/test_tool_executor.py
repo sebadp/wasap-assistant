@@ -1,10 +1,10 @@
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
 from app.llm.client import ChatResponse, OllamaClient
 from app.models import ChatMessage
-from app.skills.executor import execute_tool_loop, MAX_TOOL_ITERATIONS
+from app.skills.executor import MAX_TOOL_ITERATIONS, execute_tool_loop
 from app.skills.registry import SkillRegistry
 
 

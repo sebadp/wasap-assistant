@@ -20,15 +20,15 @@ def register_builtin_tools(
 ) -> None:
     from app.skills.tools.calculator_tools import register as register_calculator
     from app.skills.tools.datetime_tools import register as register_datetime
-    from app.skills.tools.notes_tools import register as register_notes
-    from app.skills.tools.weather_tools import register as register_weather
-    from app.skills.tools.search_tools import register as register_search
-    from app.skills.tools.news_tools import register as register_news
-    from app.skills.tools.scheduler_tools import register as register_scheduler
-    from app.skills.tools.tool_manager_tools import register as register_tool_manager
-    from app.skills.tools.selfcode_tools import register as register_selfcode
     from app.skills.tools.expand_tools import register as register_expand
+    from app.skills.tools.news_tools import register as register_news
+    from app.skills.tools.notes_tools import register as register_notes
     from app.skills.tools.project_tools import register as register_projects
+    from app.skills.tools.scheduler_tools import register as register_scheduler
+    from app.skills.tools.search_tools import register as register_search
+    from app.skills.tools.selfcode_tools import register as register_selfcode
+    from app.skills.tools.tool_manager_tools import register as register_tool_manager
+    from app.skills.tools.weather_tools import register as register_weather
 
     register_datetime(registry)
     register_calculator(registry)

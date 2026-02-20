@@ -1,8 +1,8 @@
 """Integration tests for the guardrail pipeline."""
 import pytest
 
-from app.guardrails.pipeline import run_guardrails
 from app.config import Settings
+from app.guardrails.pipeline import run_guardrails
 
 
 @pytest.fixture

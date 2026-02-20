@@ -1,4 +1,3 @@
-import pytest
 
 
 async def test_get_or_create_conversation(repository):

@@ -1,12 +1,11 @@
 from __future__ import annotations
 
+import logging
 from datetime import datetime
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from app.skills.registry import SkillRegistry
 
-
-import logging
 logger = logging.getLogger(__name__)
 
 def register(registry: SkillRegistry) -> None:

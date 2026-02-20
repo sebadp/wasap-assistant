@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
@@ -14,7 +14,7 @@ class DailyLog:
 
     async def append(self, entry: str) -> None:
         """Append an entry to today's daily log with timestamp."""
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         date_str = now.strftime("%Y-%m-%d")
         time_str = now.strftime("%H:%M")
         file_path = self._dir / f"{date_str}.md"
@@ -36,7 +36,7 @@ class DailyLog:
         def _do_load() -> str | None:
             if not log_dir.exists():
                 return None
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             parts: list[str] = []
             for i in range(days):
                 date = now - timedelta(days=i)
@@ -52,7 +52,7 @@ class DailyLog:
 
     async def save_snapshot(self, slug: str, content: str) -> Path:
         """Save a session snapshot to data/memory/snapshots/."""
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         date_str = now.strftime("%Y-%m-%d")
         snapshots_dir = self._dir / "snapshots"
         file_path = snapshots_dir / f"{date_str}-{slug}.md"

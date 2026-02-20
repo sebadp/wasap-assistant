@@ -29,7 +29,7 @@ def test_plain_logging(capsys):
     # Should NOT be JSON
     try:
         json.loads(line)
-        assert False, "Expected plain text, got JSON"
+        raise AssertionError("Expected plain text, got JSON")
     except json.JSONDecodeError:
         pass
 
@@ -41,7 +41,7 @@ def test_log_level_filtering(capsys):
     logger.warning("should appear")
 
     captured = capsys.readouterr()
-    lines = [l for l in captured.err.strip().splitlines() if l]
+    lines = [line for line in captured.err.strip().splitlines() if line]
     assert len(lines) == 1
     record = json.loads(lines[0])
     assert record["message"] == "should appear"

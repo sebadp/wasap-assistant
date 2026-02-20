@@ -166,7 +166,7 @@ def register(
     async def get_runtime_config() -> str:
         lines = ["Runtime configuration (sensitive fields hidden):"]
         try:
-            for field_name, field_info in settings.model_fields.items():
+            for field_name, _ in settings.model_fields.items():
                 if field_name in _SENSITIVE:
                     lines.append(f"  {field_name}: ***hidden***")
                 else:

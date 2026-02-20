@@ -1,5 +1,6 @@
-import pytest
 from unittest.mock import patch
+
+import pytest
 
 pytest.importorskip("duckduckgo_search", reason="duckduckgo_search not installed in this environment")
 

@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 import logging
-from typing import Any, Callable, Awaitable
+from collections.abc import Awaitable, Callable
+from typing import Any
 
 from app.skills.loader import scan_skills_directory
 from app.skills.models import SkillMetadata, ToolCall, ToolDefinition, ToolResult

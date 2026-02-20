@@ -7,7 +7,7 @@ import threading
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from watchdog.events import FileSystemEventHandler, FileSystemEvent
+from watchdog.events import FileSystemEvent, FileSystemEventHandler
 from watchdog.observers import Observer
 
 if TYPE_CHECKING:
@@ -66,7 +66,7 @@ class MemoryWatcher:
         self._memory_file = memory_file
         self._repository = repository
         self._loop = loop
-        self._observer: Observer | None = None
+        self._observer: Observer | None = None  # type: ignore[valid-type]
         self._syncing = threading.Event()
 
     def start(self) -> None:
@@ -85,8 +85,8 @@ class MemoryWatcher:
     def stop(self) -> None:
         """Stop watching."""
         if self._observer:
-            self._observer.stop()
-            self._observer.join(timeout=5)
+            self._observer.stop()  # type: ignore[attr-defined]
+            self._observer.join(timeout=5)  # type: ignore[attr-defined]
             logger.info("Memory watcher stopped")
 
     def set_sync_guard(self) -> None:
