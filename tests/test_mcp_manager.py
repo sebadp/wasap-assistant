@@ -5,6 +5,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+pytest.importorskip("mcp", reason="mcp package not installed in this environment")
+
 from app.mcp.manager import McpManager, _make_handler
 from app.skills.models import ToolCall
 

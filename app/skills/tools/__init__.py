@@ -58,3 +58,6 @@ def register_builtin_tools(
         )
     if settings is not None and mcp_manager is not None:
         register_expand(registry, mcp_manager, settings)
+    if settings is not None and settings.tracing_enabled:
+        from app.skills.tools.eval_tools import register as register_eval
+        register_eval(registry, repository, ollama_client=ollama_client)

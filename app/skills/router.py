@@ -45,6 +45,11 @@ TOOL_CATEGORIES: dict[str, list[str]] = {
         "project_progress", "update_project_status",
         "add_project_note", "search_project_notes",
     ],
+    "evaluation": [
+        "get_eval_summary", "list_recent_failures", "diagnose_trace",
+        "propose_correction", "add_to_dataset", "get_dataset_stats",
+        "run_quick_eval", "propose_prompt_change", "get_dashboard_stats",
+    ],
 }
 
 DEFAULT_CATEGORIES = ["time", "math", "weather", "search"]

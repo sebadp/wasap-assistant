@@ -9,6 +9,7 @@ from app.models import ChatMessage
 from app.skills.models import ToolCall
 from app.skills.registry import SkillRegistry
 from app.skills.router import classify_intent, select_tools
+from app.tracing.context import get_current_trace
 
 if TYPE_CHECKING:
     from app.mcp.manager import McpManager
@@ -74,10 +75,20 @@ async def _run_tool_call(
 
     tool_call = ToolCall(name=tool_name, arguments=arguments)
 
-    if mcp_manager and mcp_manager.has_tool(tool_name):
-        result = await mcp_manager.execute_tool(tool_call)
+    trace = get_current_trace()
+    if trace:
+        async with trace.span(f"tool:{tool_name}", kind="tool") as span:
+            span.set_input({"tool": tool_name, "arguments": arguments})
+            if mcp_manager and mcp_manager.has_tool(tool_name):
+                result = await mcp_manager.execute_tool(tool_call)
+            else:
+                result = await skill_registry.execute_tool(tool_call)
+            span.set_output({"content": result.content[:200]})
     else:
-        result = await skill_registry.execute_tool(tool_call)
+        if mcp_manager and mcp_manager.has_tool(tool_name):
+            result = await mcp_manager.execute_tool(tool_call)
+        else:
+            result = await skill_registry.execute_tool(tool_call)
 
     logger.info("Tool %s -> %s", tool_name, result.content[:100])
 

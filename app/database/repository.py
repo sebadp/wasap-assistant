@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import struct
+from typing import Any
 
 import aiosqlite
 
@@ -659,6 +660,487 @@ class Repository:
         rows = await cursor.fetchall()
         return [
             ProjectNote(id=r[0], project_id=r[1], content=r[2], created_at=r[3])
+            for r in rows
+        ]
+
+    # --- Tracing ---
+
+    async def save_trace(
+        self,
+        trace_id: str,
+        phone_number: str,
+        input_text: str,
+        message_type: str = "text",
+    ) -> None:
+        await self._conn.execute(
+            "INSERT INTO traces (id, phone_number, input_text, message_type) VALUES (?, ?, ?, ?)",
+            (trace_id, phone_number, input_text, message_type),
+        )
+        await self._conn.commit()
+
+    async def finish_trace(
+        self,
+        trace_id: str,
+        status: str,
+        output_text: str | None = None,
+        wa_message_id: str | None = None,
+    ) -> None:
+        await self._conn.execute(
+            "UPDATE traces SET status = ?, output_text = ?, wa_message_id = ?, "
+            "completed_at = datetime('now') WHERE id = ?",
+            (status, output_text, wa_message_id, trace_id),
+        )
+        await self._conn.commit()
+
+    async def save_trace_span(
+        self,
+        span_id: str,
+        trace_id: str,
+        name: str,
+        kind: str = "span",
+        parent_id: str | None = None,
+    ) -> None:
+        await self._conn.execute(
+            "INSERT INTO trace_spans (id, trace_id, name, kind, parent_id) VALUES (?, ?, ?, ?, ?)",
+            (span_id, trace_id, name, kind, parent_id),
+        )
+        await self._conn.commit()
+
+    async def finish_trace_span(
+        self,
+        span_id: str,
+        status: str,
+        latency_ms: float,
+        input_data: Any = None,
+        output_data: Any = None,
+        metadata: dict | None = None,
+    ) -> None:
+        await self._conn.execute(
+            "UPDATE trace_spans SET status = ?, latency_ms = ?, input = ?, output = ?, "
+            "metadata = ?, completed_at = datetime('now') WHERE id = ?",
+            (
+                status,
+                latency_ms,
+                json.dumps(input_data) if input_data is not None else None,
+                json.dumps(output_data) if output_data is not None else None,
+                json.dumps(metadata or {}),
+                span_id,
+            ),
+        )
+        await self._conn.commit()
+
+    async def save_trace_score(
+        self,
+        trace_id: str,
+        name: str,
+        value: float,
+        source: str = "system",
+        comment: str | None = None,
+        span_id: str | None = None,
+    ) -> None:
+        await self._conn.execute(
+            "INSERT INTO trace_scores (trace_id, name, value, source, comment, span_id) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            (trace_id, name, value, source, comment, span_id),
+        )
+        await self._conn.commit()
+
+    async def get_latest_trace_id(self, phone_number: str) -> str | None:
+        cursor = await self._conn.execute(
+            "SELECT id FROM traces WHERE phone_number = ? AND status = 'completed' "
+            "ORDER BY completed_at DESC LIMIT 1",
+            (phone_number,),
+        )
+        row = await cursor.fetchone()
+        return row[0] if row else None
+
+    async def get_trace_id_by_wa_message_id(self, wa_message_id: str) -> str | None:
+        cursor = await self._conn.execute(
+            "SELECT id FROM traces WHERE wa_message_id = ? LIMIT 1",
+            (wa_message_id,),
+        )
+        row = await cursor.fetchone()
+        return row[0] if row else None
+
+    async def get_trace_scores(self, trace_id: str) -> list[dict]:
+        cursor = await self._conn.execute(
+            "SELECT id, name, value, source, comment, span_id, created_at "
+            "FROM trace_scores WHERE trace_id = ? ORDER BY created_at",
+            (trace_id,),
+        )
+        rows = await cursor.fetchall()
+        return [
+            {
+                "id": r[0], "name": r[1], "value": r[2], "source": r[3],
+                "comment": r[4], "span_id": r[5], "created_at": r[6],
+            }
+            for r in rows
+        ]
+
+    async def get_trace_with_spans(self, trace_id: str) -> dict | None:
+        cursor = await self._conn.execute(
+            "SELECT id, phone_number, input_text, output_text, wa_message_id, "
+            "message_type, status, started_at, completed_at, metadata "
+            "FROM traces WHERE id = ?",
+            (trace_id,),
+        )
+        row = await cursor.fetchone()
+        if not row:
+            return None
+        trace = {
+            "id": row[0], "phone_number": row[1], "input_text": row[2],
+            "output_text": row[3], "wa_message_id": row[4], "message_type": row[5],
+            "status": row[6], "started_at": row[7], "completed_at": row[8],
+            "metadata": json.loads(row[9]),
+        }
+        span_cursor = await self._conn.execute(
+            "SELECT id, parent_id, name, kind, input, output, status, "
+            "started_at, completed_at, latency_ms, metadata "
+            "FROM trace_spans WHERE trace_id = ? ORDER BY started_at",
+            (trace_id,),
+        )
+        span_rows = await span_cursor.fetchall()
+        trace["spans"] = [
+            {
+                "id": s[0], "parent_id": s[1], "name": s[2], "kind": s[3],
+                "input": json.loads(s[4]) if s[4] else None,
+                "output": json.loads(s[5]) if s[5] else None,
+                "status": s[6], "started_at": s[7], "completed_at": s[8],
+                "latency_ms": s[9],
+                "metadata": json.loads(s[10]) if s[10] else {},
+            }
+            for s in span_rows
+        ]
+        trace["scores"] = await self.get_trace_scores(trace_id)
+        return trace
+
+    async def get_recent_user_message_embeddings(
+        self, conv_id: int, hours: int = 24, limit: int = 20
+    ) -> list[list[float]]:
+        """Return recent user message embeddings for repeated-question detection.
+
+        Requires that message embeddings are stored in a separate vec table.
+        Currently returns empty list (placeholder for future embedding-per-message support).
+        """
+        # Placeholder: message-level embeddings not yet implemented.
+        # This returns [] which causes _is_repeated_question to skip the check gracefully.
+        return []
+
+    # --- Eval Dataset ---
+
+    async def add_dataset_entry(
+        self,
+        trace_id: str,
+        entry_type: str,
+        input_text: str,
+        output_text: str | None = None,
+        expected_output: str | None = None,
+        metadata: dict | None = None,
+        tags: list[str] | None = None,
+    ) -> int:
+        cursor = await self._conn.execute(
+            "INSERT INTO eval_dataset "
+            "(trace_id, entry_type, input_text, output_text, expected_output, metadata) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            (
+                trace_id,
+                entry_type,
+                input_text,
+                output_text,
+                expected_output,
+                json.dumps(metadata or {}),
+            ),
+        )
+        dataset_id = cursor.lastrowid
+        if tags and dataset_id:
+            await self._conn.executemany(
+                "INSERT OR IGNORE INTO eval_dataset_tags (dataset_id, tag) VALUES (?, ?)",
+                [(dataset_id, tag) for tag in tags],
+            )
+        await self._conn.commit()
+        return dataset_id
+
+    async def get_dataset_entries(
+        self,
+        entry_type: str | None = None,
+        tag: str | None = None,
+        limit: int = 100,
+    ) -> list[dict]:
+        params: list = []
+        conditions: list[str] = []
+        base = (
+            "SELECT d.id, d.trace_id, d.entry_type, d.input_text, d.output_text, "
+            "d.expected_output, d.metadata, d.created_at "
+            "FROM eval_dataset d"
+        )
+        if tag:
+            base += " JOIN eval_dataset_tags t ON t.dataset_id = d.id AND t.tag = ?"
+            params.append(tag)
+        if entry_type:
+            conditions.append("d.entry_type = ?")
+            params.append(entry_type)
+        if conditions:
+            base += " WHERE " + " AND ".join(conditions)
+        base += " ORDER BY d.created_at DESC LIMIT ?"
+        params.append(limit)
+        cursor = await self._conn.execute(base, params)
+        rows = await cursor.fetchall()
+        return [
+            {
+                "id": r[0], "trace_id": r[1], "entry_type": r[2],
+                "input_text": r[3], "output_text": r[4], "expected_output": r[5],
+                "metadata": json.loads(r[6]), "created_at": r[7],
+            }
+            for r in rows
+        ]
+
+    async def add_dataset_tags(self, dataset_id: int, tags: list[str]) -> None:
+        await self._conn.executemany(
+            "INSERT OR IGNORE INTO eval_dataset_tags (dataset_id, tag) VALUES (?, ?)",
+            [(dataset_id, tag) for tag in tags],
+        )
+        await self._conn.commit()
+
+    async def get_dataset_stats(self) -> dict:
+        cursor = await self._conn.execute(
+            "SELECT entry_type, COUNT(*) FROM eval_dataset GROUP BY entry_type"
+        )
+        rows = await cursor.fetchall()
+        counts = {r[0]: r[1] for r in rows}
+        total = sum(counts.values())
+        tag_cursor = await self._conn.execute(
+            "SELECT tag, COUNT(*) FROM eval_dataset_tags GROUP BY tag ORDER BY COUNT(*) DESC LIMIT 10"
+        )
+        tag_rows = await tag_cursor.fetchall()
+        return {
+            "total": total,
+            "golden": counts.get("golden", 0),
+            "failure": counts.get("failure", 0),
+            "correction": counts.get("correction", 0),
+            "top_tags": {r[0]: r[1] for r in tag_rows},
+        }
+
+    # --- Prompt Versioning ---
+
+    async def save_prompt_version(
+        self,
+        prompt_name: str,
+        version: int,
+        content: str,
+        created_by: str = "human",
+    ) -> int:
+        cursor = await self._conn.execute(
+            "INSERT INTO prompt_versions (prompt_name, version, content, created_by) "
+            "VALUES (?, ?, ?, ?)",
+            (prompt_name, version, content, created_by),
+        )
+        await self._conn.commit()
+        return cursor.lastrowid
+
+    async def get_active_prompt_version(self, prompt_name: str) -> dict | None:
+        cursor = await self._conn.execute(
+            "SELECT id, prompt_name, version, content, is_active, scores, created_by, "
+            "approved_at, created_at FROM prompt_versions "
+            "WHERE prompt_name = ? AND is_active = 1 LIMIT 1",
+            (prompt_name,),
+        )
+        row = await cursor.fetchone()
+        if not row:
+            return None
+        return {
+            "id": row[0], "prompt_name": row[1], "version": row[2], "content": row[3],
+            "is_active": bool(row[4]), "scores": json.loads(row[5]),
+            "created_by": row[6], "approved_at": row[7], "created_at": row[8],
+        }
+
+    async def get_prompt_version(self, prompt_name: str, version: int) -> dict | None:
+        cursor = await self._conn.execute(
+            "SELECT id, prompt_name, version, content, is_active, scores, created_by, "
+            "approved_at, created_at FROM prompt_versions "
+            "WHERE prompt_name = ? AND version = ?",
+            (prompt_name, version),
+        )
+        row = await cursor.fetchone()
+        if not row:
+            return None
+        return {
+            "id": row[0], "prompt_name": row[1], "version": row[2], "content": row[3],
+            "is_active": bool(row[4]), "scores": json.loads(row[5]),
+            "created_by": row[6], "approved_at": row[7], "created_at": row[8],
+        }
+
+    async def activate_prompt_version(self, prompt_name: str, version: int) -> None:
+        """Deactivate all versions for prompt_name, then activate the given version.
+
+        Runs as an atomic transaction so there is always exactly one active version.
+        """
+        await self._conn.execute(
+            "UPDATE prompt_versions SET is_active = 0 WHERE prompt_name = ?",
+            (prompt_name,),
+        )
+        await self._conn.execute(
+            "UPDATE prompt_versions SET is_active = 1, approved_at = datetime('now') "
+            "WHERE prompt_name = ? AND version = ?",
+            (prompt_name, version),
+        )
+        await self._conn.commit()
+
+    async def list_prompt_versions(self, prompt_name: str) -> list[dict]:
+        cursor = await self._conn.execute(
+            "SELECT id, version, is_active, created_by, approved_at, created_at "
+            "FROM prompt_versions WHERE prompt_name = ? ORDER BY version DESC",
+            (prompt_name,),
+        )
+        rows = await cursor.fetchall()
+        return [
+            {
+                "id": r[0], "version": r[1], "is_active": bool(r[2]),
+                "created_by": r[3], "approved_at": r[4], "created_at": r[5],
+            }
+            for r in rows
+        ]
+
+    # --- Misc helpers ---
+
+    async def get_latest_memory(self) -> Any:
+        """Return the most recently inserted active memory (Memory model)."""
+        from app.models import Memory
+        cursor = await self._conn.execute(
+            "SELECT id, content, category, active, created_at FROM memories "
+            "WHERE active = 1 ORDER BY id DESC LIMIT 1",
+        )
+        row = await cursor.fetchone()
+        if not row:
+            return None
+        return Memory(id=row[0], content=row[1], category=row[2], active=bool(row[3]), created_at=row[4])
+
+    # --- Eval Skill queries ---
+
+    async def get_eval_summary(self, days: int = 7) -> dict:
+        """Aggregate score stats for the last N days, grouped by score name."""
+        cursor = await self._conn.execute(
+            "SELECT ts.name, ts.source, AVG(ts.value) as avg_val, "
+            "MIN(ts.value) as min_val, MAX(ts.value) as max_val, COUNT(*) as n "
+            "FROM trace_scores ts "
+            "JOIN traces t ON t.id = ts.trace_id "
+            "WHERE t.started_at > datetime('now', ? || ' days') "
+            "GROUP BY ts.name, ts.source "
+            "ORDER BY ts.name, ts.source",
+            (f"-{days}",),
+        )
+        rows = await cursor.fetchall()
+
+        trace_cursor = await self._conn.execute(
+            "SELECT COUNT(*), "
+            "SUM(CASE WHEN status='completed' THEN 1 ELSE 0 END), "
+            "SUM(CASE WHEN status='failed' THEN 1 ELSE 0 END) "
+            "FROM traces WHERE started_at > datetime('now', ? || ' days')",
+            (f"-{days}",),
+        )
+        trace_row = await trace_cursor.fetchone()
+        return {
+            "days": days,
+            "total_traces": trace_row[0] or 0 if trace_row else 0,
+            "completed_traces": trace_row[1] or 0 if trace_row else 0,
+            "failed_traces": trace_row[2] or 0 if trace_row else 0,
+            "scores": [
+                {
+                    "name": r[0], "source": r[1], "avg": round(r[2], 3),
+                    "min": round(r[3], 3), "max": round(r[4], 3), "count": r[5],
+                }
+                for r in rows
+            ],
+        }
+
+    async def get_failed_traces(self, limit: int = 10) -> list[dict]:
+        """Return recent traces that have at least one score below 0.5."""
+        cursor = await self._conn.execute(
+            "SELECT DISTINCT t.id, t.phone_number, t.input_text, t.output_text, "
+            "t.status, t.started_at, MIN(ts.value) as min_score "
+            "FROM traces t "
+            "JOIN trace_scores ts ON ts.trace_id = t.id "
+            "WHERE ts.value < 0.5 "
+            "GROUP BY t.id "
+            "ORDER BY t.started_at DESC LIMIT ?",
+            (limit,),
+        )
+        rows = await cursor.fetchall()
+        return [
+            {
+                "id": r[0], "phone_number": r[1], "input_text": r[2],
+                "output_text": r[3], "status": r[4], "started_at": r[5],
+                "min_score": round(r[6], 3),
+            }
+            for r in rows
+        ]
+
+    async def cleanup_old_traces(self, days: int = 90) -> int:
+        """Delete traces (and cascading spans/scores) older than N days.
+
+        Returns the number of traces deleted.
+        """
+        cursor = await self._conn.execute(
+            "SELECT id FROM traces WHERE started_at < datetime('now', ? || ' days')",
+            (f"-{days}",),
+        )
+        old_ids = [r[0] for r in await cursor.fetchall()]
+        if not old_ids:
+            return 0
+
+        placeholders = ",".join("?" * len(old_ids))
+        # Delete spans and scores first (FK constraints)
+        await self._conn.execute(
+            f"DELETE FROM trace_spans WHERE trace_id IN ({placeholders})", old_ids
+        )
+        await self._conn.execute(
+            f"DELETE FROM trace_scores WHERE trace_id IN ({placeholders})", old_ids
+        )
+        cursor = await self._conn.execute(
+            f"DELETE FROM traces WHERE id IN ({placeholders})", old_ids
+        )
+        await self._conn.commit()
+        return cursor.rowcount
+
+    async def get_failure_trend(self, days: int = 30) -> list[dict]:
+        """Return daily trace counts and failure counts for the last N days."""
+        cursor = await self._conn.execute(
+            """
+            SELECT
+                date(started_at) AS day,
+                COUNT(*) AS total,
+                SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) AS failed
+            FROM traces
+            WHERE started_at >= datetime('now', ? || ' days')
+            GROUP BY day
+            ORDER BY day DESC
+            """,
+            (f"-{days}",),
+        )
+        rows = await cursor.fetchall()
+        return [{"day": r[0], "total": r[1], "failed": r[2] or 0} for r in rows]
+
+    async def get_score_distribution(self) -> list[dict]:
+        """Return per-check score stats: count, avg, and failure count (<0.5)."""
+        cursor = await self._conn.execute(
+            """
+            SELECT
+                name,
+                COUNT(*) AS count,
+                AVG(value) AS avg_score,
+                SUM(CASE WHEN value < 0.5 THEN 1 ELSE 0 END) AS failures
+            FROM trace_scores
+            GROUP BY name
+            ORDER BY failures DESC
+            """
+        )
+        rows = await cursor.fetchall()
+        return [
+            {
+                "check": r[0],
+                "count": r[1],
+                "avg_score": round(r[2], 3) if r[2] is not None else 0.0,
+                "failures": r[3] or 0,
+            }
             for r in rows
         ]
 

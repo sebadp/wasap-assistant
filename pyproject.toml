@@ -16,6 +16,7 @@ dependencies = [
     "APScheduler>=3.10",
     "sqlite-vec>=0.1.6",
     "watchdog>=4.0",
+    "langdetect>=1.0.9",
 ]
 
 [project.optional-dependencies]
@@ -44,6 +45,7 @@ check_untyped_defs = true
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
+markers = ["eval: marks tests as evaluation tests (deselect with '-m \"not eval\"')"]
 
 [build-system]
 requires = ["setuptools>=69"]

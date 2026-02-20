@@ -1,4 +1,4 @@
-from app.models import WhatsAppMessage
+from app.models import WhatsAppMessage, WhatsAppReaction
 
 _SUPPORTED_TYPES = {"text", "audio", "image"}
 
@@ -41,3 +41,29 @@ def extract_messages(payload: dict) -> list[WhatsAppMessage]:
                     )
                 )
     return messages
+
+
+def extract_reactions(payload: dict) -> list[WhatsAppReaction]:
+    """Extract reactions from a WhatsApp webhook payload.
+
+    Reactions are NOT added to _SUPPORTED_TYPES — they bypass the normal
+    message pipeline (dedup, rate limit, _handle_message) entirely.
+    """
+    reactions: list[WhatsAppReaction] = []
+    for entry in payload.get("entry", []):
+        for change in entry.get("changes", []):
+            value = change.get("value", {})
+            for msg in value.get("messages", []):
+                if msg.get("type") != "reaction":
+                    continue
+                reaction = msg.get("reaction", {})
+                reacted_id = reaction.get("message_id")
+                emoji = reaction.get("emoji")
+                if not reacted_id or not emoji:
+                    continue
+                reactions.append(WhatsAppReaction(
+                    from_number=msg["from"],
+                    reacted_message_id=reacted_id,
+                    emoji=emoji,
+                ))
+    return reactions

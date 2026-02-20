@@ -112,6 +112,28 @@ async def lifespan(app: FastAPI):
     set_scheduler(scheduler, app.state.whatsapp_client)
     app.state.scheduler = scheduler
 
+    # Trace cleanup job: daily purge of traces older than trace_retention_days
+    if settings.tracing_enabled:
+        async def _cleanup_old_traces() -> None:
+            try:
+                deleted = await repository.cleanup_old_traces(days=settings.trace_retention_days)
+                logger.info("Trace cleanup: deleted %d old traces", deleted)
+            except Exception:
+                logger.exception("Trace cleanup job failed")
+
+        scheduler.add_job(
+            _cleanup_old_traces,
+            trigger="cron",
+            hour=3,
+            minute=0,
+            id="trace_cleanup",
+            replace_existing=True,
+        )
+        logger.info(
+            "Scheduled trace cleanup job (daily at 03:00, retention=%d days)",
+            settings.trace_retention_days,
+        )
+
     # Memory file watcher (bidirectional sync)
     memory_watcher = None
     if settings.memory_file_watch_enabled:

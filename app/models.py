@@ -69,3 +69,9 @@ class ProjectNote(BaseModel):
     project_id: int
     content: str
     created_at: str = ""
+
+
+class WhatsAppReaction(BaseModel):
+    from_number: str
+    reacted_message_id: str  # wa_message_id del mensaje que recibió la reacción
+    emoji: str
