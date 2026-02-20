@@ -90,14 +90,15 @@ class McpManager:
         servers_config = data.get("servers", {})
 
         for name, cfg in servers_config.items():
+            # Always track the config so disabled servers are preserved on save
+            self._server_configs[name] = cfg
+            if "description" in cfg:
+                self._server_descriptions[name] = cfg["description"]
+
             if not cfg.get("enabled", True):
                 logger.info("MCP server %s is disabled, skipping", name)
                 continue
 
-            if "description" in cfg:
-                self._server_descriptions[name] = cfg["description"]
-
-            self._server_configs[name] = cfg
             await self._connect_server(name, cfg)
 
         if self._tools:
