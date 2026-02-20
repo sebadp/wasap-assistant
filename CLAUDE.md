@@ -70,11 +70,20 @@ tests/
 ```
 
 ## Tests
-- Correr: `.venv/bin/python -m pytest tests/ -v`
+- Correr: `make test` o `.venv/bin/python -m pytest tests/ -v`
 - `asyncio_mode = "auto"` — no hace falta `@pytest.mark.asyncio`
 - `TestClient` (sync) para integration tests del webhook
 - Async fixtures para unit tests
 - Mockear siempre Ollama y WhatsApp API en tests
+
+## Calidad de código
+- **Linter**: `ruff` — `make lint` / `make format`
+- **Type checking**: `mypy app/` — `make typecheck` (solo `app/`, no `tests/`)
+- **Pre-commit hooks**: ruff → mypy → pytest — instalar con `make dev`
+- **CI**: GitHub Actions en `.github/workflows/ci.yml` — 3 jobs: lint → typecheck → test
+- **mypy lenient**: `ignore_missing_imports = true` porque faster-whisper, sqlite-vec, mcp, watchdog no tienen stubs
+- **ruff ignores**: `E501` (lineas largas), `B008` (FastAPI usa `Depends(...)` como default)
+- Antes de pushear: `make check` (lint + typecheck + tests)
 
 ## Fase 7 — Performance Optimization
 - Critical path parallelizado en `_handle_message` (router.py) en fases:
