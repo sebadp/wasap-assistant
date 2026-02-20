@@ -13,6 +13,7 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+
 def register(
     registry: SkillRegistry,
     repository: Repository,
@@ -29,8 +30,13 @@ def register(
         # Embed the new note (best-effort)
         if ollama_client and embed_model and vec_available:
             from app.embeddings.indexer import embed_note
+
             await embed_note(
-                note_id, f"{title}: {content}", repository, ollama_client, embed_model,
+                note_id,
+                f"{title}: {content}",
+                repository,
+                ollama_client,
+                embed_model,
             )
 
         return msg
@@ -63,7 +69,9 @@ def register(
                     logger.info(f"Semantic search found {len(notes)} matching notes")
                     return "\n".join(lines)
             except Exception:
-                logger.warning("Semantic note search failed, falling back to keyword", exc_info=True)
+                logger.warning(
+                    "Semantic note search failed, falling back to keyword", exc_info=True
+                )
 
         # Fallback to keyword search
         notes = await repository.search_notes(query)
@@ -83,6 +91,7 @@ def register(
             # Remove embedding (best-effort)
             if vec_available:
                 from app.embeddings.indexer import remove_note_embedding
+
                 await remove_note_embedding(note_id, repository)
             msg = f"Note {note_id} deleted."
             logger.info(msg)

@@ -1,4 +1,5 @@
 """Tests for sqlite-vec repository methods."""
+
 import pytest
 
 from app.database.db import init_db

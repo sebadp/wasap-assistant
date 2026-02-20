@@ -128,7 +128,12 @@ async def incoming_webhook(
     vec_available = get_vec_available(request)
 
     for msg in messages:
-        logger.info("Incoming [%s] (%s): %s", msg.from_number, msg.type, msg.text[:80] if msg.text else "(empty)")
+        logger.info(
+            "Incoming [%s] (%s): %s",
+            msg.from_number,
+            msg.type,
+            msg.text[:80] if msg.text else "(empty)",
+        )
         if msg.from_number not in settings.allowed_phone_numbers:
             logger.warning("Message from non-whitelisted number: %s", msg.from_number)
             continue
@@ -184,9 +189,17 @@ async def process_message(
 
     try:
         await _handle_message(
-            msg, settings, wa_client, ollama_client,
-            conversation, repository, command_registry,
-            memory_file, daily_log, transcriber, skill_registry,
+            msg,
+            settings,
+            wa_client,
+            ollama_client,
+            conversation,
+            repository,
+            command_registry,
+            memory_file,
+            daily_log,
+            transcriber,
+            skill_registry,
             mcp_manager=mcp_manager,
             vec_available=vec_available,
         )
@@ -208,7 +221,8 @@ async def _get_query_embedding(
     if settings.semantic_search_enabled and vec_available and user_text:
         try:
             result = await ollama_client.embed(
-                [user_text], model=settings.embedding_model,
+                [user_text],
+                model=settings.embedding_model,
             )
             return result[0]
         except Exception:
@@ -228,10 +242,13 @@ async def _get_memories(
     if query_embedding is not None:
         try:
             return await repository.search_similar_memories(
-                query_embedding, top_k=settings.semantic_search_top_k,
+                query_embedding,
+                top_k=settings.semantic_search_top_k,
             )
         except Exception:
-            logger.warning("Semantic memory search failed, falling back to all memories", exc_info=True)
+            logger.warning(
+                "Semantic memory search failed, falling back to all memories", exc_info=True
+            )
     return await repository.get_active_memories(limit=settings.semantic_search_top_k)
 
 
@@ -245,7 +262,8 @@ async def _get_relevant_notes(
     if settings.semantic_search_enabled and vec_available and query_embedding:
         try:
             return await repository.search_similar_notes(
-                query_embedding, top_k=5,
+                query_embedding,
+                top_k=5,
             )
         except Exception:
             logger.warning("Semantic note search failed", exc_info=True)
@@ -267,7 +285,9 @@ def _build_capabilities_section(
     # --- Commands (user-typed /slash commands) ---
     commands = command_registry.list_commands()
     if commands:
-        cmd_lines = ["Commands (the user types these directly — if they ask how to save info, mention /remember):"]
+        cmd_lines = [
+            "Commands (the user types these directly — if they ask how to save info, mention /remember):"
+        ]
         for cmd in commands:
             cmd_lines.append(f"  /{cmd.name} — {cmd.description}")
         sections.append("\n".join(cmd_lines))
@@ -355,7 +375,9 @@ def _build_context(
     if skills_summary:
         context.append(ChatMessage(role="system", content=skills_summary))
     if summary:
-        context.append(ChatMessage(role="system", content=f"Previous conversation summary:\n{summary}"))
+        context.append(
+            ChatMessage(role="system", content=f"Previous conversation summary:\n{summary}")
+        )
     context.extend(history)
     return context
 
@@ -394,6 +416,7 @@ async def _save_self_correction_memory(
 
         if embed_model and vec_available and ollama_client:
             from app.embeddings.indexer import embed_memory
+
             await embed_memory(mem_id, note, repository, ollama_client, embed_model)
     except Exception:
         logger.warning("Failed to save self-correction memory", exc_info=True)
@@ -410,7 +433,8 @@ async def _handle_reaction(reaction, repository) -> None:
         if not trace_id:
             logger.debug(
                 "Reaction %s to unknown message %s, ignoring",
-                reaction.emoji, reaction.reacted_message_id,
+                reaction.emoji,
+                reaction.reacted_message_id,
             )
             return
 
@@ -424,7 +448,10 @@ async def _handle_reaction(reaction, repository) -> None:
         )
         logger.info(
             "Reaction %s from %s → trace %s (score=%.1f)",
-            reaction.emoji, reaction.from_number, trace_id, value,
+            reaction.emoji,
+            reaction.from_number,
+            trace_id,
+            value,
         )
     except Exception:
         logger.warning("Failed to process reaction", exc_info=True)
@@ -568,15 +595,14 @@ async def _handle_message(
             msg = msg.model_copy(update={"text": transcription})
         except Exception:
             logger.exception("Audio transcription failed")
-            await wa_client.send_message(msg.from_number, "Sorry, I couldn't process that audio. Please try again.")
+            await wa_client.send_message(
+                msg.from_number, "Sorry, I couldn't process that audio. Please try again."
+            )
             return
 
     # Load user profile early (after audio transcription, so audio can feed into onboarding)
     profile_row = await repository.get_user_profile(msg.from_number)
-    in_onboarding = (
-        settings.onboarding_enabled
-        and profile_row["onboarding_state"] != "complete"
-    )
+    in_onboarding = settings.onboarding_enabled and profile_row["onboarding_state"] != "complete"
 
     # Handle image: llava describes → used as onboarding answer OR qwen3 responds normally
     if msg.type == "image" and msg.media_id:
@@ -586,7 +612,9 @@ async def _handle_message(
 
             # Step 1: llava describes the image
             vision_messages = [
-                ChatMessage(role="user", content="Describe this image in detail.", images=[image_b64]),
+                ChatMessage(
+                    role="user", content="Describe this image in detail.", images=[image_b64]
+                ),
             ]
             description = await ollama_client.chat(vision_messages, model=settings.vision_model)
             logger.info("Vision description [%s]: %s", msg.from_number, description[:120])
@@ -611,27 +639,40 @@ async def _handle_message(
 
             # Build context with image description injected
             query_emb = await _get_query_embedding(
-                user_text, settings, ollama_client, vec_available,
+                user_text,
+                settings,
+                ollama_client,
+                vec_available,
             )
             memories = await _get_memories(
-                user_text, settings, ollama_client, repository, vec_available,
+                user_text,
+                settings,
+                ollama_client,
+                repository,
+                vec_available,
                 query_embedding=query_emb,
             )
             context = await conversation.get_context(
-                msg.from_number, settings.system_prompt, memories,
+                msg.from_number,
+                settings.system_prompt,
+                memories,
             )
             # Add image description as context for qwen3
-            context.append(ChatMessage(
-                role="user",
-                content=f"[The user sent an image. Description: {description}]\n\n{user_text}",
-            ))
+            context.append(
+                ChatMessage(
+                    role="user",
+                    content=f"[The user sent an image. Description: {description}]\n\n{user_text}",
+                )
+            )
 
             reply = await ollama_client.chat(context)
             await conversation.add_message(msg.from_number, "assistant", reply)
             await wa_client.send_message(msg.from_number, markdown_to_whatsapp(reply))
         except Exception:
             logger.exception("Image processing failed")
-            await wa_client.send_message(msg.from_number, "Sorry, I couldn't process that image. Please try again.")
+            await wa_client.send_message(
+                msg.from_number, "Sorry, I couldn't process that image. Please try again."
+            )
         return
 
     # Check for commands (text-based only)
@@ -649,7 +690,9 @@ async def _handle_message(
                 mcp_manager=mcp_manager,
                 ollama_client=ollama_client,
                 daily_log=daily_log,
-                embed_model=settings.embedding_model if settings.semantic_search_enabled and vec_available else None,
+                embed_model=settings.embedding_model
+                if settings.semantic_search_enabled and vec_available
+                else None,
             )
             try:
                 reply = await spec.handler(cmd_args, ctx)
@@ -694,7 +737,9 @@ async def _handle_message(
     current_date = now.strftime("%Y-%m-%d")
     base_prompt = await get_active_prompt("system_prompt", repository, settings.system_prompt)
     system_prompt_with_date = build_system_prompt(
-        base_prompt, profile_row["data"], current_date,
+        base_prompt,
+        profile_row["data"],
+        current_date,
     )
 
     # Reply context: prepend quoted message if replying (sequential, needs result before Phase A)
@@ -711,10 +756,8 @@ async def _handle_message(
 
     # Determine if tracing is enabled (sample rate check)
     import random
-    _trace_enabled = (
-        settings.tracing_enabled
-        and random.random() < settings.tracing_sample_rate
-    )
+
+    _trace_enabled = settings.tracing_enabled and random.random() < settings.tracing_sample_rate
 
     recorder = TraceRecorder(repository)
     trace_ctx: TraceContext | None = None
@@ -763,27 +806,37 @@ async def _handle_message(
                     )
                     logger.debug(
                         "Correction detected (score=%.1f) for trace %s",
-                        correction_score, prev_trace_id,
+                        correction_score,
+                        prev_trace_id,
                     )
                     # High-confidence correction → save as correction pair in dataset
                     if correction_score == 0.0 and settings.eval_auto_curate:
                         prev_trace = await repository.get_trace_with_spans(prev_trace_id)
-                        _track_task(asyncio.create_task(
-                            add_correction_pair(
-                                previous_trace_id=prev_trace_id,
-                                input_text=prev_trace["input_text"] if prev_trace else "",
-                                bad_output=prev_trace["output_text"] if prev_trace else None,
-                                correction_text=user_text,
-                                repository=repository,
+                        _track_task(
+                            asyncio.create_task(
+                                add_correction_pair(
+                                    previous_trace_id=prev_trace_id,
+                                    input_text=prev_trace["input_text"] if prev_trace else "",
+                                    bad_output=prev_trace["output_text"] if prev_trace else None,
+                                    correction_text=user_text,
+                                    repository=repository,
+                                )
                             )
-                        ))
+                        )
 
         # Phase B (parallel): search memories || search notes || get summary || get history || projects
         if trace_ctx:
             async with trace_ctx.span("phase_b") as span:
                 span.set_metadata({"phase": "memories+notes+summary+history+projects"})
                 memories, relevant_notes, summary, history, projects_summary = await asyncio.gather(
-                    _get_memories(user_text, settings, ollama_client, repository, vec_available, query_embedding),
+                    _get_memories(
+                        user_text,
+                        settings,
+                        ollama_client,
+                        repository,
+                        vec_available,
+                        query_embedding,
+                    ),
                     _get_relevant_notes(query_embedding, settings, repository, vec_available),
                     repository.get_latest_summary(conv_id),
                     repository.get_recent_messages(conv_id, settings.conversation_max_messages),
@@ -791,7 +844,9 @@ async def _handle_message(
                 )
         else:
             memories, relevant_notes, summary, history, projects_summary = await asyncio.gather(
-                _get_memories(user_text, settings, ollama_client, repository, vec_available, query_embedding),
+                _get_memories(
+                    user_text, settings, ollama_client, repository, vec_available, query_embedding
+                ),
                 _get_relevant_notes(query_embedding, settings, repository, vec_available),
                 repository.get_latest_summary(conv_id),
                 repository.get_recent_messages(conv_id, settings.conversation_max_messages),
@@ -821,14 +876,20 @@ async def _handle_message(
 
         # Phase D: build context (sync) → main LLM call (~3-8s)
         context = _build_context(
-            system_prompt_with_date, memories, relevant_notes, daily_logs,
-            skills_summary, summary, history,
+            system_prompt_with_date,
+            memories,
+            relevant_notes,
+            daily_logs,
+            skills_summary,
+            summary,
+            history,
             projects_summary=projects_summary,
         )
 
         # Set current user context for tools that need it (e.g. scheduler, projects)
         from app.skills.tools.project_tools import set_current_user as set_project_user
         from app.skills.tools.scheduler_tools import set_current_user
+
         set_current_user(msg.from_number, received_at=now)
         set_project_user(msg.from_number)
 
@@ -838,7 +899,9 @@ async def _handle_message(
                     span.set_input({"has_tools": has_tools, "categories": pre_classified})
                     if has_tools:
                         reply = await execute_tool_loop(
-                            context, ollama_client, skill_registry,
+                            context,
+                            ollama_client,
+                            skill_registry,
                             mcp_manager=mcp_manager,
                             max_tools=settings.max_tools_per_call,
                             pre_classified_categories=pre_classified,
@@ -849,7 +912,9 @@ async def _handle_message(
             else:
                 if has_tools:
                     reply = await execute_tool_loop(
-                        context, ollama_client, skill_registry,
+                        context,
+                        ollama_client,
+                        skill_registry,
                         mcp_manager=mcp_manager,
                         max_tools=settings.max_tools_per_call,
                         pre_classified_categories=pre_classified,
@@ -863,10 +928,9 @@ async def _handle_message(
         # Guardrail pipeline (between LLM and WA delivery)
         if settings.guardrails_enabled:
             from app.guardrails.pipeline import run_guardrails
+
             tools_were_used = (
-                has_tools
-                and pre_classified is not None
-                and pre_classified != ["none"]
+                has_tools and pre_classified is not None and pre_classified != ["none"]
             )
             if trace_ctx:
                 async with trace_ctx.span("guardrails", kind="guardrail") as span:
@@ -877,10 +941,12 @@ async def _handle_message(
                         settings=settings,
                         ollama_client=ollama_client,
                     )
-                    span.set_metadata({
-                        "passed": guardrail_report.passed,
-                        "latency_ms": guardrail_report.total_latency_ms,
-                    })
+                    span.set_metadata(
+                        {
+                            "passed": guardrail_report.passed,
+                            "latency_ms": guardrail_report.total_latency_ms,
+                        }
+                    )
             else:
                 guardrail_report = await run_guardrails(
                     user_text=user_text,
@@ -892,7 +958,10 @@ async def _handle_message(
 
             if not guardrail_report.passed:
                 reply = await _handle_guardrail_failure(
-                    guardrail_report, context, ollama_client, reply,
+                    guardrail_report,
+                    context,
+                    ollama_client,
+                    reply,
                 )
 
             # Record guardrail results as trace scores
@@ -907,17 +976,21 @@ async def _handle_message(
             # Self-correction memory: persist guardrail failures so the LLM learns
             if not guardrail_report.passed:
                 failed_checks = [r.check_name for r in guardrail_report.results if not r.passed]
-                _track_task(asyncio.create_task(
-                    _save_self_correction_memory(
-                        user_text=user_text,
-                        failed_checks=failed_checks,
-                        repository=repository,
-                        memory_file=memory_file,
-                        ollama_client=ollama_client,
-                        embed_model=settings.embedding_model if settings.semantic_search_enabled and vec_available else None,
-                        vec_available=vec_available,
+                _track_task(
+                    asyncio.create_task(
+                        _save_self_correction_memory(
+                            user_text=user_text,
+                            failed_checks=failed_checks,
+                            repository=repository,
+                            memory_file=memory_file,
+                            ollama_client=ollama_client,
+                            embed_model=settings.embedding_model
+                            if settings.semantic_search_enabled and vec_available
+                            else None,
+                            vec_available=vec_available,
+                        )
                     )
-                ))
+                )
 
         await repository.save_message(conv_id, "assistant", reply)
 
@@ -928,7 +1001,8 @@ async def _handle_message(
             if trace_ctx:
                 async with trace_ctx.span("delivery") as span:
                     wa_message_id = await wa_client.send_message(
-                        msg.from_number, markdown_to_whatsapp(reply),
+                        msg.from_number,
+                        markdown_to_whatsapp(reply),
                     )
                     if wa_message_id:
                         trace_ctx.set_wa_message_id(wa_message_id)
@@ -941,46 +1015,57 @@ async def _handle_message(
         # Increment profile message count and maybe run progressive discovery
         if settings.onboarding_enabled:
             new_count = await repository.increment_profile_message_count(msg.from_number)
-            _track_task(asyncio.create_task(
-                maybe_discover_profile_updates(
-                    msg.from_number,
-                    new_count,
-                    settings.profile_discovery_interval,
-                    repository,
-                    ollama_client,
-                    settings,
+            _track_task(
+                asyncio.create_task(
+                    maybe_discover_profile_updates(
+                        msg.from_number,
+                        new_count,
+                        settings.profile_discovery_interval,
+                        repository,
+                        ollama_client,
+                        settings,
+                    )
                 )
-            ))
+            )
 
         # Auto-curate completed trace to eval dataset (best-effort, background)
         if trace_ctx and settings.eval_auto_curate:
-            _track_task(asyncio.create_task(
-                maybe_curate_to_dataset(
-                    trace_id=trace_ctx.trace_id,
-                    input_text=user_text,
-                    output_text=reply,
-                    repository=repository,
+            _track_task(
+                asyncio.create_task(
+                    maybe_curate_to_dataset(
+                        trace_id=trace_ctx.trace_id,
+                        input_text=user_text,
+                        output_text=reply,
+                        repository=repository,
+                    )
                 )
-            ))
+            )
 
         # Summarize in background if needed
-        _track_task(asyncio.create_task(
-            maybe_summarize(
-                conversation_id=conv_id,
-                repository=repository,
-                ollama_client=ollama_client,
-                threshold=settings.summary_threshold,
-                max_messages=settings.conversation_max_messages,
-                daily_log=daily_log,
-                memory_file=memory_file,
-                flush_enabled=settings.memory_flush_enabled,
-                embed_model=settings.embedding_model if settings.semantic_search_enabled and vec_available else None,
+        _track_task(
+            asyncio.create_task(
+                maybe_summarize(
+                    conversation_id=conv_id,
+                    repository=repository,
+                    ollama_client=ollama_client,
+                    threshold=settings.summary_threshold,
+                    max_messages=settings.conversation_max_messages,
+                    daily_log=daily_log,
+                    memory_file=memory_file,
+                    flush_enabled=settings.memory_flush_enabled,
+                    embed_model=settings.embedding_model
+                    if settings.semantic_search_enabled and vec_available
+                    else None,
+                )
             )
-        ))
+        )
 
     if _trace_enabled:
         async with TraceContext(
-            msg.from_number, user_text, recorder, message_type=_msg_type,
+            msg.from_number,
+            user_text,
+            recorder,
+            message_type=_msg_type,
         ) as trace_ctx:
             await _run_normal_flow(trace_ctx)
     else:

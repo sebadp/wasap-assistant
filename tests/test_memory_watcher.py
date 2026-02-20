@@ -1,4 +1,5 @@
 """Tests for MEMORY.md bidirectional watcher (6D)."""
+
 import pytest
 
 from app.database.db import init_db
@@ -50,6 +51,7 @@ async def watcher_setup(tmp_path):
 async def test_sync_from_file_adds_new_memories(watcher_setup):
     repo, mf, tmp_path = watcher_setup
     import asyncio
+
     loop = asyncio.get_event_loop()
     watcher = MemoryWatcher(memory_file=mf, repository=repo, loop=loop)
 
@@ -70,6 +72,7 @@ async def test_sync_from_file_adds_new_memories(watcher_setup):
 async def test_sync_from_file_removes_deleted_memories(watcher_setup):
     repo, mf, tmp_path = watcher_setup
     import asyncio
+
     loop = asyncio.get_event_loop()
     watcher = MemoryWatcher(memory_file=mf, repository=repo, loop=loop)
 
@@ -94,6 +97,7 @@ async def test_sync_from_file_removes_deleted_memories(watcher_setup):
 async def test_sync_guard_prevents_loop(watcher_setup):
     repo, mf, tmp_path = watcher_setup
     import asyncio
+
     loop = asyncio.get_event_loop()
     watcher = MemoryWatcher(memory_file=mf, repository=repo, loop=loop)
 
@@ -118,6 +122,7 @@ async def test_sync_guard_prevents_loop(watcher_setup):
 async def test_memory_file_sync_with_watcher(watcher_setup):
     repo, mf, tmp_path = watcher_setup
     import asyncio
+
     loop = asyncio.get_event_loop()
     watcher = MemoryWatcher(memory_file=mf, repository=repo, loop=loop)
     mf.set_watcher(watcher)

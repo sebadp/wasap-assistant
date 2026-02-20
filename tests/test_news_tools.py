@@ -2,7 +2,9 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-pytest.importorskip("duckduckgo_search", reason="duckduckgo_search not installed in this environment")
+pytest.importorskip(
+    "duckduckgo_search", reason="duckduckgo_search not installed in this environment"
+)
 
 from app.skills.models import ToolCall
 from app.skills.registry import SkillRegistry
@@ -51,7 +53,9 @@ async def test_search_news_no_results():
 
     with patch("app.skills.tools.news_tools.DDGS") as MockDDGS:
         MockDDGS.return_value.news.return_value = []
-        result = await reg.execute_tool(ToolCall(name="search_news", arguments={"query": "nothing"}))
+        result = await reg.execute_tool(
+            ToolCall(name="search_news", arguments={"query": "nothing"})
+        )
 
     assert result.success
     assert "No news found" in result.content
@@ -96,7 +100,9 @@ async def test_search_news_error():
 async def test_add_news_preference_like():
     reg, mock_repo = _make_registry()
     result = await reg.execute_tool(
-        ToolCall(name="add_news_preference", arguments={"source": "TechCrunch", "preference": "like"})
+        ToolCall(
+            name="add_news_preference", arguments={"source": "TechCrunch", "preference": "like"}
+        )
     )
 
     assert result.success
@@ -108,7 +114,9 @@ async def test_add_news_preference_like():
 async def test_add_news_preference_dislike():
     reg, mock_repo = _make_registry()
     result = await reg.execute_tool(
-        ToolCall(name="add_news_preference", arguments={"source": "Clarin", "preference": "dislike"})
+        ToolCall(
+            name="add_news_preference", arguments={"source": "Clarin", "preference": "dislike"}
+        )
     )
 
     assert result.success

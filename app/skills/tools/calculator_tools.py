@@ -89,6 +89,7 @@ def safe_eval(expression: str) -> float:
 
 logger = logging.getLogger(__name__)
 
+
 def register(registry: SkillRegistry) -> None:
 
     async def calculate(expression: str) -> str:

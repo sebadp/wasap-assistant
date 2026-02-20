@@ -11,10 +11,12 @@ async def _make_registry(repository):
 
 async def test_save_note(repository):
     reg = await _make_registry(repository)
-    result = await reg.execute_tool(ToolCall(
-        name="save_note",
-        arguments={"title": "Shopping", "content": "Buy milk and eggs"},
-    ))
+    result = await reg.execute_tool(
+        ToolCall(
+            name="save_note",
+            arguments={"title": "Shopping", "content": "Buy milk and eggs"},
+        )
+    )
     assert result.success
     assert "Shopping" in result.content
     assert "ID:" in result.content
@@ -51,7 +53,9 @@ async def test_search_notes(repository):
 
 async def test_search_notes_no_results(repository):
     reg = await _make_registry(repository)
-    result = await reg.execute_tool(ToolCall(name="search_notes", arguments={"query": "nonexistent"}))
+    result = await reg.execute_tool(
+        ToolCall(name="search_notes", arguments={"query": "nonexistent"})
+    )
     assert result.success
     assert "No notes" in result.content
 

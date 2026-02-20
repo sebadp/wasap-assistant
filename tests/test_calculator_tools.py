@@ -79,6 +79,7 @@ def test_round_function():
 
 # Security tests
 
+
 def test_reject_import():
     with pytest.raises(ValueError):
         safe_eval("__import__('os')")
@@ -111,6 +112,7 @@ def test_division_by_zero():
 
 # Integration test via registry
 
+
 async def test_calculate_tool_via_registry():
     from app.skills.models import ToolCall
     from app.skills.registry import SkillRegistry
@@ -132,6 +134,8 @@ async def test_calculate_tool_error():
     reg = SkillRegistry(skills_dir="/nonexistent")
     register(reg)
 
-    result = await reg.execute_tool(ToolCall(name="calculate", arguments={"expression": "__import__('os')"}))
+    result = await reg.execute_tool(
+        ToolCall(name="calculate", arguments={"expression": "__import__('os')"})
+    )
     assert result.success  # Handler catches ValueError
     assert "Error" in result.content

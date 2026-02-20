@@ -1,4 +1,5 @@
 """Integration tests for the guardrail pipeline."""
+
 import pytest
 
 from app.config import Settings
@@ -48,7 +49,9 @@ async def test_pipeline_fails_for_excessive_length(mock_settings):
 @pytest.mark.asyncio
 async def test_pipeline_includes_all_check_names(mock_settings):
     report = await run_guardrails(
-        user_text="Hello there", reply="Hi!", settings=mock_settings,
+        user_text="Hello there",
+        reply="Hi!",
+        settings=mock_settings,
     )
     check_names = {r.check_name for r in report.results}
     # Always-on checks
@@ -66,7 +69,9 @@ async def test_pipeline_language_check_disabled(mocker):
     s.guardrails_language_check = False
     s.guardrails_pii_check = True
     report = await run_guardrails(
-        user_text="Hello there my friend today", reply="Hi!", settings=s,
+        user_text="Hello there my friend today",
+        reply="Hi!",
+        settings=s,
     )
     check_names = {r.check_name for r in report.results}
     assert "language_match" not in check_names
@@ -78,7 +83,9 @@ async def test_pipeline_pii_check_disabled(mocker):
     s.guardrails_language_check = True
     s.guardrails_pii_check = False
     report = await run_guardrails(
-        user_text="Hello", reply="Contact me@example.com", settings=s,
+        user_text="Hello",
+        reply="Contact me@example.com",
+        settings=s,
     )
     check_names = {r.check_name for r in report.results}
     assert "no_pii" not in check_names
@@ -88,7 +95,9 @@ async def test_pipeline_pii_check_disabled(mocker):
 async def test_pipeline_no_settings_uses_defaults():
     """Without settings, all checks run with defaults."""
     report = await run_guardrails(
-        user_text="Hello", reply="Hi there!", settings=None,
+        user_text="Hello",
+        reply="Hi there!",
+        settings=None,
     )
     # Should not raise; returns a report
     assert isinstance(report.passed, bool)
@@ -148,7 +157,10 @@ async def test_pipeline_llm_checks_skipped_without_client(mocker):
     s.guardrails_llm_checks = True
 
     report = await run_guardrails(
-        user_text="hello", reply="hi", settings=s, ollama_client=None,
+        user_text="hello",
+        reply="hi",
+        settings=s,
+        ollama_client=None,
     )
     check_names = {r.check_name for r in report.results}
     assert "hallucination_check" not in check_names
@@ -174,7 +186,10 @@ async def test_pipeline_llm_check_timeout_fails_open(mocker):
     mock_client.chat.side_effect = _slow
 
     report = await run_guardrails(
-        user_text="hello", reply="hi", settings=s, ollama_client=mock_client,
+        user_text="hello",
+        reply="hi",
+        settings=s,
+        ollama_client=mock_client,
     )
     # Timed out → fail open
     hallucination = next(r for r in report.results if r.check_name == "hallucination_check")

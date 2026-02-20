@@ -61,9 +61,11 @@ def extract_reactions(payload: dict) -> list[WhatsAppReaction]:
                 emoji = reaction.get("emoji")
                 if not reacted_id or not emoji:
                     continue
-                reactions.append(WhatsAppReaction(
-                    from_number=msg["from"],
-                    reacted_message_id=reacted_id,
-                    emoji=emoji,
-                ))
+                reactions.append(
+                    WhatsAppReaction(
+                        from_number=msg["from"],
+                        reacted_message_id=reacted_id,
+                        emoji=emoji,
+                    )
+                )
     return reactions

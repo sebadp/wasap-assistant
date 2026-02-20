@@ -7,6 +7,7 @@
 
 Correction pairs are handled separately (call add_correction_pair directly from router).
 """
+
 from __future__ import annotations
 
 import logging

@@ -1,4 +1,5 @@
 """TraceRecorder: async SQLite persistence for traces and spans. Best-effort."""
+
 from __future__ import annotations
 
 import logging
@@ -64,7 +65,12 @@ class TraceRecorder:
     ) -> None:
         try:
             await self._repo.finish_trace_span(
-                span_id, status, latency_ms, input_data, output_data, metadata,
+                span_id,
+                status,
+                latency_ms,
+                input_data,
+                output_data,
+                metadata,
             )
         except Exception:
             logger.debug("TraceRecorder.finish_span failed", exc_info=True)

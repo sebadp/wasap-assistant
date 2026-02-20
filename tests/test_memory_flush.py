@@ -32,10 +32,14 @@ async def test_flush_extracts_facts_and_events(repository, tmp_path):
     memory_file = MemoryFile(path=str(tmp_path / "MEMORY.md"))
 
     ollama = AsyncMock()
-    ollama.chat = AsyncMock(return_value=json.dumps({
-        "facts": ["User prefers dark mode", "User's name is Carlos"],
-        "events": ["Discussed migration to Postgres"],
-    }))
+    ollama.chat = AsyncMock(
+        return_value=json.dumps(
+            {
+                "facts": ["User prefers dark mode", "User's name is Carlos"],
+                "events": ["Discussed migration to Postgres"],
+            }
+        )
+    )
 
     old_messages = [
         ChatMessage(role="user", content="I prefer dark mode"),
@@ -68,10 +72,14 @@ async def test_flush_deduplicates_facts(repository, tmp_path):
     await repository.add_memory("User prefers dark mode")
 
     ollama = AsyncMock()
-    ollama.chat = AsyncMock(return_value=json.dumps({
-        "facts": ["User prefers dark mode", "User speaks Spanish"],
-        "events": [],
-    }))
+    ollama.chat = AsyncMock(
+        return_value=json.dumps(
+            {
+                "facts": ["User prefers dark mode", "User speaks Spanish"],
+                "events": [],
+            }
+        )
+    )
 
     old_messages = [ChatMessage(role="user", content="test")]
     count = await flush_to_memory(old_messages, repository, ollama, daily_log, memory_file)
@@ -88,9 +96,14 @@ async def test_flush_handles_empty_response(repository, tmp_path):
     memory_file = MemoryFile(path=str(tmp_path / "MEMORY.md"))
 
     ollama = AsyncMock()
-    ollama.chat = AsyncMock(return_value=json.dumps({
-        "facts": [], "events": [],
-    }))
+    ollama.chat = AsyncMock(
+        return_value=json.dumps(
+            {
+                "facts": [],
+                "events": [],
+            }
+        )
+    )
 
     old_messages = [ChatMessage(role="user", content="Hello")]
     count = await flush_to_memory(old_messages, repository, ollama, daily_log, memory_file)
@@ -131,10 +144,14 @@ async def test_flush_skips_non_string_facts(repository, tmp_path):
     memory_file = MemoryFile(path=str(tmp_path / "MEMORY.md"))
 
     ollama = AsyncMock()
-    ollama.chat = AsyncMock(return_value=json.dumps({
-        "facts": ["Valid fact", 123, None, "", "Another valid"],
-        "events": [42, "Valid event"],
-    }))
+    ollama.chat = AsyncMock(
+        return_value=json.dumps(
+            {
+                "facts": ["Valid fact", 123, None, "", "Another valid"],
+                "events": [42, "Valid event"],
+            }
+        )
+    )
 
     old_messages = [ChatMessage(role="user", content="test")]
     count = await flush_to_memory(old_messages, repository, ollama, daily_log, memory_file)
@@ -155,15 +172,21 @@ async def test_maybe_summarize_with_flush(repository, tmp_path):
 
     ollama = AsyncMock()
     # First call: flush_to_memory, second call: summarize
-    ollama.chat = AsyncMock(side_effect=[
-        json.dumps({"facts": ["Extracted fact"], "events": ["Some event"]}),
-        "Summary of conversation.",
-    ])
+    ollama.chat = AsyncMock(
+        side_effect=[
+            json.dumps({"facts": ["Extracted fact"], "events": ["Some event"]}),
+            "Summary of conversation.",
+        ]
+    )
 
     await maybe_summarize(
-        conv_id, repository, ollama,
-        threshold=5, max_messages=3,
-        daily_log=daily_log, memory_file=memory_file,
+        conv_id,
+        repository,
+        ollama,
+        threshold=5,
+        max_messages=3,
+        daily_log=daily_log,
+        memory_file=memory_file,
         flush_enabled=True,
     )
 
@@ -192,9 +215,13 @@ async def test_maybe_summarize_flush_disabled(repository, tmp_path):
     ollama.chat = AsyncMock(return_value="Summary.")
 
     await maybe_summarize(
-        conv_id, repository, ollama,
-        threshold=5, max_messages=3,
-        daily_log=daily_log, memory_file=memory_file,
+        conv_id,
+        repository,
+        ollama,
+        threshold=5,
+        max_messages=3,
+        daily_log=daily_log,
+        memory_file=memory_file,
         flush_enabled=False,
     )
 
@@ -212,15 +239,21 @@ async def test_maybe_summarize_flush_error_does_not_block_summarize(repository, 
 
     ollama = AsyncMock()
     # First call (flush) fails, second call (summarize) works
-    ollama.chat = AsyncMock(side_effect=[
-        Exception("LLM down"),
-        "Summary despite flush failure.",
-    ])
+    ollama.chat = AsyncMock(
+        side_effect=[
+            Exception("LLM down"),
+            "Summary despite flush failure.",
+        ]
+    )
 
     await maybe_summarize(
-        conv_id, repository, ollama,
-        threshold=5, max_messages=3,
-        daily_log=daily_log, memory_file=memory_file,
+        conv_id,
+        repository,
+        ollama,
+        threshold=5,
+        max_messages=3,
+        daily_log=daily_log,
+        memory_file=memory_file,
         flush_enabled=True,
     )
 

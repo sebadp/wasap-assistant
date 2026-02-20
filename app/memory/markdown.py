@@ -20,6 +20,7 @@ class MemoryFile:
 
     async def sync(self, memories: list[Memory]) -> None:
         import asyncio
+
         if self._watcher:
             self._watcher.set_sync_guard()
         try:

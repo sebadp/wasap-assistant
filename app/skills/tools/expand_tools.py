@@ -31,6 +31,7 @@ def register(
     async def search_mcp_registry(query: str, count: int = 5) -> str:
         """Search Smithery registry for MCP servers matching a query."""
         import httpx
+
         count = max(1, min(count, 10))
         try:
             async with httpx.AsyncClient(timeout=10.0) as client:
@@ -68,6 +69,7 @@ def register(
     async def get_mcp_server_info(qualified_name: str) -> str:
         """Get full details of a Smithery MCP server including connection config."""
         import httpx
+
         try:
             async with httpx.AsyncClient(timeout=10.0) as client:
                 resp = await client.get(
@@ -90,7 +92,9 @@ def register(
                 if c["type"] == "http":
                     lines.append(f"  type: http  url: {c.get('deploymentUrl', '')}")
                 elif c["type"] == "stdio":
-                    lines.append(f"  type: stdio  command: {c.get('command', '')} {' '.join(c.get('args', []))}")
+                    lines.append(
+                        f"  type: stdio  command: {c.get('command', '')} {' '.join(c.get('args', []))}"
+                    )
 
         tools = data.get("tools", [])
         if tools:
@@ -109,6 +113,7 @@ def register(
         alias: optional local name (defaults to qualified_name).
         """
         import httpx
+
         name = alias.strip() or qualified_name.split("/")[-1]
 
         if name in {s["name"] for s in mcp_manager.list_servers() if s["status"] == "connected"}:
@@ -182,6 +187,7 @@ def register(
         env: dict[str, str] = {}
         for key in (k.strip() for k in env_keys.split(",") if k.strip()):
             import os
+
             env[key] = os.environ.get(key, "")
 
         cfg: dict = {
@@ -223,6 +229,7 @@ def register(
         before deciding whether to install it.
         """
         import httpx
+
         try:
             async with httpx.AsyncClient(timeout=10.0, follow_redirects=True) as client:
                 resp = await client.get(url)
@@ -247,6 +254,7 @@ def register(
         Python handlers require manual implementation.
         """
         import httpx
+
         if not name or not name.isidentifier():
             return "Invalid skill name. Use lowercase letters, digits, and underscores only."
 
@@ -287,14 +295,11 @@ def register(
         new skill files on disk.
         """
         from app.skills.executor import reset_tools_cache
+
         count = registry.reload()
         reset_tools_cache()
         mcp_servers = len([s for s in mcp_manager.list_servers() if s["status"] == "connected"])
-        return (
-            f"Capabilities reloaded.\n"
-            f"  Skills: {count}\n"
-            f"  MCP servers connected: {mcp_servers}"
-        )
+        return f"Capabilities reloaded.\n  Skills: {count}\n  MCP servers connected: {mcp_servers}"
 
     # ------------------------------------------------------------------
     # Tool registration
@@ -321,7 +326,10 @@ def register(
         parameters={
             "type": "object",
             "properties": {
-                "qualified_name": {"type": "string", "description": "Server qualified name (e.g. 'gmail', 'github')"},
+                "qualified_name": {
+                    "type": "string",
+                    "description": "Server qualified name (e.g. 'gmail', 'github')",
+                },
             },
             "required": ["qualified_name"],
         },
@@ -335,7 +343,10 @@ def register(
         parameters={
             "type": "object",
             "properties": {
-                "qualified_name": {"type": "string", "description": "Smithery qualified name (e.g. 'gmail')"},
+                "qualified_name": {
+                    "type": "string",
+                    "description": "Smithery qualified name (e.g. 'gmail')",
+                },
                 "alias": {"type": "string", "description": "Optional local name override"},
             },
             "required": ["qualified_name"],
@@ -352,9 +363,15 @@ def register(
             "properties": {
                 "name": {"type": "string", "description": "Local identifier"},
                 "command": {"type": "string", "description": "Executable (e.g. 'npx', 'uvx')"},
-                "args": {"type": "string", "description": "Space-separated args (e.g. '-y @modelcontextprotocol/server-github')"},
+                "args": {
+                    "type": "string",
+                    "description": "Space-separated args (e.g. '-y @modelcontextprotocol/server-github')",
+                },
                 "description": {"type": "string", "description": "Human-readable description"},
-                "env_keys": {"type": "string", "description": "Comma-separated env var names needed"},
+                "env_keys": {
+                    "type": "string",
+                    "description": "Comma-separated env var names needed",
+                },
             },
             "required": ["name", "command"],
         },
@@ -390,7 +407,10 @@ def register(
         parameters={
             "type": "object",
             "properties": {
-                "url": {"type": "string", "description": "URL to fetch (GitHub raw, direct link, etc.)"},
+                "url": {
+                    "type": "string",
+                    "description": "URL to fetch (GitHub raw, direct link, etc.)",
+                },
             },
             "required": ["url"],
         },

@@ -1,4 +1,5 @@
 """Tests for semantic memory search integration."""
+
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -43,15 +44,11 @@ async def test_embed_memory_and_search(vec_repo, mock_ollama):
     mem_id = await repo.add_memory("User loves Python")
 
     # Mock embed for indexing
-    mock_ollama._http.post = AsyncMock(
-        return_value=_make_embed_response([[0.1] * 768])
-    )
+    mock_ollama._http.post = AsyncMock(return_value=_make_embed_response([[0.1] * 768]))
     await embed_memory(mem_id, "User loves Python", repo, mock_ollama, "nomic-embed-text")
 
     # Search with similar embedding
-    mock_ollama._http.post = AsyncMock(
-        return_value=_make_embed_response([[0.1] * 768])
-    )
+    mock_ollama._http.post = AsyncMock(return_value=_make_embed_response([[0.1] * 768]))
     results = await repo.search_similar_memories([0.1] * 768, top_k=5)
     assert "User loves Python" in results
 
@@ -88,12 +85,14 @@ async def test_get_memories_semantic(vec_repo, mock_ollama):
     settings.semantic_search_top_k = 10
 
     # Mock embed for query
-    mock_ollama._http.post = AsyncMock(
-        return_value=_make_embed_response([[0.5] * 768])
-    )
+    mock_ollama._http.post = AsyncMock(return_value=_make_embed_response([[0.5] * 768]))
 
     results = await _get_memories(
-        "Tell me about programming", settings, mock_ollama, repo, vec_available,
+        "Tell me about programming",
+        settings,
+        mock_ollama,
+        repo,
+        vec_available,
     )
     assert "Python programming" in results
 
@@ -106,7 +105,11 @@ async def test_get_memories_fallback_when_disabled(vec_repo, mock_ollama):
     settings.semantic_search_enabled = False
 
     results = await _get_memories(
-        "query", settings, mock_ollama, repo, vec_available,
+        "query",
+        settings,
+        mock_ollama,
+        repo,
+        vec_available,
     )
     assert "All memories returned" in results
 
@@ -124,6 +127,10 @@ async def test_get_memories_fallback_on_embed_error(vec_repo, mock_ollama):
     mock_ollama._http.post = AsyncMock(side_effect=Exception("embed failed"))
 
     results = await _get_memories(
-        "query", settings, mock_ollama, repo, vec_available,
+        "query",
+        settings,
+        mock_ollama,
+        repo,
+        vec_available,
     )
     assert "Fallback memory" in results

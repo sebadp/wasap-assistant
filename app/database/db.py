@@ -222,9 +222,9 @@ async def init_db(db_path: str, embedding_dims: int = 768) -> tuple[aiosqlite.Co
     # the main thread (needed for enable_load_extension during init)
     conn = await aiosqlite.connect(db_path, check_same_thread=False)
     await conn.execute("PRAGMA journal_mode=WAL")
-    await conn.execute("PRAGMA synchronous=NORMAL")   # Faster, safe with WAL
-    await conn.execute("PRAGMA cache_size=-32000")    # 32MB page cache in memory
-    await conn.execute("PRAGMA temp_store=MEMORY")    # Temp tables in RAM
+    await conn.execute("PRAGMA synchronous=NORMAL")  # Faster, safe with WAL
+    await conn.execute("PRAGMA cache_size=-32000")  # 32MB page cache in memory
+    await conn.execute("PRAGMA temp_store=MEMORY")  # Temp tables in RAM
     await conn.execute("PRAGMA foreign_keys=ON")
     await conn.executescript(SCHEMA)
     await conn.executescript(TRACING_SCHEMA)

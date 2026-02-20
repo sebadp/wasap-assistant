@@ -85,6 +85,7 @@ async def lifespan(app: FastAPI):
 
     # MCP Manager (initialized before skills so expand tools can reference it)
     from app.mcp.manager import McpManager
+
     mcp_manager = McpManager(config_path=settings.mcp_config_path)
     await mcp_manager.initialize()
     app.state.mcp_manager = mcp_manager
@@ -93,9 +94,12 @@ async def lifespan(app: FastAPI):
     skill_registry = SkillRegistry(skills_dir=settings.skills_dir)
     skill_registry.load_skills()
     register_builtin_tools(
-        skill_registry, repository,
+        skill_registry,
+        repository,
         ollama_client=app.state.ollama_client,
-        embed_model=settings.embedding_model if settings.semantic_search_enabled and vec_available else None,
+        embed_model=settings.embedding_model
+        if settings.semantic_search_enabled and vec_available
+        else None,
         vec_available=vec_available,
         settings=settings,
         mcp_manager=mcp_manager,
@@ -115,6 +119,7 @@ async def lifespan(app: FastAPI):
 
     # Trace cleanup job: daily purge of traces older than trace_retention_days
     if settings.tracing_enabled:
+
         async def _cleanup_old_traces() -> None:
             try:
                 deleted = await repository.cleanup_old_traces(days=settings.trace_retention_days)
@@ -142,6 +147,7 @@ async def lifespan(app: FastAPI):
             import asyncio
 
             from app.memory.watcher import MemoryWatcher
+
             memory_watcher = MemoryWatcher(
                 memory_file=memory_file,
                 repository=repository,
@@ -151,6 +157,7 @@ async def lifespan(app: FastAPI):
             memory_watcher.start()
         except ImportError:
             import logging
+
             logging.getLogger(__name__).warning(
                 "watchdog not installed, MEMORY.md file watching disabled. "
                 "Install with: pip install watchdog"
@@ -160,23 +167,32 @@ async def lifespan(app: FastAPI):
     # Backfill embeddings at startup
     if vec_available and settings.semantic_search_enabled:
         from app.embeddings.indexer import backfill_embeddings, backfill_note_embeddings
+
         try:
             await backfill_embeddings(
-                repository, app.state.ollama_client, settings.embedding_model,
+                repository,
+                app.state.ollama_client,
+                settings.embedding_model,
             )
             await backfill_note_embeddings(
-                repository, app.state.ollama_client, settings.embedding_model,
+                repository,
+                app.state.ollama_client,
+                settings.embedding_model,
             )
         except Exception:
             import logging
-            logging.getLogger(__name__).warning("Embedding backfill failed at startup", exc_info=True)
+
+            logging.getLogger(__name__).warning(
+                "Embedding backfill failed at startup", exc_info=True
+            )
 
     # Warmup: pre-load Ollama models to avoid cold-start on first message
     try:
         await asyncio.gather(
             app.state.ollama_client.embed(["warmup"], model=settings.embedding_model),
             app.state.ollama_client.chat_with_tools(
-                [ChatMessage(role="user", content="hi")], think=False,
+                [ChatMessage(role="user", content="hi")],
+                think=False,
             ),
         )
         logger.info("Ollama models warmed up")

@@ -17,7 +17,12 @@ logger = logging.getLogger(__name__)
 # Resolve project root once at import time (wasap-assistant/)
 _PROJECT_ROOT = Path(__file__).resolve().parents[3]
 
-_SENSITIVE = {"whatsapp_access_token", "whatsapp_app_secret", "whatsapp_verify_token", "ngrok_authtoken"}
+_SENSITIVE = {
+    "whatsapp_access_token",
+    "whatsapp_app_secret",
+    "whatsapp_verify_token",
+    "ngrok_authtoken",
+}
 
 _BLOCKED_NAME_PATTERNS = {".env", "secret", "token", "password", ".key", ".pem"}
 
@@ -60,7 +65,9 @@ def register(
             try:
                 result = subprocess.run(
                     ["git", "log", "-1", "--pretty=format:%H %s %ai"],
-                    capture_output=True, text=True, cwd=str(_PROJECT_ROOT),
+                    capture_output=True,
+                    text=True,
+                    cwd=str(_PROJECT_ROOT),
                 )
                 if result.returncode == 0 and result.stdout.strip():
                     lines.append(f"Last commit: {result.stdout.strip()}")
@@ -71,7 +78,9 @@ def register(
             try:
                 result = subprocess.run(
                     ["git", "branch", "--show-current"],
-                    capture_output=True, text=True, cwd=str(_PROJECT_ROOT),
+                    capture_output=True,
+                    text=True,
+                    cwd=str(_PROJECT_ROOT),
                 )
                 if result.returncode == 0:
                     lines.append(f"Branch: {result.stdout.strip()}")
@@ -110,7 +119,7 @@ def register(
 
             # Add line numbers
             lines = content.splitlines()
-            numbered = "\n".join(f"{i+1:4d}  {line}" for i, line in enumerate(lines))
+            numbered = "\n".join(f"{i + 1:4d}  {line}" for i, line in enumerate(lines))
 
             # Truncate if too long
             if len(numbered) > 5000:
@@ -190,7 +199,9 @@ def register(
             parts.append("Ollama: client not configured")
 
         # Vector search
-        parts.append(f"Vector search (sqlite-vec): {'available' if vec_available else 'not available'}")
+        parts.append(
+            f"Vector search (sqlite-vec): {'available' if vec_available else 'not available'}"
+        )
 
         # Data directories
         data_dirs = ["data", "data/memory", "data/memory/snapshots"]
@@ -200,7 +211,9 @@ def register(
 
         # Skills directory
         skills_path = _PROJECT_ROOT / settings.skills_dir
-        parts.append(f"Skills dir '{settings.skills_dir}': {'exists' if skills_path.exists() else 'missing'}")
+        parts.append(
+            f"Skills dir '{settings.skills_dir}': {'exists' if skills_path.exists() else 'missing'}"
+        )
 
         return "System health:\n" + "\n".join(f"  {p}" for p in parts)
 
@@ -212,7 +225,8 @@ def register(
             try:
                 result = subprocess.run(
                     [
-                        "grep", "-rn",
+                        "grep",
+                        "-rn",
                         "--include=*.py",
                         "--include=*.md",
                         "--",
@@ -240,7 +254,9 @@ def register(
             lines = output.splitlines()
             if len(lines) > 60:
                 lines = lines[:60]
-                lines.append(f"... (showing 60 of {len(lines) + (len(output.splitlines()) - 60)} matches)")
+                lines.append(
+                    f"... (showing 60 of {len(lines) + (len(output.splitlines()) - 60)} matches)"
+                )
 
             return "\n".join(lines)
 

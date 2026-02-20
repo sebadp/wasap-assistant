@@ -1,5 +1,3 @@
-
-
 async def test_get_or_create_conversation(repository):
     conv_id = await repository.get_or_create_conversation("5491112345678")
     assert conv_id is not None
@@ -132,6 +130,7 @@ async def test_delete_old_messages(repository):
 
 # --- Deduplication ---
 
+
 async def test_try_claim_message_first_time(repository):
     result = await repository.try_claim_message("wamid.new")
     assert result is False  # Not a duplicate
@@ -144,6 +143,7 @@ async def test_try_claim_message_duplicate(repository):
 
 
 # --- Reply context ---
+
 
 async def test_get_message_by_wa_id(repository):
     conv_id = await repository.get_or_create_conversation("123")
@@ -161,6 +161,7 @@ async def test_get_message_by_wa_id_not_found(repository):
 
 
 # --- Notes ---
+
 
 async def test_save_and_list_notes(repository):
     note_id = await repository.save_note("Test Title", "Test content")
@@ -205,6 +206,7 @@ async def test_delete_nonexistent_note(repository):
 
 
 # --- Dashboard queries (Iteración 6) ---
+
 
 async def _insert_trace(conn, trace_id: str, status: str = "completed") -> None:
     """Helper to insert a trace row directly."""

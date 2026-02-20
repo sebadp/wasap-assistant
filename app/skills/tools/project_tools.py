@@ -146,14 +146,14 @@ def register(
             task.project_id, f"task_{status}", f"[{task_id}] {task.title}"
         )
         if status == "done" and daily_log:
-            await daily_log.append(
-                f"Completed task '{task.title}' in project '{pname}'"
-            )
+            await daily_log.append(f"Completed task '{task.title}' in project '{pname}'")
         # Check if all tasks done → suggest completing project
         progress = await repository.get_project_progress(task.project_id)
         suffix = ""
         if status == "done" and progress["total"] > 0 and progress["done"] == progress["total"]:
-            suffix = "\n\nAll tasks done! Consider completing the project with update_project_status."
+            suffix = (
+                "\n\nAll tasks done! Consider completing the project with update_project_status."
+            )
         logger.info("Updated task %d to '%s' in project '%s'", task_id, status, pname)
         return f"Task [{task_id}] '{task.title}' → {status} in project '{pname}'.{suffix}"
 
@@ -244,6 +244,7 @@ def register(
         # Embed best-effort
         if ollama_client and embed_model and vec_available:
             from app.embeddings.indexer import embed_project_note
+
             await embed_project_note(note_id, content, repository, ollama_client, embed_model)
         logger.info("Added note %d to project '%s'", note_id, pname)
         return f"Note saved to project '{pname}' (ID: {note_id})."
@@ -289,7 +290,10 @@ def register(
             "type": "object",
             "properties": {
                 "name": {"type": "string", "description": "Project name (unique per user)"},
-                "description": {"type": "string", "description": "Brief description of the project goal"},
+                "description": {
+                    "type": "string",
+                    "description": "Brief description of the project goal",
+                },
             },
             "required": ["name"],
         },

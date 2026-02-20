@@ -84,9 +84,12 @@ async def consolidate_memories(
                 # Remove embedding (best-effort)
                 try:
                     from app.embeddings.indexer import remove_memory_embedding
+
                     await remove_memory_embedding(memory_id, repository)
                 except Exception:
-                    logger.warning("Failed to delete embedding for consolidated memory %d", memory_id)
+                    logger.warning(
+                        "Failed to delete embedding for consolidated memory %d", memory_id
+                    )
 
     # Sync MEMORY.md if any were removed
     if removed_count > 0:

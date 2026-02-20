@@ -55,10 +55,14 @@ async def test_get_weather_success():
     mock_weather_resp.json.return_value = SAMPLE_FORECAST_RESPONSE
 
     # Patch the _resolve_and_fetch helper function
-    with patch("app.skills.tools.weather_tools._resolve_and_fetch", new_callable=AsyncMock) as mock_resolve:
+    with patch(
+        "app.skills.tools.weather_tools._resolve_and_fetch", new_callable=AsyncMock
+    ) as mock_resolve:
         mock_resolve.side_effect = [mock_geo_resp, mock_weather_resp]
 
-        result = await reg.execute_tool(ToolCall(name="get_weather", arguments={"city": "Buenos Aires"}))
+        result = await reg.execute_tool(
+            ToolCall(name="get_weather", arguments={"city": "Buenos Aires"})
+        )
 
     assert result.success
     assert "Buenos Aires" in result.content
@@ -76,10 +80,14 @@ async def test_get_weather_city_not_found():
     mock_geo_resp.raise_for_status = MagicMock()
     mock_geo_resp.json.return_value = {"results": []}  # Empty results
 
-    with patch("app.skills.tools.weather_tools._resolve_and_fetch", new_callable=AsyncMock) as mock_resolve:
+    with patch(
+        "app.skills.tools.weather_tools._resolve_and_fetch", new_callable=AsyncMock
+    ) as mock_resolve:
         mock_resolve.return_value = mock_geo_resp
 
-        result = await reg.execute_tool(ToolCall(name="get_weather", arguments={"city": "NonexistentCity"}))
+        result = await reg.execute_tool(
+            ToolCall(name="get_weather", arguments={"city": "NonexistentCity"})
+        )
 
     assert result.success
     assert "Could not find location" in result.content
@@ -94,10 +102,16 @@ async def test_get_weather_http_error():
         "Not Found", request=MagicMock(), response=mock_resp
     )
 
-    with patch("app.skills.tools.weather_tools._resolve_and_fetch", new_callable=AsyncMock) as mock_resolve:
-        mock_resolve.side_effect = httpx.HTTPStatusError("Not Found", request=MagicMock(), response=mock_resp)
+    with patch(
+        "app.skills.tools.weather_tools._resolve_and_fetch", new_callable=AsyncMock
+    ) as mock_resolve:
+        mock_resolve.side_effect = httpx.HTTPStatusError(
+            "Not Found", request=MagicMock(), response=mock_resp
+        )
 
-        result = await reg.execute_tool(ToolCall(name="get_weather", arguments={"city": "ErrorCity"}))
+        result = await reg.execute_tool(
+            ToolCall(name="get_weather", arguments={"city": "ErrorCity"})
+        )
 
     assert result.success
     assert "Weather service error" in result.content or "HTTP 404" in result.content

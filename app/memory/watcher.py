@@ -1,4 +1,5 @@
 """Bidirectional MEMORY.md watcher: file edits sync to SQLite."""
+
 from __future__ import annotations
 
 import logging
@@ -104,9 +105,11 @@ class MemoryWatcher:
             return
 
         import asyncio
+
         try:
             asyncio.run_coroutine_threadsafe(
-                self._sync_from_file(), self._loop,
+                self._sync_from_file(),
+                self._loop,
             )
         except Exception:
             logger.warning("Failed to schedule file sync", exc_info=True)
@@ -155,6 +158,7 @@ class MemoryWatcher:
             finally:
                 # Clear guard after a short delay to let watchdog event pass
                 import asyncio
+
                 await asyncio.sleep(0.5)
                 self.clear_sync_guard()
 

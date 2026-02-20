@@ -35,7 +35,8 @@ def register_builtin_tools(
     register_weather(registry)
     register_search(registry)
     register_notes(
-        registry, repository,
+        registry,
+        repository,
         ollama_client=ollama_client,
         embed_model=embed_model,
         vec_available=vec_available,
@@ -44,7 +45,8 @@ def register_builtin_tools(
     register_scheduler(registry)
     register_tool_manager(registry)
     register_projects(
-        registry, repository,
+        registry,
+        repository,
         daily_log=daily_log,
         ollama_client=ollama_client,
         embed_model=embed_model,
@@ -52,7 +54,8 @@ def register_builtin_tools(
     )
     if settings is not None:
         register_selfcode(
-            registry, settings,
+            registry,
+            settings,
             ollama_client=ollama_client,
             vec_available=vec_available,
         )
@@ -60,4 +63,5 @@ def register_builtin_tools(
         register_expand(registry, mcp_manager, settings)
     if settings is not None and settings.tracing_enabled:
         from app.skills.tools.eval_tools import register as register_eval
+
         register_eval(registry, repository, ollama_client=ollama_client)

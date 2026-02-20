@@ -5,6 +5,7 @@ and run quick evaluations — all via WhatsApp.
 
 register() receives: registry, repository, ollama_client (optional).
 """
+
 from __future__ import annotations
 
 import logging
@@ -210,19 +211,23 @@ def register(
             if not entry.get("expected_output"):
                 continue
             try:
-                resp = await ollama_client.chat([
-                    ChatMessage(role="user", content=entry["input_text"]),
-                ])
+                resp = await ollama_client.chat(
+                    [
+                        ChatMessage(role="user", content=entry["input_text"]),
+                    ]
+                )
                 actual = resp.strip() if isinstance(resp, str) else resp
                 expected = entry["expected_output"]
                 # Simple overlap metric: shared words / total words
                 actual_words = set(str(actual).lower().split())
                 expected_words = set(expected.lower().split())
                 overlap = len(actual_words & expected_words) / max(len(expected_words), 1)
-                results.append({
-                    "entry_id": entry["id"],
-                    "overlap": round(overlap, 2),
-                })
+                results.append(
+                    {
+                        "entry_id": entry["id"],
+                        "overlap": round(overlap, 2),
+                    }
+                )
             except Exception:
                 logger.exception("run_quick_eval inference failed for entry %s", entry["id"])
 
@@ -272,8 +277,7 @@ def register(
             lines += ["", "*Scores por check:*"]
             for s in scores:
                 lines.append(
-                    f"  {s['check']}: avg={s['avg_score']:.2f}, "
-                    f"fallos={s['failures']}/{s['count']}"
+                    f"  {s['check']}: avg={s['avg_score']:.2f}, fallos={s['failures']}/{s['count']}"
                 )
 
         return "\n".join(lines)
@@ -288,6 +292,7 @@ def register(
             return "Cannot propose prompt change: Ollama client not available."
         try:
             from app.eval.evolution import propose_prompt_change as _propose
+
             result = await _propose(
                 prompt_name=prompt_name,
                 diagnosis=diagnosis,

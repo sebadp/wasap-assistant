@@ -61,9 +61,7 @@ def test_incoming_webhook_status_update(client):
                     {
                         "value": {
                             "messaging_product": "whatsapp",
-                            "statuses": [
-                                {"id": "wamid.xxx", "status": "delivered"}
-                            ],
+                            "statuses": [{"id": "wamid.xxx", "status": "delivered"}],
                         },
                         "field": "messages",
                     }

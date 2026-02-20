@@ -78,9 +78,7 @@ async def conversation_manager(repository) -> ConversationManager:
 def client(settings: Settings) -> TestClient:
     mock_response = MagicMock()
     mock_response.raise_for_status = MagicMock()
-    mock_response.json.return_value = {
-        "message": {"role": "assistant", "content": "Mock reply"}
-    }
+    mock_response.json.return_value = {"message": {"role": "assistant", "content": "Mock reply"}}
 
     mock_http = AsyncMock()
     mock_http.post = AsyncMock(return_value=mock_response)

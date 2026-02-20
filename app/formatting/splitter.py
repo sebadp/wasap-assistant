@@ -19,21 +19,21 @@ def split_message(text: str, max_length: int = 4096) -> list[str]:
         pos = segment.rfind("\n\n")
         if pos > 0:
             chunks.append(text[:pos])
-            text = text[pos + 2:]
+            text = text[pos + 2 :]
             continue
 
         # Priority 2: sentence end (". ")
         pos = segment.rfind(". ")
         if pos > 0:
             chunks.append(text[: pos + 1])
-            text = text[pos + 2:]
+            text = text[pos + 2 :]
             continue
 
         # Priority 3: space
         pos = segment.rfind(" ")
         if pos > 0:
             chunks.append(text[:pos])
-            text = text[pos + 1:]
+            text = text[pos + 1 :]
             continue
 
         # Priority 4: hard cut

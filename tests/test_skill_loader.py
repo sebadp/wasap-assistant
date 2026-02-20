@@ -1,4 +1,3 @@
-
 from app.skills.loader import load_skill_metadata, parse_frontmatter, scan_skills_directory
 
 

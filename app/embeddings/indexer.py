@@ -1,4 +1,5 @@
 """High-level embedding operations for memories and notes."""
+
 from __future__ import annotations
 
 import logging
@@ -98,7 +99,9 @@ async def backfill_embeddings(
                 await repository.save_embedding(mem_id, emb)
                 count += 1
         except Exception:
-            logger.warning("Failed to backfill memory batch %d-%d", i, i + len(batch), exc_info=True)
+            logger.warning(
+                "Failed to backfill memory batch %d-%d", i, i + len(batch), exc_info=True
+            )
 
     if count:
         logger.info("Backfilled %d memory embeddings", count)

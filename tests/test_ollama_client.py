@@ -21,9 +21,7 @@ def ollama_client() -> OllamaClient:
 async def test_chat(ollama_client):
     mock_response = MagicMock()
     mock_response.raise_for_status = MagicMock()
-    mock_response.json.return_value = {
-        "message": {"role": "assistant", "content": "Hello there!"}
-    }
+    mock_response.json.return_value = {"message": {"role": "assistant", "content": "Hello there!"}}
     ollama_client._http.post = AsyncMock(return_value=mock_response)
 
     messages = [ChatMessage(role="user", content="Hi")]
@@ -57,9 +55,7 @@ async def test_is_available_failure(ollama_client):
 async def test_chat_with_model_override(ollama_client):
     mock_response = MagicMock()
     mock_response.raise_for_status = MagicMock()
-    mock_response.json.return_value = {
-        "message": {"role": "assistant", "content": "I see a cat"}
-    }
+    mock_response.json.return_value = {"message": {"role": "assistant", "content": "I see a cat"}}
     ollama_client._http.post = AsyncMock(return_value=mock_response)
 
     messages = [ChatMessage(role="user", content="What is this?")]
@@ -74,9 +70,7 @@ async def test_chat_with_model_override(ollama_client):
 async def test_chat_with_images(ollama_client):
     mock_response = MagicMock()
     mock_response.raise_for_status = MagicMock()
-    mock_response.json.return_value = {
-        "message": {"role": "assistant", "content": "A sunset"}
-    }
+    mock_response.json.return_value = {"message": {"role": "assistant", "content": "A sunset"}}
     ollama_client._http.post = AsyncMock(return_value=mock_response)
 
     messages = [ChatMessage(role="user", content="Describe", images=["base64data"])]
@@ -91,9 +85,7 @@ async def test_chat_with_images(ollama_client):
 async def test_chat_without_images_excludes_key(ollama_client):
     mock_response = MagicMock()
     mock_response.raise_for_status = MagicMock()
-    mock_response.json.return_value = {
-        "message": {"role": "assistant", "content": "Hi"}
-    }
+    mock_response.json.return_value = {"message": {"role": "assistant", "content": "Hi"}}
     ollama_client._http.post = AsyncMock(return_value=mock_response)
 
     messages = [ChatMessage(role="user", content="Hello")]

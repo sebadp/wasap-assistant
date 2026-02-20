@@ -6,6 +6,7 @@ Implements a lightweight MIPRO-like loop:
 3. Save as draft (is_active=0) for human review
 4. Human approves via /approve-prompt → activate_prompt_version() + invalidate_prompt_cache()
 """
+
 from __future__ import annotations
 
 import logging
@@ -81,6 +82,8 @@ async def propose_prompt_change(
     )
     logger.info(
         "Prompt proposal saved: %s v%d (diagnosis: %.80s)",
-        prompt_name, new_version, diagnosis,
+        prompt_name,
+        new_version,
+        diagnosis,
     )
     return {"version": new_version, "content": new_content, "prompt_name": prompt_name}

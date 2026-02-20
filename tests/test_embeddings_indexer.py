@@ -1,4 +1,5 @@
 """Tests for auto-indexing lifecycle (6C)."""
+
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest

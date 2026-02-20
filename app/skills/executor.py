@@ -151,17 +151,18 @@ async def execute_tool_loop(
         )
 
         # Append assistant message with tool_calls
-        working_messages.append(ChatMessage(
-            role="assistant",
-            content=response.content or "",
-            tool_calls=response.tool_calls,
-        ))
+        working_messages.append(
+            ChatMessage(
+                role="assistant",
+                content=response.content or "",
+                tool_calls=response.tool_calls,
+            )
+        )
 
         # Execute all tool calls in parallel, append results in order
-        tool_messages = await asyncio.gather(*[
-            _run_tool_call(tc, skill_registry, mcp_manager)
-            for tc in response.tool_calls
-        ])
+        tool_messages = await asyncio.gather(
+            *[_run_tool_call(tc, skill_registry, mcp_manager) for tc in response.tool_calls]
+        )
         working_messages.extend(tool_messages)
 
     # Safety: exceeded max iterations, force a text response without tools

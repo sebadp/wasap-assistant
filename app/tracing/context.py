@@ -3,6 +3,7 @@
 Uses contextvars to propagate the current trace through asyncio tasks without
 changing function signatures.
 """
+
 from __future__ import annotations
 
 import contextvars
@@ -18,7 +19,8 @@ if TYPE_CHECKING:
 # Module-level contextvar: holds the current TraceContext for the running Task.
 # asyncio.create_task() copies the context, so sub-tasks inherit the trace automatically.
 _current_trace: contextvars.ContextVar[TraceContext | None] = contextvars.ContextVar(
-    "current_trace", default=None,
+    "current_trace",
+    default=None,
 )
 
 
@@ -80,14 +82,20 @@ class TraceContext:
     async def __aenter__(self) -> TraceContext:
         self._token = _current_trace.set(self)
         await self._recorder.start_trace(
-            self.trace_id, self.phone_number, self.input_text, self.message_type,
+            self.trace_id,
+            self.phone_number,
+            self.input_text,
+            self.message_type,
         )
         return self
 
     async def __aexit__(self, exc_type, exc_val, exc_tb) -> bool:
         status = "failed" if exc_type else "completed"
         await self._recorder.finish_trace(
-            self.trace_id, status, self._output_text, self._wa_message_id,
+            self.trace_id,
+            status,
+            self._output_text,
+            self._wa_message_id,
         )
         if self._token is not None:
             _current_trace.reset(self._token)
@@ -129,7 +137,12 @@ class TraceContext:
         span_id: str | None = None,
     ) -> None:
         await self._recorder.add_score(
-            self.trace_id, name, value, source, comment, span_id,
+            self.trace_id,
+            name,
+            value,
+            source,
+            comment,
+            span_id,
         )
 
     def set_output(self, output_text: str) -> None:

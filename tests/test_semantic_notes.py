@@ -1,4 +1,5 @@
 """Tests for semantic notes search (6E)."""
+
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -38,7 +39,10 @@ async def test_get_relevant_notes_returns_semantic_results(vec_repo):
     settings.semantic_search_enabled = True
 
     notes = await _get_relevant_notes(
-        [0.5] * 768, settings, repo, vec_available,
+        [0.5] * 768,
+        settings,
+        repo,
+        vec_available,
     )
     assert len(notes) == 1
     assert notes[0].title == "Python tips"
@@ -51,7 +55,10 @@ async def test_get_relevant_notes_empty_without_embedding(vec_repo):
     settings.semantic_search_enabled = True
 
     notes = await _get_relevant_notes(
-        None, settings, repo, vec_available,
+        None,
+        settings,
+        repo,
+        vec_available,
     )
     assert notes == []
 
@@ -65,7 +72,10 @@ async def test_get_relevant_notes_empty_when_disabled(vec_repo):
     settings.semantic_search_enabled = False
 
     notes = await _get_relevant_notes(
-        [0.5] * 768, settings, repo, vec_available,
+        [0.5] * 768,
+        settings,
+        repo,
+        vec_available,
     )
     assert notes == []
 
@@ -80,7 +90,9 @@ async def test_conversation_manager_includes_notes():
 
     notes = [Note(id=1, title="Test", content="test content")]
     context = await cm.get_context(
-        "5491112345678", "System prompt", [],
+        "5491112345678",
+        "System prompt",
+        [],
         relevant_notes=notes,
     )
 

@@ -28,9 +28,13 @@ async def test_consolidate_removes_duplicates(repository, tmp_path):
         ids.append(mid)
 
     ollama = AsyncMock()
-    ollama.chat = AsyncMock(return_value=json.dumps({
-        "remove_ids": [ids[2], ids[5]],
-    }))
+    ollama.chat = AsyncMock(
+        return_value=json.dumps(
+            {
+                "remove_ids": [ids[2], ids[5]],
+            }
+        )
+    )
 
     result = await consolidate_memories(repository, ollama, memory_file, min_memories=8)
 
@@ -68,9 +72,13 @@ async def test_consolidate_ignores_invalid_ids(repository, tmp_path):
 
     ollama = AsyncMock()
     # Include IDs that don't exist
-    ollama.chat = AsyncMock(return_value=json.dumps({
-        "remove_ids": [9999, "not_an_id", -1],
-    }))
+    ollama.chat = AsyncMock(
+        return_value=json.dumps(
+            {
+                "remove_ids": [9999, "not_an_id", -1],
+            }
+        )
+    )
 
     result = await consolidate_memories(repository, ollama, memory_file, min_memories=8)
 

@@ -1,4 +1,5 @@
 """Individual guardrail check functions (deterministic, no LLM)."""
+
 from __future__ import annotations
 
 import re
@@ -11,7 +12,9 @@ from app.guardrails.models import GuardrailResult
 # DNI argentino: 7-8 dígitos aislados (no dentro de números más largos)
 _RE_DNI = re.compile(r"\b\d{7,8}\b")
 # Tokens: Bearer, sk-, whsec_, etc.
-_RE_TOKEN = re.compile(r"\b(Bearer\s+[A-Za-z0-9\-._~+/]+=*|sk-[A-Za-z0-9]{20,}|whsec_[A-Za-z0-9]+)\b")
+_RE_TOKEN = re.compile(
+    r"\b(Bearer\s+[A-Za-z0-9\-._~+/]+=*|sk-[A-Za-z0-9]{20,}|whsec_[A-Za-z0-9]+)\b"
+)
 # Emails
 _RE_EMAIL = re.compile(r"\b[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}\b")
 # Phones: secuencias de 10-15 dígitos, opcionalmente con +/- separadores
@@ -50,6 +53,7 @@ def check_language_match(user_text: str, reply: str) -> GuardrailResult:
 
     try:
         from langdetect import detect
+
         user_lang = detect(user_text)
         reply_lang = detect(reply)
         passed = user_lang == reply_lang

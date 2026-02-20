@@ -7,6 +7,7 @@ Usage:
     base_prompt = await get_active_prompt("system_prompt", repository, settings.system_prompt)
     invalidate_prompt_cache("system_prompt")  # after activating a new version
 """
+
 from __future__ import annotations
 
 import logging

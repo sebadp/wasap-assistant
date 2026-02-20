@@ -101,7 +101,9 @@ def register(registry: SkillRegistry) -> None:
                 }
 
                 # Use custom resolver
-                weather_resp = await _resolve_and_fetch(client, OPENMETEO_FORECAST_URL, forecast_params)
+                weather_resp = await _resolve_and_fetch(
+                    client, OPENMETEO_FORECAST_URL, forecast_params
+                )
 
                 weather_resp.raise_for_status()
                 weather_data = weather_resp.json()

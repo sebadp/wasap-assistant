@@ -134,15 +134,19 @@ async def test_initialize_empty_servers(tmp_path):
 async def test_initialize_disabled_server(tmp_path):
     """Disabled servers are skipped."""
     config = tmp_path / "mcp.json"
-    config.write_text(json.dumps({
-        "servers": {
-            "test": {
-                "command": "echo",
-                "args": [],
-                "enabled": False,
+    config.write_text(
+        json.dumps(
+            {
+                "servers": {
+                    "test": {
+                        "command": "echo",
+                        "args": [],
+                        "enabled": False,
+                    }
+                }
             }
-        }
-    }))
+        )
+    )
 
     mgr = McpManager(config_path=str(config))
     # _connect_server should NOT be called for disabled servers
@@ -245,7 +249,10 @@ async def test_cleanup():
         return ""
 
     mgr._tools["t"] = ToolDefinition(
-        name="t", description="", parameters={}, handler=h,
+        name="t",
+        description="",
+        parameters={},
+        handler=h,
     )
 
     await mgr.cleanup()
@@ -299,20 +306,28 @@ async def test_executor_routes_to_mcp_manager():
     # Mock Ollama: first call returns MCP tool call, second returns text
     mock_http = AsyncMock()
     ollama = OllamaClient(http_client=mock_http, base_url="http://localhost:11434", model="test")
-    ollama.chat_with_tools = AsyncMock(side_effect=[
-        ChatResponse(
-            content="",
-            tool_calls=[{"function": {"name": "mcp_tool", "arguments": {}}}],
-        ),
-        ChatResponse(content="Final answer using mcp result"),
-    ])
+    ollama.chat_with_tools = AsyncMock(
+        side_effect=[
+            ChatResponse(
+                content="",
+                tool_calls=[{"function": {"name": "mcp_tool", "arguments": {}}}],
+            ),
+            ChatResponse(content="Final answer using mcp result"),
+        ]
+    )
 
     messages = [ChatMessage(role="user", content="Use MCP")]
 
     # Bypass router: classify returns a category, select_tools returns all tools
-    with sync_patch("app.skills.executor.classify_intent", new_callable=AsyncMock, return_value=["time"]), \
-         sync_patch("app.skills.executor.select_tools",
-                    side_effect=lambda cats, all_tools, max_tools=8: list(all_tools.values())):
+    with (
+        sync_patch(
+            "app.skills.executor.classify_intent", new_callable=AsyncMock, return_value=["time"]
+        ),
+        sync_patch(
+            "app.skills.executor.select_tools",
+            side_effect=lambda cats, all_tools, max_tools=8: list(all_tools.values()),
+        ),
+    ):
         result = await execute_tool_loop(messages, ollama, skill_registry, mcp_manager=mcp_manager)
 
     assert result == "Final answer using mcp result"
@@ -340,16 +355,25 @@ async def test_get_tools_summary_grouped_by_server():
         return ""
 
     mgr._tools["read_file"] = ToolDefinition(
-        name="read_file", description="Read a file",
-        parameters={}, handler=h, skill_name="mcp::filesystem",
+        name="read_file",
+        description="Read a file",
+        parameters={},
+        handler=h,
+        skill_name="mcp::filesystem",
     )
     mgr._tools["write_file"] = ToolDefinition(
-        name="write_file", description="Write a file",
-        parameters={}, handler=h, skill_name="mcp::filesystem",
+        name="write_file",
+        description="Write a file",
+        parameters={},
+        handler=h,
+        skill_name="mcp::filesystem",
     )
     mgr._tools["fetch_url"] = ToolDefinition(
-        name="fetch_url", description="Fetch a URL",
-        parameters={}, handler=h, skill_name="mcp::fetch",
+        name="fetch_url",
+        description="Fetch a URL",
+        parameters={},
+        handler=h,
+        skill_name="mcp::fetch",
     )
 
     summary = mgr.get_tools_summary()
@@ -372,8 +396,11 @@ async def test_get_tools_summary_no_description_fallback():
         return ""
 
     mgr._tools["some_tool"] = ToolDefinition(
-        name="some_tool", description="Does something",
-        parameters={}, handler=h, skill_name="mcp::myserver",
+        name="some_tool",
+        description="Does something",
+        parameters={},
+        handler=h,
+        skill_name="mcp::myserver",
     )
 
     summary = mgr.get_tools_summary()

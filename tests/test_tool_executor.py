@@ -75,13 +75,15 @@ async def test_single_tool_call(ollama_client, skill_registry):
 
     # First call: LLM returns a tool call
     # Second call: LLM returns final text
-    ollama_client.chat_with_tools = AsyncMock(side_effect=[
-        ChatResponse(
-            content="",
-            tool_calls=[{"function": {"name": "get_time", "arguments": {}}}],
-        ),
-        ChatResponse(content="The time is 12:00"),
-    ])
+    ollama_client.chat_with_tools = AsyncMock(
+        side_effect=[
+            ChatResponse(
+                content="",
+                tool_calls=[{"function": {"name": "get_time", "arguments": {}}}],
+            ),
+            ChatResponse(content="The time is 12:00"),
+        ]
+    )
 
     messages = [ChatMessage(role="user", content="What time is it?")]
     with p1, p2:
@@ -136,13 +138,15 @@ async def test_tool_error_returns_error_content(ollama_client, skill_registry):
         handler=failing_tool,
     )
 
-    ollama_client.chat_with_tools = AsyncMock(side_effect=[
-        ChatResponse(
-            content="",
-            tool_calls=[{"function": {"name": "bad_tool", "arguments": {}}}],
-        ),
-        ChatResponse(content="Sorry, there was an error"),
-    ])
+    ollama_client.chat_with_tools = AsyncMock(
+        side_effect=[
+            ChatResponse(
+                content="",
+                tool_calls=[{"function": {"name": "bad_tool", "arguments": {}}}],
+            ),
+            ChatResponse(content="Sorry, there was an error"),
+        ]
+    )
 
     messages = [ChatMessage(role="user", content="Do the thing")]
     with p1, p2:
@@ -161,22 +165,30 @@ async def test_multiple_tool_calls_in_one_response(ollama_client, skill_registry
         return "result_b"
 
     skill_registry.register_tool(
-        name="tool_a", description="A", parameters={"type": "object", "properties": {}}, handler=tool_a,
+        name="tool_a",
+        description="A",
+        parameters={"type": "object", "properties": {}},
+        handler=tool_a,
     )
     skill_registry.register_tool(
-        name="tool_b", description="B", parameters={"type": "object", "properties": {}}, handler=tool_b,
+        name="tool_b",
+        description="B",
+        parameters={"type": "object", "properties": {}},
+        handler=tool_b,
     )
 
-    ollama_client.chat_with_tools = AsyncMock(side_effect=[
-        ChatResponse(
-            content="",
-            tool_calls=[
-                {"function": {"name": "tool_a", "arguments": {}}},
-                {"function": {"name": "tool_b", "arguments": {}}},
-            ],
-        ),
-        ChatResponse(content="Both tools returned results"),
-    ])
+    ollama_client.chat_with_tools = AsyncMock(
+        side_effect=[
+            ChatResponse(
+                content="",
+                tool_calls=[
+                    {"function": {"name": "tool_a", "arguments": {}}},
+                    {"function": {"name": "tool_b", "arguments": {}}},
+                ],
+            ),
+            ChatResponse(content="Both tools returned results"),
+        ]
+    )
 
     messages = [ChatMessage(role="user", content="Do both")]
     with p1, p2:

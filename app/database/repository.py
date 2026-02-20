@@ -47,9 +47,7 @@ class Repository:
         await self._conn.commit()
         return cursor.lastrowid  # type: ignore[return-value]
 
-    async def get_recent_messages(
-        self, conversation_id: int, limit: int
-    ) -> list[ChatMessage]:
+    async def get_recent_messages(self, conversation_id: int, limit: int) -> list[ChatMessage]:
         cursor = await self._conn.execute(
             "SELECT role, content FROM messages "
             "WHERE conversation_id = ? ORDER BY created_at DESC, id DESC LIMIT ?",
@@ -137,9 +135,7 @@ class Repository:
         rows = await cursor.fetchall()
         return [r[0] for r in rows]
 
-    async def delete_old_messages(
-        self, conversation_id: int, keep_last: int
-    ) -> int:
+    async def delete_old_messages(self, conversation_id: int, keep_last: int) -> int:
         cursor = await self._conn.execute(
             "DELETE FROM messages WHERE conversation_id = ? AND id NOT IN "
             "(SELECT id FROM messages WHERE conversation_id = ? ORDER BY created_at DESC, id DESC LIMIT ?)",
@@ -187,10 +183,7 @@ class Repository:
             "SELECT id, title, content, created_at FROM notes ORDER BY id DESC",
         )
         rows = await cursor.fetchall()
-        return [
-            Note(id=r[0], title=r[1], content=r[2], created_at=r[3])
-            for r in rows
-        ]
+        return [Note(id=r[0], title=r[1], content=r[2], created_at=r[3]) for r in rows]
 
     async def search_notes(self, query: str) -> list[Note]:
         cursor = await self._conn.execute(
@@ -199,10 +192,7 @@ class Repository:
             (f"%{query}%", f"%{query}%"),
         )
         rows = await cursor.fetchall()
-        return [
-            Note(id=r[0], title=r[1], content=r[2], created_at=r[3])
-            for r in rows
-        ]
+        return [Note(id=r[0], title=r[1], content=r[2], created_at=r[3]) for r in rows]
 
     async def delete_note(self, note_id: int) -> bool:
         cursor = await self._conn.execute(
@@ -233,9 +223,7 @@ class Repository:
         )
         await self._conn.commit()
 
-    async def search_similar_memories(
-        self, embedding: list[float], top_k: int = 10
-    ) -> list[str]:
+    async def search_similar_memories(self, embedding: list[float], top_k: int = 10) -> list[str]:
         blob = self._serialize_vector(embedding)
         cursor = await self._conn.execute(
             "SELECT m.content FROM vec_memories v "
@@ -290,9 +278,7 @@ class Repository:
         )
         await self._conn.commit()
 
-    async def search_similar_notes(
-        self, embedding: list[float], top_k: int = 5
-    ) -> list[Note]:
+    async def search_similar_notes(self, embedding: list[float], top_k: int = 5) -> list[Note]:
         blob = self._serialize_vector(embedding)
         cursor = await self._conn.execute(
             "SELECT n.id, n.title, n.content, n.created_at FROM vec_notes v "
@@ -302,10 +288,7 @@ class Repository:
             (blob, top_k),
         )
         rows = await cursor.fetchall()
-        return [
-            Note(id=r[0], title=r[1], content=r[2], created_at=r[3])
-            for r in rows
-        ]
+        return [Note(id=r[0], title=r[1], content=r[2], created_at=r[3]) for r in rows]
 
     # --- User Profiles ---
 
@@ -400,8 +383,13 @@ class Repository:
         if not row:
             return None
         return Project(
-            id=row[0], phone_number=row[1], name=row[2], description=row[3],
-            status=row[4], created_at=row[5], updated_at=row[6],
+            id=row[0],
+            phone_number=row[1],
+            name=row[2],
+            description=row[3],
+            status=row[4],
+            created_at=row[5],
+            updated_at=row[6],
         )
 
     async def get_project_by_name(self, phone_number: str, name: str) -> Project | None:
@@ -414,8 +402,13 @@ class Repository:
         if not row:
             return None
         return Project(
-            id=row[0], phone_number=row[1], name=row[2], description=row[3],
-            status=row[4], created_at=row[5], updated_at=row[6],
+            id=row[0],
+            phone_number=row[1],
+            name=row[2],
+            description=row[3],
+            status=row[4],
+            created_at=row[5],
+            updated_at=row[6],
         )
 
     async def list_projects(self, phone_number: str, status: str | None = None) -> list[Project]:
@@ -434,8 +427,13 @@ class Repository:
         rows = await cursor.fetchall()
         return [
             Project(
-                id=r[0], phone_number=r[1], name=r[2], description=r[3],
-                status=r[4], created_at=r[5], updated_at=r[6],
+                id=r[0],
+                phone_number=r[1],
+                name=r[2],
+                description=r[3],
+                status=r[4],
+                created_at=r[5],
+                updated_at=r[6],
             )
             for r in rows
         ]
@@ -500,9 +498,15 @@ class Repository:
         if not row:
             return None
         return ProjectTask(
-            id=row[0], project_id=row[1], title=row[2], description=row[3],
-            status=row[4], priority=row[5], due_date=row[6],
-            created_at=row[7], updated_at=row[8],
+            id=row[0],
+            project_id=row[1],
+            title=row[2],
+            description=row[3],
+            status=row[4],
+            priority=row[5],
+            due_date=row[6],
+            created_at=row[7],
+            updated_at=row[8],
         )
 
     async def list_project_tasks(
@@ -527,9 +531,15 @@ class Repository:
         rows = await cursor.fetchall()
         return [
             ProjectTask(
-                id=r[0], project_id=r[1], title=r[2], description=r[3],
-                status=r[4], priority=r[5], due_date=r[6],
-                created_at=r[7], updated_at=r[8],
+                id=r[0],
+                project_id=r[1],
+                title=r[2],
+                description=r[3],
+                status=r[4],
+                priority=r[5],
+                due_date=r[6],
+                created_at=r[7],
+                updated_at=r[8],
             )
             for r in rows
         ]
@@ -541,9 +551,11 @@ class Repository:
         )
         if cursor.rowcount > 0:
             # Touch parent project
-            row = await (await self._conn.execute(
-                "SELECT project_id FROM project_tasks WHERE id = ?", (task_id,)
-            )).fetchone()
+            row = await (
+                await self._conn.execute(
+                    "SELECT project_id FROM project_tasks WHERE id = ?", (task_id,)
+                )
+            ).fetchone()
             if row:
                 await self._conn.execute(
                     "UPDATE projects SET updated_at = datetime('now') WHERE id = ?", (row[0],)
@@ -561,9 +573,11 @@ class Repository:
 
     async def delete_project_task(self, task_id: int) -> bool:
         # Fetch project_id before deleting so we can touch updated_at
-        row = await (await self._conn.execute(
-            "SELECT project_id FROM project_tasks WHERE id = ?", (task_id,)
-        )).fetchone()
+        row = await (
+            await self._conn.execute(
+                "SELECT project_id FROM project_tasks WHERE id = ?", (task_id,)
+            )
+        ).fetchone()
         cursor = await self._conn.execute(
             "DELETE FROM project_tasks WHERE id = ?",
             (task_id,),
@@ -625,15 +639,10 @@ class Repository:
             (project_id,),
         )
         rows = await cursor.fetchall()
-        return [
-            ProjectNote(id=r[0], project_id=r[1], content=r[2], created_at=r[3])
-            for r in rows
-        ]
+        return [ProjectNote(id=r[0], project_id=r[1], content=r[2], created_at=r[3]) for r in rows]
 
     async def delete_project_note(self, note_id: int) -> bool:
-        cursor = await self._conn.execute(
-            "DELETE FROM project_notes WHERE id = ?", (note_id,)
-        )
+        cursor = await self._conn.execute("DELETE FROM project_notes WHERE id = ?", (note_id,))
         await self._conn.commit()
         return cursor.rowcount > 0
 
@@ -658,10 +667,7 @@ class Repository:
             (project_id, blob, top_k),
         )
         rows = await cursor.fetchall()
-        return [
-            ProjectNote(id=r[0], project_id=r[1], content=r[2], created_at=r[3])
-            for r in rows
-        ]
+        return [ProjectNote(id=r[0], project_id=r[1], content=r[2], created_at=r[3]) for r in rows]
 
     # --- Tracing ---
 
@@ -771,8 +777,13 @@ class Repository:
         rows = await cursor.fetchall()
         return [
             {
-                "id": r[0], "name": r[1], "value": r[2], "source": r[3],
-                "comment": r[4], "span_id": r[5], "created_at": r[6],
+                "id": r[0],
+                "name": r[1],
+                "value": r[2],
+                "source": r[3],
+                "comment": r[4],
+                "span_id": r[5],
+                "created_at": r[6],
             }
             for r in rows
         ]
@@ -788,9 +799,15 @@ class Repository:
         if not row:
             return None
         trace = {
-            "id": row[0], "phone_number": row[1], "input_text": row[2],
-            "output_text": row[3], "wa_message_id": row[4], "message_type": row[5],
-            "status": row[6], "started_at": row[7], "completed_at": row[8],
+            "id": row[0],
+            "phone_number": row[1],
+            "input_text": row[2],
+            "output_text": row[3],
+            "wa_message_id": row[4],
+            "message_type": row[5],
+            "status": row[6],
+            "started_at": row[7],
+            "completed_at": row[8],
             "metadata": json.loads(row[9]),
         }
         span_cursor = await self._conn.execute(
@@ -802,10 +819,15 @@ class Repository:
         span_rows = await span_cursor.fetchall()
         trace["spans"] = [
             {
-                "id": s[0], "parent_id": s[1], "name": s[2], "kind": s[3],
+                "id": s[0],
+                "parent_id": s[1],
+                "name": s[2],
+                "kind": s[3],
                 "input": json.loads(s[4]) if s[4] else None,
                 "output": json.loads(s[5]) if s[5] else None,
-                "status": s[6], "started_at": s[7], "completed_at": s[8],
+                "status": s[6],
+                "started_at": s[7],
+                "completed_at": s[8],
                 "latency_ms": s[9],
                 "metadata": json.loads(s[10]) if s[10] else {},
             }
@@ -887,9 +909,14 @@ class Repository:
         rows = await cursor.fetchall()
         return [
             {
-                "id": r[0], "trace_id": r[1], "entry_type": r[2],
-                "input_text": r[3], "output_text": r[4], "expected_output": r[5],
-                "metadata": json.loads(r[6]), "created_at": r[7],
+                "id": r[0],
+                "trace_id": r[1],
+                "entry_type": r[2],
+                "input_text": r[3],
+                "output_text": r[4],
+                "expected_output": r[5],
+                "metadata": json.loads(r[6]),
+                "created_at": r[7],
             }
             for r in rows
         ]
@@ -948,9 +975,15 @@ class Repository:
         if not row:
             return None
         return {
-            "id": row[0], "prompt_name": row[1], "version": row[2], "content": row[3],
-            "is_active": bool(row[4]), "scores": json.loads(row[5]),
-            "created_by": row[6], "approved_at": row[7], "created_at": row[8],
+            "id": row[0],
+            "prompt_name": row[1],
+            "version": row[2],
+            "content": row[3],
+            "is_active": bool(row[4]),
+            "scores": json.loads(row[5]),
+            "created_by": row[6],
+            "approved_at": row[7],
+            "created_at": row[8],
         }
 
     async def get_prompt_version(self, prompt_name: str, version: int) -> dict | None:
@@ -964,9 +997,15 @@ class Repository:
         if not row:
             return None
         return {
-            "id": row[0], "prompt_name": row[1], "version": row[2], "content": row[3],
-            "is_active": bool(row[4]), "scores": json.loads(row[5]),
-            "created_by": row[6], "approved_at": row[7], "created_at": row[8],
+            "id": row[0],
+            "prompt_name": row[1],
+            "version": row[2],
+            "content": row[3],
+            "is_active": bool(row[4]),
+            "scores": json.loads(row[5]),
+            "created_by": row[6],
+            "approved_at": row[7],
+            "created_at": row[8],
         }
 
     async def activate_prompt_version(self, prompt_name: str, version: int) -> None:
@@ -994,8 +1033,12 @@ class Repository:
         rows = await cursor.fetchall()
         return [
             {
-                "id": r[0], "version": r[1], "is_active": bool(r[2]),
-                "created_by": r[3], "approved_at": r[4], "created_at": r[5],
+                "id": r[0],
+                "version": r[1],
+                "is_active": bool(r[2]),
+                "created_by": r[3],
+                "approved_at": r[4],
+                "created_at": r[5],
             }
             for r in rows
         ]
@@ -1005,6 +1048,7 @@ class Repository:
     async def get_latest_memory(self) -> Any:
         """Return the most recently inserted active memory (Memory model)."""
         from app.models import Memory
+
         cursor = await self._conn.execute(
             "SELECT id, content, category, active, created_at FROM memories "
             "WHERE active = 1 ORDER BY id DESC LIMIT 1",
@@ -1012,7 +1056,9 @@ class Repository:
         row = await cursor.fetchone()
         if not row:
             return None
-        return Memory(id=row[0], content=row[1], category=row[2], active=bool(row[3]), created_at=row[4])
+        return Memory(
+            id=row[0], content=row[1], category=row[2], active=bool(row[3]), created_at=row[4]
+        )
 
     # --- Eval Skill queries ---
 
@@ -1045,8 +1091,12 @@ class Repository:
             "failed_traces": trace_row[2] or 0 if trace_row else 0,
             "scores": [
                 {
-                    "name": r[0], "source": r[1], "avg": round(r[2], 3),
-                    "min": round(r[3], 3), "max": round(r[4], 3), "count": r[5],
+                    "name": r[0],
+                    "source": r[1],
+                    "avg": round(r[2], 3),
+                    "min": round(r[3], 3),
+                    "max": round(r[4], 3),
+                    "count": r[5],
                 }
                 for r in rows
             ],
@@ -1067,8 +1117,12 @@ class Repository:
         rows = await cursor.fetchall()
         return [
             {
-                "id": r[0], "phone_number": r[1], "input_text": r[2],
-                "output_text": r[3], "status": r[4], "started_at": r[5],
+                "id": r[0],
+                "phone_number": r[1],
+                "input_text": r[2],
+                "output_text": r[3],
+                "status": r[4],
+                "started_at": r[5],
                 "min_score": round(r[6], 3),
             }
             for r in rows
@@ -1157,9 +1211,15 @@ class Repository:
         rows = await cursor.fetchall()
         return [
             ProjectTask(
-                id=r[0], project_id=r[1], title=r[2], description=r[3],
-                status=r[4], priority=r[5], due_date=r[6],
-                created_at=r[7], updated_at=r[8],
+                id=r[0],
+                project_id=r[1],
+                title=r[2],
+                description=r[3],
+                status=r[4],
+                priority=r[5],
+                due_date=r[6],
+                created_at=r[7],
+                updated_at=r[8],
             )
             for r in rows
         ]

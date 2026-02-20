@@ -1,4 +1,5 @@
 """Guardrail pipeline: orchestrates all checks and returns a consolidated report."""
+
 from __future__ import annotations
 
 import asyncio
@@ -54,11 +55,13 @@ async def run_guardrails(
 
         if tool_calls_used:
             await _run_async_check(
-                results, "tool_coherence",
+                results,
+                "tool_coherence",
                 check_tool_coherence(user_text, reply, ollama_client),
             )
         await _run_async_check(
-            results, "hallucination_check",
+            results,
+            "hallucination_check",
             check_hallucination(user_text, reply, ollama_client),
         )
 
@@ -84,11 +87,13 @@ def _run_check(results: list[GuardrailResult], fn, *args) -> None:
     except Exception as e:
         logger.warning("Guardrail check %s raised: %s", fn.__name__, e)
         # Fail open: treat as passing so we don't block the response
-        results.append(GuardrailResult(
-            passed=True,
-            check_name=fn.__name__.replace("check_", ""),
-            details=f"check raised exception: {e}",
-        ))
+        results.append(
+            GuardrailResult(
+                passed=True,
+                check_name=fn.__name__.replace("check_", ""),
+                details=f"check raised exception: {e}",
+            )
+        )
 
 
 async def _run_async_check(
@@ -103,17 +108,23 @@ async def _run_async_check(
         results.append(result)
     except TimeoutError:
         logger.warning(
-            "Async guardrail check '%s' timed out (>%.0fms)", check_name, timeout * 1000,
+            "Async guardrail check '%s' timed out (>%.0fms)",
+            check_name,
+            timeout * 1000,
         )
-        results.append(GuardrailResult(
-            passed=True,
-            check_name=check_name,
-            details="check timed out",
-        ))
+        results.append(
+            GuardrailResult(
+                passed=True,
+                check_name=check_name,
+                details="check timed out",
+            )
+        )
     except Exception as e:
         logger.warning("Async guardrail check '%s' raised: %s", check_name, e)
-        results.append(GuardrailResult(
-            passed=True,
-            check_name=check_name,
-            details=f"check raised exception: {e}",
-        ))
+        results.append(
+            GuardrailResult(
+                passed=True,
+                check_name=check_name,
+                details=f"check raised exception: {e}",
+            )
+        )
