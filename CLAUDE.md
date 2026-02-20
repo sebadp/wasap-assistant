@@ -56,6 +56,7 @@ app/
       notes_tools.py
       selfcode_tools.py  # Auto-inspección: version, source, config, health, search
       expand_tools.py    # Auto-expansión: Smithery registry, hot-install MCP, skill from URL
+      project_tools.py   # Proyectos, tareas, actividad y notas con embeddings
   commands/             # Sistema de comandos (/remember, /forget, etc)
   conversation/         # ConversationManager + Summarizer (con pre-compaction flush)
   database/             # SQLite init + sqlite-vec + Repository

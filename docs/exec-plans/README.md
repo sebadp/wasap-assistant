@@ -6,7 +6,7 @@ Documentos técnicos que bajan una intención de producto a cambios concretos en
 
 | Plan | Archivo | Estado |
 |---|---|---|
-| Arquitectura de Evaluación y Mejora Continua | [`eval_implementation_plan.md`](eval_implementation_plan.md) | 📋 Próximo |
+| Arquitectura de Evaluación y Mejora Continua | [`eval_implementation_plan.md`](eval_implementation_plan.md) | 📋 Pendiente |
 
 ## Convenciones
 

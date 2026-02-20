@@ -124,6 +124,14 @@ class SkillRegistry:
         """
         self._loaded_instructions.clear()
         new_skills = scan_skills_directory(self._skills_dir)
+        new_skill_names = {skill.name for skill in new_skills}
+
+        # Remove skills that no longer exist on disk
+        removed = [name for name in self._skills if name not in new_skill_names]
+        for name in removed:
+            del self._skills[name]
+            logger.info("Removed stale skill metadata: %s", name)
+
         for skill in new_skills:
             if skill.name not in self._skills:
                 logger.info("Hot-loaded new skill metadata: %s", skill.name)

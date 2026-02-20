@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+from contextvars import ContextVar
 from typing import TYPE_CHECKING
 
 from app.skills.registry import SkillRegistry
@@ -12,12 +13,11 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-_current_user_phone: str | None = None
+_current_user_phone: ContextVar[str | None] = ContextVar("_current_user_phone", default=None)
 
 
 def set_current_user(phone_number: str) -> None:
-    global _current_user_phone
-    _current_user_phone = phone_number
+    _current_user_phone.set(phone_number)
 
 
 def register(
@@ -31,7 +31,7 @@ def register(
 
     async def _resolve_project(name: str) -> tuple[int, str] | str:
         """Resolve project name to (id, name). Returns error string if not found."""
-        phone = _current_user_phone
+        phone = _current_user_phone.get()
         if not phone:
             return "No user context available."
         project = await repository.get_project_by_name(phone, name)
@@ -40,7 +40,7 @@ def register(
         return (project.id, project.name)
 
     async def create_project(name: str, description: str = "") -> str:
-        phone = _current_user_phone
+        phone = _current_user_phone.get()
         if not phone:
             return "No user context available."
         existing = await repository.get_project_by_name(phone, name)
@@ -52,7 +52,7 @@ def register(
         return f"Project '{name}' created (ID: {project_id})."
 
     async def list_projects(status: str = "active") -> str:
-        phone = _current_user_phone
+        phone = _current_user_phone.get()
         if not phone:
             return "No user context available."
         valid_statuses = {"active", "archived", "completed", "all"}
@@ -161,11 +161,11 @@ def register(
         task = await repository.get_project_task(task_id)
         if not task:
             return f"Task {task_id} not found."
-        await repository.log_project_activity(
-            task.project_id, "task_deleted", f"[{task_id}] {task.title}"
-        )
         deleted = await repository.delete_project_task(task_id)
         if deleted:
+            await repository.log_project_activity(
+                task.project_id, "task_deleted", f"[{task_id}] {task.title}"
+            )
             logger.info("Deleted task %d", task_id)
             return f"Task [{task_id}] '{task.title}' deleted."
         return f"Failed to delete task {task_id}."
@@ -267,12 +267,16 @@ def register(
                     return "\n".join(lines)
             except Exception:
                 logger.warning("Semantic project note search failed, falling back", exc_info=True)
-        # Fallback: list all notes
+        # Fallback: filter by query substring (case-insensitive)
         notes = await repository.list_project_notes(project_id)
         if not notes:
             return f"No notes in project '{pname}'."
-        lines = [f"Notes in '{pname}':"]
-        for n in notes:
+        query_lower = query.lower()
+        matched = [n for n in notes if query_lower in n.content.lower()]
+        if not matched:
+            return f"No notes in project '{pname}' matching '{query}'."
+        lines = [f"Notes in '{pname}' matching '{query}':"]
+        for n in matched:
             lines.append(f"  [{n.id}] {n.content[:120]}")
         return "\n".join(lines)
 

@@ -28,6 +28,8 @@ _ALLOWED_FUNCTIONS = {
     "log10": math.log10,
     "abs": abs,
     "round": round,
+    "ceil": math.ceil,
+    "floor": math.floor,
 }
 
 _ALLOWED_CONSTANTS = {

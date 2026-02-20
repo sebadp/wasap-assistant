@@ -113,8 +113,8 @@ Los skills son la **unidad de extensión del sistema**. Mantienen el scope de lo
 | `search` | Búsqueda web (DuckDuckGo) | `web_search` |
 | `news` | Noticias con preferencias guardadas | `search_news`, `add_news_preference` |
 | `scheduler` | Recordatorios vía APScheduler | `schedule_reminder`, `list_reminders` |
-| `selfcode` | Auto-inspección del sistema | `get_version`, `get_runtime_config`, `search_code` |
-| `expand` | Auto-expansión: MCP + skills dinámicos | `search_mcp_tools`, `install_mcp_server`, `create_skill` |
+| `selfcode` | Auto-inspección del sistema | `get_version_info`, `get_runtime_config`, `search_source_code` |
+| `expand` | Auto-expansión: MCP + skills dinámicos | `search_mcp_registry`, `install_mcp_server`, `install_skill_from_url` |
 
 ### 5.2 Cuándo crear un nuevo skill
 
