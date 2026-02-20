@@ -129,6 +129,10 @@ class SkillRegistry:
         # Remove skills that no longer exist on disk
         removed = [name for name in self._skills if name not in new_skill_names]
         for name in removed:
+            # Also remove tools belonging to this skill
+            stale_tools = [t for t in self._tools if self._tools[t].skill_name == name]
+            for tool_name in stale_tools:
+                del self._tools[tool_name]
             del self._skills[name]
             logger.info("Removed stale skill metadata: %s", name)
 
