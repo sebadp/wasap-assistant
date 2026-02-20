@@ -5,6 +5,10 @@ on:
     branches: [master]
     types: [opened, synchronize, reopened]
 
+concurrency:
+  group: ai-review-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
 jobs:
   ai-review:
     name: AI Code Review
