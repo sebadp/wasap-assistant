@@ -103,6 +103,7 @@ async def test_get_memories_fallback_when_disabled(vec_repo, mock_ollama):
 
     settings = MagicMock()
     settings.semantic_search_enabled = False
+    settings.semantic_search_top_k = 10
 
     results = await _get_memories(
         "query",
@@ -121,7 +122,7 @@ async def test_get_memories_fallback_on_embed_error(vec_repo, mock_ollama):
     settings = MagicMock()
     settings.semantic_search_enabled = True
     settings.embedding_model = "nomic-embed-text"
-    settings.semantic_search_top_k = 10
+    settings.semantic_search_top_k = 10  # must be int; MagicMock can't be bound as SQLite param
 
     # Simulate embed failure
     mock_ollama._http.post = AsyncMock(side_effect=Exception("embed failed"))
