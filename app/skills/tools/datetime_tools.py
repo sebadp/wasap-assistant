@@ -18,7 +18,7 @@ def register(registry: SkillRegistry) -> None:
             logger.warning(f"Unknown timezone: {timezone}")
             return f"Unknown timezone: {timezone}"
         now = datetime.now(tz)
-        result = now.strftime("%Y-%m-%d %H:%M:%S %Z")
+        result = now.strftime("%A, %Y-%m-%d %H:%M:%S %Z")
         logger.info(f"Current datetime: {result}")
         return result
 
@@ -40,7 +40,7 @@ def register(registry: SkillRegistry) -> None:
                 dt = datetime.strptime(time, fmt)
                 dt = dt.replace(tzinfo=from_tz)
                 converted = dt.astimezone(to_tz)
-                result = converted.strftime("%Y-%m-%d %H:%M:%S %Z")
+                result = converted.strftime("%A, %Y-%m-%d %H:%M:%S %Z")
                 logger.info(f"Converted time: {result}")
                 return result
             except ValueError:

@@ -71,7 +71,9 @@ async def wait_for_in_flight(timeout: float = 30.0) -> None:
     """Wait for all in-flight background tasks to complete."""
     if not _in_flight:
         return
-    logger.info("Waiting for %d in-flight tasks (timeout=%.1fs)", len(_in_flight), timeout)
+    logger.info(
+        "Waiting for %d in-flight tasks (timeout=%.1fs)", len(_in_flight), timeout
+    )
     done, pending = await asyncio.wait(_in_flight, timeout=timeout)
     if pending:
         logger.warning("%d tasks still running after timeout", len(pending))
@@ -247,7 +249,8 @@ async def _get_memories(
             )
         except Exception:
             logger.warning(
-                "Semantic memory search failed, falling back to all memories", exc_info=True
+                "Semantic memory search failed, falling back to all memories",
+                exc_info=True,
             )
     return await repository.get_active_memories(limit=settings.semantic_search_top_k)
 
@@ -297,7 +300,9 @@ def _build_capabilities_section(
     if skills:
         skill_lines = ["Skills (you call these via tool calling):"]
         for skill in skills:
-            tool_names = [t.name for t in skill_registry.get_tools_for_skill(skill.name)]
+            tool_names = [
+                t.name for t in skill_registry.get_tools_for_skill(skill.name)
+            ]
             tools_str = ", ".join(tool_names) if tool_names else "no tools registered"
             skill_lines.append(f"  {skill.name} — {skill.description}")
             skill_lines.append(f"    Tools: {tools_str}")
@@ -310,7 +315,9 @@ def _build_capabilities_section(
             by_server: dict[str, list[str]] = {}
             for tool in mcp_tools.values():
                 server = tool.skill_name.removeprefix("mcp::")  # type: ignore[union-attr]
-                by_server.setdefault(server, []).append(f"{tool.name}: {tool.description}")
+                by_server.setdefault(server, []).append(
+                    f"{tool.name}: {tool.description}"
+                )
 
             mcp_lines = ["MCP Servers (external integrations):"]
             for server_name, tool_descs in by_server.items():
@@ -361,7 +368,9 @@ def _build_context(
     """Build LLM context from pre-fetched data (sync, no DB calls)."""
     context = [ChatMessage(role="system", content=system_prompt)]
     if memories:
-        memory_block = "Important user information:\n" + "\n".join(f"- {m}" for m in memories)
+        memory_block = "Important user information:\n" + "\n".join(
+            f"- {m}" for m in memories
+        )
         context.append(ChatMessage(role="system", content=memory_block))
     if projects_summary:
         context.append(ChatMessage(role="system", content=projects_summary))
@@ -371,12 +380,16 @@ def _build_context(
         )
         context.append(ChatMessage(role="system", content=notes_block))
     if daily_logs:
-        context.append(ChatMessage(role="system", content=f"Recent activity log:\n{daily_logs}"))
+        context.append(
+            ChatMessage(role="system", content=f"Recent activity log:\n{daily_logs}")
+        )
     if skills_summary:
         context.append(ChatMessage(role="system", content=skills_summary))
     if summary:
         context.append(
-            ChatMessage(role="system", content=f"Previous conversation summary:\n{summary}")
+            ChatMessage(
+                role="system", content=f"Previous conversation summary:\n{summary}"
+            )
         )
     context.extend(history)
     return context
@@ -429,7 +442,9 @@ async def _handle_reaction(reaction, repository) -> None:
     if not isinstance(reaction, WhatsAppReaction):
         return
     try:
-        trace_id = await repository.get_trace_id_by_wa_message_id(reaction.reacted_message_id)
+        trace_id = await repository.get_trace_id_by_wa_message_id(
+            reaction.reacted_message_id
+        )
         if not trace_id:
             logger.debug(
                 "Reaction %s to unknown message %s, ignoring",
@@ -471,33 +486,42 @@ async def _handle_guardrail_failure(
 
     failed_names = {r.check_name for r in report.results if not r.passed}
 
-    # PII: redact in-place, no re-prompt needed
-    if "no_pii" in failed_names:
-        return redact_pii(original_reply)
+    current_reply = original_reply
 
     # Empty: try once more
     if "not_empty" in failed_names:
         try:
             retry = await ollama_client.chat(context)
-            return retry if retry.strip() else "Disculpa, no pude generar una respuesta."
+            current_reply = (
+                retry if retry.strip() else "Disculpa, no pude generar una respuesta."
+            )
         except Exception:
-            return "Disculpa, no pude generar una respuesta."
+            current_reply = "Disculpa, no pude generar una respuesta."
 
     # Language mismatch: re-prompt with explicit language instruction
-    if "language_match" in failed_names:
-        lang_result = next(r for r in report.results if r.check_name == "language_match")
+    elif "language_match" in failed_names:
+        lang_result = next(
+            r for r in report.results if r.check_name == "language_match"
+        )
         expected_lang = lang_result.details
         hint_msg = ChatMessage(
             role="user",
             content=f"IMPORTANT: Respond in {expected_lang}. Repeat your previous answer in that language.",
         )
         try:
-            return await ollama_client.chat(context + [hint_msg])
+            retry = await ollama_client.chat(context + [hint_msg])
+            if retry.strip():
+                current_reply = retry
         except Exception:
-            return original_reply
+            pass
+
+    # PII: redact in-place, no re-prompt needed
+    # Done after generating text so it applies to the (potentially) regenerated reply as well
+    if "no_pii" in failed_names:
+        current_reply = redact_pii(current_reply)
 
     # Everything else (excessive_length, no_raw_tool_json): log and pass through
-    return original_reply
+    return current_reply
 
 
 # --- Correction detection patterns ---
@@ -591,18 +615,23 @@ async def _handle_message(
         try:
             audio_bytes = await wa_client.download_media(msg.media_id)
             transcription = await transcriber.transcribe_async(audio_bytes)
-            logger.info("Transcribed audio [%s]: %s", msg.from_number, transcription[:80])
+            logger.info(
+                "Transcribed audio [%s]: %s", msg.from_number, transcription[:80]
+            )
             msg = msg.model_copy(update={"text": transcription})
         except Exception:
             logger.exception("Audio transcription failed")
             await wa_client.send_message(
-                msg.from_number, "Sorry, I couldn't process that audio. Please try again."
+                msg.from_number,
+                "Sorry, I couldn't process that audio. Please try again.",
             )
             return
 
     # Load user profile early (after audio transcription, so audio can feed into onboarding)
     profile_row = await repository.get_user_profile(msg.from_number)
-    in_onboarding = settings.onboarding_enabled and profile_row["onboarding_state"] != "complete"
+    in_onboarding = (
+        settings.onboarding_enabled and profile_row["onboarding_state"] != "complete"
+    )
 
     # Handle image: llava describes → used as onboarding answer OR qwen3 responds normally
     if msg.type == "image" and msg.media_id:
@@ -613,11 +642,17 @@ async def _handle_message(
             # Step 1: llava describes the image
             vision_messages = [
                 ChatMessage(
-                    role="user", content="Describe this image in detail.", images=[image_b64]
+                    role="user",
+                    content="Describe this image in detail.",
+                    images=[image_b64],
                 ),
             ]
-            description = await ollama_client.chat(vision_messages, model=settings.vision_model)
-            logger.info("Vision description [%s]: %s", msg.from_number, description[:120])
+            description = await ollama_client.chat(
+                vision_messages, model=settings.vision_model
+            )
+            logger.info(
+                "Vision description [%s]: %s", msg.from_number, description[:120]
+            )
 
             if in_onboarding:
                 # During onboarding: use image description as the user's answer to current step
@@ -628,14 +663,18 @@ async def _handle_message(
                     profile_row["data"],
                     ollama_client,
                 )
-                await repository.save_user_profile(msg.from_number, next_state, new_data)
+                await repository.save_user_profile(
+                    msg.from_number, next_state, new_data
+                )
                 await wa_client.send_message(msg.from_number, reply)
                 return
 
             # Normal image flow: pass description to qwen3 with conversation context
             user_text = msg.text or "Describe what you see in this image"
             history_text = f"[Image] {user_text}"
-            await conversation.add_message(msg.from_number, "user", history_text, msg.message_id)
+            await conversation.add_message(
+                msg.from_number, "user", history_text, msg.message_id
+            )
 
             # Build context with image description injected
             query_emb = await _get_query_embedding(
@@ -671,7 +710,8 @@ async def _handle_message(
         except Exception:
             logger.exception("Image processing failed")
             await wa_client.send_message(
-                msg.from_number, "Sorry, I couldn't process that image. Please try again."
+                msg.from_number,
+                "Sorry, I couldn't process that image. Please try again.",
             )
         return
 
@@ -690,9 +730,11 @@ async def _handle_message(
                 mcp_manager=mcp_manager,
                 ollama_client=ollama_client,
                 daily_log=daily_log,
-                embed_model=settings.embedding_model
-                if settings.semantic_search_enabled and vec_available
-                else None,
+                embed_model=(
+                    settings.embedding_model
+                    if settings.semantic_search_enabled and vec_available
+                    else None
+                ),
             )
             try:
                 reply = await spec.handler(cmd_args, ctx)
@@ -735,7 +777,9 @@ async def _handle_message(
     # (date only — for current time the LLM should call get_current_datetime)
     now = datetime.datetime.now(datetime.UTC)
     current_date = now.strftime("%Y-%m-%d")
-    base_prompt = await get_active_prompt("system_prompt", repository, settings.system_prompt)
+    base_prompt = await get_active_prompt(
+        "system_prompt", repository, settings.system_prompt
+    )
     system_prompt_with_date = build_system_prompt(
         base_prompt,
         profile_row["data"],
@@ -757,7 +801,9 @@ async def _handle_message(
     # Determine if tracing is enabled (sample rate check)
     import random
 
-    _trace_enabled = settings.tracing_enabled and random.random() < settings.tracing_sample_rate
+    _trace_enabled = (
+        settings.tracing_enabled and random.random() < settings.tracing_sample_rate
+    )
 
     recorder = TraceRecorder(repository)
     trace_ctx: TraceContext | None = None
@@ -767,19 +813,25 @@ async def _handle_message(
         nonlocal conv_id
 
         # Determine if tools are available (used for classify_task)
-        has_tools = skill_registry.has_tools() or bool(mcp_manager and mcp_manager.get_tools())
+        has_tools = skill_registry.has_tools() or bool(
+            mcp_manager and mcp_manager.get_tools()
+        )
 
         # Kick off classify_intent in parallel with Phase A/B (LLM call, 1-3s)
         classify_task: asyncio.Task[list[str]] | None = None
         if has_tools:
-            classify_task = asyncio.create_task(classify_intent(user_text, ollama_client))
+            classify_task = asyncio.create_task(
+                classify_intent(user_text, ollama_client)
+            )
 
         # Phase A (parallel): embed query || save user message || load daily logs
         if trace_ctx:
             async with trace_ctx.span("phase_a") as span:
                 span.set_metadata({"phase": "embed+save+logs"})
                 query_embedding, _, daily_logs = await asyncio.gather(
-                    _get_query_embedding(user_text, settings, ollama_client, vec_available),
+                    _get_query_embedding(
+                        user_text, settings, ollama_client, vec_available
+                    ),
                     repository.save_message(conv_id, "user", user_text, msg.message_id),
                     daily_log.load_recent(days=settings.daily_log_days),
                 )
@@ -811,13 +863,21 @@ async def _handle_message(
                     )
                     # High-confidence correction → save as correction pair in dataset
                     if correction_score == 0.0 and settings.eval_auto_curate:
-                        prev_trace = await repository.get_trace_with_spans(prev_trace_id)
+                        prev_trace = await repository.get_trace_with_spans(
+                            prev_trace_id
+                        )
                         _track_task(
                             asyncio.create_task(
                                 add_correction_pair(
                                     previous_trace_id=prev_trace_id,
-                                    input_text=prev_trace["input_text"] if prev_trace else "",
-                                    bad_output=prev_trace["output_text"] if prev_trace else None,
+                                    input_text=(
+                                        prev_trace["input_text"] if prev_trace else ""
+                                    ),
+                                    bad_output=(
+                                        prev_trace["output_text"]
+                                        if prev_trace
+                                        else None
+                                    ),
                                     correction_text=user_text,
                                     repository=repository,
                                 )
@@ -828,7 +888,29 @@ async def _handle_message(
         if trace_ctx:
             async with trace_ctx.span("phase_b") as span:
                 span.set_metadata({"phase": "memories+notes+summary+history+projects"})
-                memories, relevant_notes, summary, history, projects_summary = await asyncio.gather(
+                memories, relevant_notes, summary, history, projects_summary = (
+                    await asyncio.gather(
+                        _get_memories(
+                            user_text,
+                            settings,
+                            ollama_client,
+                            repository,
+                            vec_available,
+                            query_embedding,
+                        ),
+                        _get_relevant_notes(
+                            query_embedding, settings, repository, vec_available
+                        ),
+                        repository.get_latest_summary(conv_id),
+                        repository.get_recent_messages(
+                            conv_id, settings.conversation_max_messages
+                        ),
+                        _get_active_projects_summary(msg.from_number, repository),
+                    )
+                )
+        else:
+            memories, relevant_notes, summary, history, projects_summary = (
+                await asyncio.gather(
                     _get_memories(
                         user_text,
                         settings,
@@ -837,20 +919,15 @@ async def _handle_message(
                         vec_available,
                         query_embedding,
                     ),
-                    _get_relevant_notes(query_embedding, settings, repository, vec_available),
+                    _get_relevant_notes(
+                        query_embedding, settings, repository, vec_available
+                    ),
                     repository.get_latest_summary(conv_id),
-                    repository.get_recent_messages(conv_id, settings.conversation_max_messages),
+                    repository.get_recent_messages(
+                        conv_id, settings.conversation_max_messages
+                    ),
                     _get_active_projects_summary(msg.from_number, repository),
                 )
-        else:
-            memories, relevant_notes, summary, history, projects_summary = await asyncio.gather(
-                _get_memories(
-                    user_text, settings, ollama_client, repository, vec_available, query_embedding
-                ),
-                _get_relevant_notes(query_embedding, settings, repository, vec_available),
-                repository.get_latest_summary(conv_id),
-                repository.get_recent_messages(conv_id, settings.conversation_max_messages),
-                _get_active_projects_summary(msg.from_number, repository),
             )
 
         # Implicit signal: detect repeated question (semantic similarity > 0.9 vs last 24h)
@@ -864,7 +941,9 @@ async def _handle_message(
                 )
 
         # Capabilities summary (sync, fast)
-        skills_summary = _build_capabilities_section(skill_registry, command_registry, mcp_manager)
+        skills_summary = _build_capabilities_section(
+            skill_registry, command_registry, mcp_manager
+        )
 
         # Phase C: await classify_task (should be mostly done by now)
         pre_classified: list[str] | None = None
@@ -872,7 +951,9 @@ async def _handle_message(
             try:
                 pre_classified = await classify_task
             except Exception:
-                logger.warning("classify_intent task failed, executor will retry", exc_info=True)
+                logger.warning(
+                    "classify_intent task failed, executor will retry", exc_info=True
+                )
 
         # Phase D: build context (sync) → main LLM call (~3-8s)
         context = _build_context(
@@ -887,7 +968,9 @@ async def _handle_message(
         )
 
         # Set current user context for tools that need it (e.g. scheduler, projects)
-        from app.skills.tools.conversation_tools import set_current_user as set_conversation_user
+        from app.skills.tools.conversation_tools import (
+            set_current_user as set_conversation_user,
+        )
         from app.skills.tools.project_tools import set_current_user as set_project_user
         from app.skills.tools.scheduler_tools import set_current_user
 
@@ -898,7 +981,9 @@ async def _handle_message(
         try:
             if trace_ctx:
                 async with trace_ctx.span("llm_generation", kind="generation") as span:
-                    span.set_input({"has_tools": has_tools, "categories": pre_classified})
+                    span.set_input(
+                        {"has_tools": has_tools, "categories": pre_classified}
+                    )
                     if has_tools:
                         reply = await execute_tool_loop(
                             context,
@@ -977,7 +1062,9 @@ async def _handle_message(
 
             # Self-correction memory: persist guardrail failures so the LLM learns
             if not guardrail_report.passed:
-                failed_checks = [r.check_name for r in guardrail_report.results if not r.passed]
+                failed_checks = [
+                    r.check_name for r in guardrail_report.results if not r.passed
+                ]
                 _track_task(
                     asyncio.create_task(
                         _save_self_correction_memory(
@@ -986,9 +1073,11 @@ async def _handle_message(
                             repository=repository,
                             memory_file=memory_file,
                             ollama_client=ollama_client,
-                            embed_model=settings.embedding_model
-                            if settings.semantic_search_enabled and vec_available
-                            else None,
+                            embed_model=(
+                                settings.embedding_model
+                                if settings.semantic_search_enabled and vec_available
+                                else None
+                            ),
                             vec_available=vec_available,
                         )
                     )
@@ -1010,13 +1099,17 @@ async def _handle_message(
                         trace_ctx.set_wa_message_id(wa_message_id)
                         span.set_metadata({"wa_message_id": wa_message_id})
             else:
-                await wa_client.send_message(msg.from_number, markdown_to_whatsapp(reply))
+                await wa_client.send_message(
+                    msg.from_number, markdown_to_whatsapp(reply)
+                )
         except Exception:
             logger.exception("Failed to send WhatsApp message")
 
         # Increment profile message count and maybe run progressive discovery
         if settings.onboarding_enabled:
-            new_count = await repository.increment_profile_message_count(msg.from_number)
+            new_count = await repository.increment_profile_message_count(
+                msg.from_number
+            )
             _track_task(
                 asyncio.create_task(
                     maybe_discover_profile_updates(
@@ -1055,9 +1148,11 @@ async def _handle_message(
                     daily_log=daily_log,
                     memory_file=memory_file,
                     flush_enabled=settings.memory_flush_enabled,
-                    embed_model=settings.embedding_model
-                    if settings.semantic_search_enabled and vec_available
-                    else None,
+                    embed_model=(
+                        settings.embedding_model
+                        if settings.semantic_search_enabled and vec_available
+                        else None
+                    ),
                 )
             )
         )
