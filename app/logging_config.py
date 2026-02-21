@@ -1,27 +1,40 @@
 import logging
+import logging.handlers
+import os
 import sys
 import warnings
 
 from pythonjsonlogger.json import JsonFormatter
 
 
-def configure_logging(level: str = "INFO", json_format: bool = True) -> None:
+def configure_logging(
+    level: str = "INFO", json_format: bool = True, log_file: str = "data/wasap.log"
+) -> None:
     root = logging.getLogger()
     root.setLevel(level.upper())
 
-    handler = logging.StreamHandler(sys.stderr)
+    os.makedirs(os.path.dirname(log_file), exist_ok=True)
+
+    stream_handler = logging.StreamHandler(sys.stderr)
+    file_handler = logging.handlers.RotatingFileHandler(
+        log_file, encoding="utf-8", maxBytes=10 * 1024 * 1024, backupCount=5
+    )
+
+    formatter: logging.Formatter
     if json_format:
-        handler.setFormatter(
-            JsonFormatter(
-                fmt="%(asctime)s %(levelname)s %(name)s %(message)s",
-                rename_fields={"asctime": "timestamp", "levelname": "level", "name": "logger"},
-            )
+        formatter = JsonFormatter(
+            fmt="%(asctime)s %(levelname)s %(name)s %(message)s",
+            rename_fields={"asctime": "timestamp", "levelname": "level", "name": "logger"},
         )
     else:
-        handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s"))
+        formatter = logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s")
+
+    stream_handler.setFormatter(formatter)
+    file_handler.setFormatter(formatter)
 
     root.handlers.clear()
-    root.addHandler(handler)
+    root.addHandler(stream_handler)
+    root.addHandler(file_handler)
 
     # Silence noisy third-party loggers
     logging.getLogger("httpx").setLevel(logging.WARNING)

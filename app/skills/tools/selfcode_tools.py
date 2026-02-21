@@ -291,6 +291,35 @@ def register(
 
         return "\n".join(lines)
 
+    async def get_recent_logs(lines: int = 100) -> str:
+        def _read_logs() -> str:
+            if lines > 500:
+                return "Request too large. Max lines is 500."
+
+            log_path = _PROJECT_ROOT / "data" / "wasap.log"
+            if not log_path.exists():
+                return "Log file not found at data/wasap.log"
+
+            try:
+                result = subprocess.run(
+                    ["tail", "-n", str(max(1, lines)), str(log_path)],
+                    capture_output=True,
+                    text=True,
+                    timeout=10,
+                )
+                if result.returncode == 0:
+                    output = result.stdout.strip()
+                    return output if output else "Log file is empty."
+                return f"Error reading logs: {result.stderr}"
+            except subprocess.TimeoutExpired:
+                return "Reading logs timed out."
+            except FileNotFoundError:
+                return "tail command not available on this system."
+            except Exception as e:
+                return f"Error: {e}"
+
+        return await asyncio.to_thread(_read_logs)
+
     # Register all tools
     registry.register_tool(
         name="get_version_info",
@@ -380,5 +409,22 @@ def register(
             "required": ["skill_name"],
         },
         handler=get_skill_details,
+        skill_name="selfcode",
+    )
+
+    registry.register_tool(
+        name="get_recent_logs",
+        description="Get the most recent lines from the application log file (data/wasap.log)",
+        parameters={
+            "type": "object",
+            "properties": {
+                "lines": {
+                    "type": "integer",
+                    "description": "Number of lines to retrieve (default: 100, max: 500)",
+                    "default": 100,
+                },
+            },
+        },
+        handler=get_recent_logs,
         skill_name="selfcode",
     )

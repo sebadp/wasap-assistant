@@ -33,6 +33,25 @@ class Repository:
         await self._conn.commit()
         return cursor.lastrowid  # type: ignore[return-value]
 
+    async def get_conversation_id(self, phone_number: str) -> int | None:
+        cursor = await self._conn.execute(
+            "SELECT id FROM conversations WHERE phone_number = ?",
+            (phone_number,),
+        )
+        row = await cursor.fetchone()
+        return row[0] if row else None
+
+    async def get_messages_paginated(
+        self, conversation_id: int, limit: int, offset: int
+    ) -> list[tuple[str, str, str]]:
+        cursor = await self._conn.execute(
+            "SELECT role, content, created_at FROM messages "
+            "WHERE conversation_id = ? ORDER BY created_at DESC, id DESC LIMIT ? OFFSET ?",
+            (conversation_id, limit, offset),
+        )
+        rows = await cursor.fetchall()
+        return [(r[0], r[1], r[2]) for r in rows]
+
     async def save_message(
         self,
         conversation_id: int,

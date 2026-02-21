@@ -100,6 +100,10 @@ class McpManager:
                 continue
 
             await self._connect_server(name, cfg)
+            self._update_dynamic_categories(name)
+
+        # Invalidate cache once after all servers are loaded
+        self._invalidate_tools_cache()
 
         if self._tools:
             logger.info(

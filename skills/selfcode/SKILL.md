@@ -10,8 +10,10 @@ tools:
   - get_system_health
   - search_source_code
   - get_skill_details
+  - get_recent_logs
 ---
 Use these tools when asked about your own code, version, configuration or system status.
+- Use get_recent_logs(lines) to read the server logs when investigating errors, crashes, or internal behavior.
 - Use get_version_info() first for general "what version are you?" queries.
 - Use read_source_file(path) with paths relative to the project root (e.g. "app/main.py").
 - Use list_source_files(directory) to explore structure before reading specific files.

@@ -57,6 +57,7 @@ TOOL_CATEGORIES: dict[str, list[str]] = {
         "get_system_health",
         "search_source_code",
         "get_skill_details",
+        "get_recent_logs",
     ],
     "expand": [
         "search_mcp_registry",
@@ -92,6 +93,7 @@ TOOL_CATEGORIES: dict[str, list[str]] = {
         "propose_prompt_change",
         "get_dashboard_stats",
     ],
+    "conversation": ["get_recent_messages"],
 }
 
 DEFAULT_CATEGORIES = ["time", "math", "weather", "search"]
