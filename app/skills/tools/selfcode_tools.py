@@ -305,11 +305,16 @@ def register(
                     ["tail", "-n", str(max(1, lines)), str(log_path)],
                     capture_output=True,
                     text=True,
+                    timeout=10,
                 )
                 if result.returncode == 0:
                     output = result.stdout.strip()
                     return output if output else "Log file is empty."
                 return f"Error reading logs: {result.stderr}"
+            except subprocess.TimeoutExpired:
+                return "Reading logs timed out."
+            except FileNotFoundError:
+                return "tail command not available on this system."
             except Exception as e:
                 return f"Error: {e}"
 

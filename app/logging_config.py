@@ -1,4 +1,5 @@
 import logging
+import logging.handlers
 import os
 import sys
 import warnings
@@ -15,7 +16,9 @@ def configure_logging(
     os.makedirs(os.path.dirname(log_file), exist_ok=True)
 
     stream_handler = logging.StreamHandler(sys.stderr)
-    file_handler = logging.FileHandler(log_file, encoding="utf-8")
+    file_handler = logging.handlers.RotatingFileHandler(
+        log_file, encoding="utf-8", maxBytes=10 * 1024 * 1024, backupCount=5
+    )
 
     formatter: logging.Formatter
     if json_format:

@@ -1,3 +1,4 @@
+---
 name: conversation
 description: Access and review the user's message history to understand past context.
 version: 1

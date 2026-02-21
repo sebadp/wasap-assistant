@@ -57,6 +57,7 @@ TOOL_CATEGORIES: dict[str, list[str]] = {
         "get_system_health",
         "search_source_code",
         "get_skill_details",
+        "get_recent_logs",
     ],
     "expand": [
         "search_mcp_registry",

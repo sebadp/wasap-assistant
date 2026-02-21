@@ -19,20 +19,21 @@ def set_current_user(phone_number: str) -> None:
 def register(registry: SkillRegistry, repository: "Repository") -> None:
 
     async def get_recent_messages(limit: int = 10, offset: int = 0) -> str:
+        # Clamp parameters to prevent unbounded queries
+        limit = max(1, min(limit, 50))
+        offset = max(0, offset)
+
         phone = _current_user_phone.get()
         if not phone:
             return "No user context available."
 
-        # We need the conversation ID for this user
-        conv_id = await repository.get_or_create_conversation(phone)
+        # Use a read-only lookup to avoid write side effects
+        conv_id = await repository.get_conversation_id(phone)
+        if not conv_id:
+            return "The conversation history is empty."
 
         # Get one extra message to see if there are more
-        cursor = await repository._conn.execute(
-            "SELECT role, content, created_at FROM messages "
-            "WHERE conversation_id = ? ORDER BY created_at DESC, id DESC LIMIT ? OFFSET ?",
-            (conv_id, limit + 1, offset),
-        )
-        rows = list(await cursor.fetchall())
+        rows = await repository.get_messages_paginated(conv_id, limit + 1, offset)
 
         if not rows:
             if offset == 0:
