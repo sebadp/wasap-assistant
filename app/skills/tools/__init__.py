@@ -21,6 +21,7 @@ def register_builtin_tools(
     from app.skills.tools.calculator_tools import register as register_calculator
     from app.skills.tools.datetime_tools import register as register_datetime
     from app.skills.tools.expand_tools import register as register_expand
+    from app.skills.tools.git_tools import register as register_git
     from app.skills.tools.news_tools import register as register_news
     from app.skills.tools.notes_tools import register as register_notes
     from app.skills.tools.project_tools import register as register_projects
@@ -65,3 +66,5 @@ def register_builtin_tools(
         from app.skills.tools.eval_tools import register as register_eval
 
         register_eval(registry, repository, ollama_client=ollama_client)
+
+    register_git(registry)

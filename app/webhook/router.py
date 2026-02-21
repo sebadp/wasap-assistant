@@ -189,6 +189,21 @@ async def process_message(
     except Exception:
         logger.debug("Failed to send initial WhatsApp signals")
 
+    # HITL: if the agent is waiting for user input, route the message to it
+    if msg.text:
+        from app.agent.hitl import resolve_hitl
+
+        if resolve_hitl(msg.from_number, msg.text):
+            logger.info(
+                "HITL response from %s consumed by active agent session",
+                msg.from_number,
+            )
+            try:
+                await wa_client.send_reaction(msg.message_id, msg.from_number, "")
+            except Exception:
+                pass
+            return
+
     try:
         await _handle_message(
             msg,

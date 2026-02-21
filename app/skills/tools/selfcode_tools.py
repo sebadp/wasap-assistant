@@ -320,6 +320,79 @@ def register(
 
         return await asyncio.to_thread(_read_logs)
 
+    async def write_source_file(path: str, content: str) -> str:
+        """Write content to a file within the project. Creates the file if it doesn't exist.
+
+        Requires AGENT_WRITE_ENABLED=true in config.
+        Safety: Only allows writing within PROJECT_ROOT. Blocks sensitive files and binary extensions.
+        """
+        if not settings.agent_write_enabled:
+            return "Error: Write operations are disabled. Set AGENT_WRITE_ENABLED=true in .env to enable."
+
+        target = (_PROJECT_ROOT / path).resolve()
+
+        if not _is_safe_path(target):
+            return f"Blocked: '{path}' is outside the project root or is a sensitive file."
+
+        _BLOCKED_EXT = {".pyc", ".pyo", ".db", ".sqlite", ".jpg", ".jpeg", ".png", ".gif", ".zip", ".tar"}
+        if target.suffix.lower() in _BLOCKED_EXT:
+            return f"Blocked: Cannot write binary or database file ({target.suffix})"
+
+        def _write() -> str:
+            try:
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_text(content, encoding="utf-8")
+                return f"✅ Written {len(content)} chars to {path}"
+            except Exception as e:
+                return f"Error writing file: {e}"
+
+        logger.info("Agent write_source_file: %s (%d chars)", path, len(content))
+        return await asyncio.to_thread(_write)
+
+    async def apply_patch(path: str, search: str, replace: str) -> str:
+        """Apply a targeted text replacement in a source file.
+
+        Finds the FIRST occurrence of `search` in the file and replaces it with `replace`.
+        Safer than full file rewrites for small edits.
+        Requires AGENT_WRITE_ENABLED=true in config.
+        """
+        if not settings.agent_write_enabled:
+            return "Error: Write operations are disabled. Set AGENT_WRITE_ENABLED=true in .env to enable."
+
+        target = (_PROJECT_ROOT / path).resolve()
+
+        if not _is_safe_path(target):
+            return f"Blocked: '{path}' is outside the project root or is a sensitive file."
+
+        def _patch() -> str:
+            if not target.exists():
+                return f"Error: File '{path}' does not exist. Use write_source_file to create it."
+
+            try:
+                text = target.read_text(encoding="utf-8")
+            except Exception as e:
+                return f"Error reading file: {e}"
+
+            if search not in text:
+                # Give the LLM a useful hint to diagnose what went wrong
+                snippet = text[:300] + ("..." if len(text) > 300 else "")
+                return (
+                    f"Error: Search string not found in '{path}'.\n"
+                    f"Use read_source_file to check the exact current content.\n"
+                    f"File starts with:\n{snippet}"
+                )
+
+            new_text = text.replace(search, replace, 1)
+            try:
+                target.write_text(new_text, encoding="utf-8")
+            except Exception as e:
+                return f"Error writing file: {e}"
+
+            return f"✅ Patched '{path}': replaced {len(search)} chars with {len(replace)} chars."
+
+        logger.info("Agent apply_patch: %s (search=%d chars)", path, len(search))
+        return await asyncio.to_thread(_patch)
+
     # Register all tools
     registry.register_tool(
         name="get_version_info",
@@ -428,3 +501,60 @@ def register(
         handler=get_recent_logs,
         skill_name="selfcode",
     )
+
+    registry.register_tool(
+        name="write_source_file",
+        description=(
+            "Write content to a source file within the project. "
+            "Creates the file and any missing parent directories. "
+            "Requires AGENT_WRITE_ENABLED=true. "
+            "Use for NEW files. For edits to existing files, prefer apply_patch."
+        ),
+        parameters={
+            "type": "object",
+            "properties": {
+                "path": {
+                    "type": "string",
+                    "description": "File path relative to project root, e.g. 'app/new_module.py'",
+                },
+                "content": {
+                    "type": "string",
+                    "description": "Full content to write to the file",
+                },
+            },
+            "required": ["path", "content"],
+        },
+        handler=write_source_file,
+        skill_name="selfcode",
+    )
+
+    registry.register_tool(
+        name="apply_patch",
+        description=(
+            "Apply a targeted text replacement in an existing source file. "
+            "Finds the FIRST occurrence of `search` and replaces it with `replace`. "
+            "Safer than write_source_file for small edits. "
+            "Requires AGENT_WRITE_ENABLED=true."
+        ),
+        parameters={
+            "type": "object",
+            "properties": {
+                "path": {
+                    "type": "string",
+                    "description": "File path relative to project root",
+                },
+                "search": {
+                    "type": "string",
+                    "description": "Exact text to find in the file (must match exactly, including whitespace)",
+                },
+                "replace": {
+                    "type": "string",
+                    "description": "Text to replace the found string with",
+                },
+            },
+            "required": ["path", "search", "replace"],
+        },
+        handler=apply_patch,
+        skill_name="selfcode",
+    )
+

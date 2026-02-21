@@ -1,0 +1,203 @@
+"""Agentic session loop: autonomous background execution."""
+from __future__ import annotations
+
+import asyncio
+import logging
+import uuid
+from typing import TYPE_CHECKING
+
+from app.agent.models import AgentSession, AgentStatus
+from app.models import ChatMessage
+from app.skills.executor import execute_tool_loop
+
+if TYPE_CHECKING:
+    from app.llm.client import OllamaClient
+    from app.mcp.manager import McpManager
+    from app.skills.registry import SkillRegistry
+    from app.whatsapp.client import WhatsAppClient
+
+logger = logging.getLogger(__name__)
+
+# Active sessions indexed by phone number - one concurrent session per user
+_active_sessions: dict[str, AgentSession] = {}
+
+_AGENT_SYSTEM_PROMPT = """\
+You are in AGENT MODE. You have been given an objective by the user and must complete \
+it autonomously using the available tools.
+
+OBJECTIVE: {objective}
+
+RULES:
+1. Break the objective into small, concrete steps using create_task_plan first.
+2. Execute one step at a time using tools.
+3. After completing each step, call update_task_status to mark it done.
+4. If you need user input before a critical action, call request_user_approval.
+5. Never loop on the same action — if a tool fails, try a different approach or skip.
+6. When ALL steps are done, write a concise summary of what was accomplished.
+"""
+
+_PLAN_REMINDER = """
+--- CURRENT TASK PLAN ---
+{task_plan}
+--- END TASK PLAN ---
+"""
+
+
+def _register_session_tools(
+    session: AgentSession,
+    skill_registry: SkillRegistry,
+    wa_client: WhatsAppClient,
+) -> None:
+    """Register session-scoped tools into the skill registry.
+
+    These tools require access to the current AgentSession or wa_client,
+    so they must be registered fresh for each session.
+    Two tool groups:
+    1. Task memory: create_task_plan, get_task_plan, update_task_status
+    2. HITL: request_user_approval
+    """
+    from app.agent.hitl import request_user_approval as _hitl_request
+    from app.agent.task_memory import register_task_memory_tools
+
+    # Register the three task-memory tools
+    register_task_memory_tools(skill_registry, lambda: session)
+
+    # Register the HITL approval tool
+    async def request_user_approval(question: str) -> str:
+        """Pause the agent session and send a question to the user via WhatsApp.
+
+        The session will resume as soon as the user replies.
+        Use this before irreversible actions (commits, pushes, file overwrites).
+        """
+        session.status = AgentStatus.WAITING_USER
+        try:
+            result = await _hitl_request(
+                phone_number=session.phone_number,
+                question=question,
+                wa_client=wa_client,
+            )
+        finally:
+            session.status = AgentStatus.RUNNING
+        return result
+
+    skill_registry.register_tool(
+        name="request_user_approval",
+        description=(
+            "Pause the agent session and ask the user a question via WhatsApp. "
+            "The session resumes when the user replies. "
+            "Use this before irreversible actions like commits or file deletions."
+        ),
+        parameters={
+            "type": "object",
+            "properties": {
+                "question": {
+                    "type": "string",
+                    "description": "The question to ask the user. Be specific about what you need approval for.",
+                },
+            },
+            "required": ["question"],
+        },
+        handler=request_user_approval,
+        skill_name="agent",
+    )
+
+
+async def run_agent_session(
+    session: AgentSession,
+    ollama_client: OllamaClient,
+    skill_registry: SkillRegistry,
+    wa_client: WhatsAppClient,
+    mcp_manager: McpManager | None = None,
+) -> None:
+    """Run a full agentic session in the background.
+
+    The agent iterates: Think → Call Tools → Observe → Loop
+    until the objective is complete or max_iterations is reached.
+    Proactively sends the result to the user via WhatsApp when done.
+    """
+    _active_sessions[session.phone_number] = session
+    logger.info(
+        "Agent session %s started for %s: %s",
+        session.session_id,
+        session.phone_number,
+        session.objective[:80],
+    )
+
+    try:
+        system_content = _AGENT_SYSTEM_PROMPT.format(objective=session.objective)
+
+        messages: list[ChatMessage] = [
+            ChatMessage(role="system", content=system_content),
+            ChatMessage(role="user", content=session.objective),
+        ]
+
+        # Register session-scoped tools (task memory + HITL approval)
+        _register_session_tools(session, skill_registry, wa_client)
+
+        # Run the tool loop with elevated max_tools to allow multi-step autonomy
+        reply = await execute_tool_loop(
+            messages=messages,
+            ollama_client=ollama_client,
+            skill_registry=skill_registry,
+            mcp_manager=mcp_manager,
+            max_tools=session.max_iterations,
+        )
+
+        session.status = AgentStatus.COMPLETED
+        logger.info("Agent session %s completed", session.session_id)
+
+        # Send final result to the user via WhatsApp
+        from app.formatting.markdown_to_wa import markdown_to_whatsapp
+
+        await wa_client.send_message(
+            session.phone_number,
+            markdown_to_whatsapp(f"✅ *Sesión agéntica completada*\n\n{reply}"),
+        )
+
+    except asyncio.CancelledError:
+        session.status = AgentStatus.CANCELLED
+        logger.info("Agent session %s cancelled", session.session_id)
+        await wa_client.send_message(
+            session.phone_number,
+            "🛑 Sesión agéntica cancelada.",
+        )
+    except Exception:
+        session.status = AgentStatus.FAILED
+        logger.exception("Agent session %s failed", session.session_id)
+        await wa_client.send_message(
+            session.phone_number,
+            "❌ La sesión agéntica falló inesperadamente. Usa /debug para investigar.",
+        )
+    finally:
+        _active_sessions.pop(session.phone_number, None)
+
+
+def get_active_session(phone_number: str) -> AgentSession | None:
+    """Return the active agent session for this user, or None."""
+    return _active_sessions.get(phone_number)
+
+
+def cancel_session(phone_number: str) -> bool:
+    """Cancel the active agent session for this phone number.
+
+    Returns True if a session was found and cancelled, False otherwise.
+    """
+    session = _active_sessions.get(phone_number)
+    if session and session.status == AgentStatus.RUNNING:
+        session.status = AgentStatus.CANCELLED
+        return True
+    return False
+
+
+def create_session(
+    phone_number: str,
+    objective: str,
+    max_iterations: int = 15,
+) -> AgentSession:
+    """Create a new AgentSession with a fresh random session ID."""
+    return AgentSession(
+        session_id=uuid.uuid4().hex,
+        phone_number=phone_number,
+        objective=objective,
+        max_iterations=max_iterations,
+    )

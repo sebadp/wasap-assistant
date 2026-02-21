@@ -10,6 +10,40 @@ from app.models import ChatMessage
 logger = logging.getLogger(__name__)
 
 
+async def cmd_cancel(args: str, context: CommandContext) -> str:
+    """Cancel the active agent session for this user."""
+    from app.agent.loop import cancel_session, get_active_session
+
+    session = get_active_session(context.phone_number)
+    if not session:
+        return "No hay ninguna sesión agéntica activa para cancelar."
+    cancelled = cancel_session(context.phone_number)
+    if cancelled:
+        return f"🛑 Sesión agéntica cancelada.\n_Objetivo interrumpido:_ {session.objective[:100]}"
+    return "La sesión ya terminó o no se pudo cancelar."
+
+
+async def cmd_agent_status(args: str, context: CommandContext) -> str:
+    """Show the status of the current agent session."""
+    from app.agent.loop import get_active_session
+
+    session = get_active_session(context.phone_number)
+    if not session:
+        return "No hay ninguna sesión agéntica activa."
+    plan_preview = ""
+    if session.task_plan:
+        lines = session.task_plan.split("\n")[:8]
+        plan_preview = "\n".join(lines)
+        plan_preview = f"\n\n*Plan actual:*\n{plan_preview}"
+    return (
+        f"🤖 *Sesión agéntica activa*\n"
+        f"Estado: {session.status.value}\n"
+        f"Objetivo: {session.objective[:120]}"
+        f"{plan_preview}"
+    )
+
+
+
 async def cmd_remember(args: str, context: CommandContext) -> str:
     if not args.strip():
         return "Usage: /remember <something to remember>"
@@ -475,5 +509,21 @@ def register_builtins(registry: CommandRegistry) -> None:
             description="Mostrar comandos disponibles",
             usage="/help",
             handler=cmd_help,
+        )
+    )
+    registry.register(
+        CommandSpec(
+            name="cancel",
+            description="Cancelar la sesión agéntica activa",
+            usage="/cancel",
+            handler=cmd_cancel,
+        )
+    )
+    registry.register(
+        CommandSpec(
+            name="agent",
+            description="Ver el estado de la sesión agéntica actual",
+            usage="/agent",
+            handler=cmd_agent_status,
         )
     )

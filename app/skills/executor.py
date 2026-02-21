@@ -4,6 +4,7 @@ import asyncio
 import logging
 from typing import TYPE_CHECKING
 
+from app.formatting.compaction import compact_tool_output
 from app.llm.client import OllamaClient
 from app.models import ChatMessage
 from app.skills.models import ToolCall
@@ -64,6 +65,8 @@ async def _run_tool_call(
     tc: dict,
     skill_registry: SkillRegistry,
     mcp_manager: McpManager | None,
+    ollama_client: OllamaClient,
+    user_message: str,
 ) -> ChatMessage:
     """Execute a single tool call and return the result as a tool message."""
     func = tc.get("function", {})
@@ -93,8 +96,17 @@ async def _run_tool_call(
     logger.info("Tool %s -> %s", tool_name, result.content[:100])
 
     final_content = result.content
+
+    # Compress the context if it is massive
+    final_content = await compact_tool_output(
+        tool_name=tool_name,
+        text=final_content,
+        user_request=user_message,
+        ollama_client=ollama_client,
+    )
+
     if instructions:
-        final_content = f"{instructions}\n\nResult:\n{result.content}"
+        final_content = f"{instructions}\n\nResult:\n{final_content}"
 
     return ChatMessage(role="tool", content=final_content)
 
@@ -172,7 +184,9 @@ async def execute_tool_loop(
         # Execute all tool calls in parallel, append results in order
         tool_messages = await asyncio.gather(
             *[
-                _run_tool_call(tc, skill_registry, mcp_manager)
+                _run_tool_call(
+                    tc, skill_registry, mcp_manager, ollama_client, user_message
+                )
                 for tc in response.tool_calls
             ]
         )
