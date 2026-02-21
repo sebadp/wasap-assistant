@@ -67,7 +67,7 @@ Contiene `AgentSession` (dataclass) y `AgentStatus` (enum).
   Factory function que crea un `AgentSession` con UUID único.
 
 - **`get_active_session(phone_number)`** / **`cancel_session(phone_number)`**  
-  Consulta y control de sesiones activas (singleton por número).
+  Consulta y control de sesiones activas. `cancel_session` cancela el `asyncio.Task` real (no solo el status flag) y acepta tanto el estado `running` como `waiting_user`.
 
 #### `app/agent/task_memory.py`
 
@@ -94,10 +94,10 @@ Permite al agente pausar y esperar aprobación humana antes de acciones crítica
 | Tool | Descripción |
 |------|------------|
 | `git_status()` | Estado del working tree (formato corto) |
-| `git_diff()` | Resumen de cambios staged/unstaged |
-| `git_create_branch(branch_name)` | Crea y hace checkout de un branch nuevo |
-| `git_commit(message)` | `git add -A` + commit con el mensaje dado |
-| `git_push(branch_name?)` | Push del branch actual o del especificado |
+| `git_diff()` | Resumen de cambios staged/unstaged (reporta errores si los hay) |
+| `git_create_branch(branch_name)` | Crea y hace checkout de un branch nuevo (protegido contra flag injection con `--`) |
+| `git_commit(message)` | `git add -A` + commit; verifica el código de retorno del stage antes de commitear |
+| `git_push(branch_name?)` | Push del branch actual o del especificado; valida que el nombre no empiece con `-` |
 
 #### Write tools en `selfcode_tools.py`
 
@@ -106,7 +106,7 @@ Permite al agente pausar y esperar aprobación humana antes de acciones crítica
 | `write_source_file(path, content)` | Escribe un archivo completo (para archivos **nuevos**) |
 | `apply_patch(path, search, replace)` | Reemplaza la primera ocurrencia de `search` por `replace` (para **editar** archivos existentes) |
 
-> ⚠️ Ambas herramientas requieren `AGENT_WRITE_ENABLED=true`. Están deshabilitadas por defecto.
+> ⚠️ Ambas herramientas requieren `AGENT_WRITE_ENABLED=true`, validan que el path esté dentro del proyecto, y bloquean extensiones binarias (`.pyc`, `.db`, `.jpg`, etc.).
 
 ---
 
@@ -160,10 +160,14 @@ if msg.text:
 
 ## Seguridad
 
-- **`AGENT_WRITE_ENABLED=false`** por defecto. Sin este flag, las write tools retornan un error descriptivo. Esto previene prompt injection que intente escribir archivos en producción.
+- **`AGENT_WRITE_ENABLED=false`** por defecto. Sin este flag, `write_source_file` y `apply_patch` retornan un error. Esto previene prompt injection que intente escribir archivos en producción.
 - **Una sesión por usuario** simultáneamente. Si hay una activa, se rechaza la segunda hasta que el usuario use `/cancel`.
-- **`_is_safe_path()`** valida que el path esté dentro del `PROJECT_ROOT` y bloquea archivos sensibles (`.env`, `*.key`, `*.pem`, `*password*`, etc.).
-- **Extensiones binarias bloqueadas**: `.pyc`, `.db`, `.sqlite`, `.jpg`, `.png`, `.zip`, etc.
+- **`/cancel` detiene la sesión real**: cancela el `asyncio.Task` subyacente, no solo el status flag. Funciona tanto en estado `running` como `waiting_user`.
+- **`_is_safe_path()`**: valida que el path esté dentro del `PROJECT_ROOT` y bloquea archivos sensibles (`.env`, `*.key`, `*.pem`, `*password*`, etc.).
+- **Extensiones binarias bloqueadas** en ambas write tools: `.pyc`, `.db`, `.sqlite`, `.jpg`, `.png`, `.zip`, etc.
+- **Git arg injection prevention**: `git_create_branch` y `git_push` usan `--` como separador para evitar que branch names que empiecen con `-` sean interpretados como flags de git.
+- **`git add -A` return code chequeado**: si el staging falla, `git_commit` retorna error en lugar de hacer commit silenciosamente.
+- **Registry por sesión**: cada sesión agéntica obtiene una copia aislada del skill registry, evitando que sesiones concurrentes se sobreescriban los handlers.
 - **Git timeout de 30s** por comando para evitar cuelgues en operaciones de red.
 
 ---
