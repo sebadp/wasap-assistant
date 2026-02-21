@@ -13,6 +13,7 @@ Cada archivo en este directorio documenta una feature implementada: qué hace, c
 
 | Feature | Archivo | Fase |
 |---|---|---|
+| Conversation Skill & Auto Debug | [`conversation_skill.md`](conversation_skill.md) | Fase 1 |
 | *(próximas features documentadas aquí)* | | |
 
 ## Cómo crear un nuevo walkthrough
