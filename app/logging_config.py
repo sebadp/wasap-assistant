@@ -1,13 +1,14 @@
 import logging
+import os
 import sys
 import warnings
 
 from pythonjsonlogger.json import JsonFormatter
 
 
-import os
-
-def configure_logging(level: str = "INFO", json_format: bool = True, log_file: str = "data/wasap.log") -> None:
+def configure_logging(
+    level: str = "INFO", json_format: bool = True, log_file: str = "data/wasap.log"
+) -> None:
     root = logging.getLogger()
     root.setLevel(level.upper())
 
@@ -15,7 +16,8 @@ def configure_logging(level: str = "INFO", json_format: bool = True, log_file: s
 
     stream_handler = logging.StreamHandler(sys.stderr)
     file_handler = logging.FileHandler(log_file, encoding="utf-8")
-    
+
+    formatter: logging.Formatter
     if json_format:
         formatter = JsonFormatter(
             fmt="%(asctime)s %(levelname)s %(name)s %(message)s",

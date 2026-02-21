@@ -295,11 +295,11 @@ def register(
         def _read_logs() -> str:
             if lines > 500:
                 return "Request too large. Max lines is 500."
-            
+
             log_path = _PROJECT_ROOT / "data" / "wasap.log"
             if not log_path.exists():
                 return "Log file not found at data/wasap.log"
-            
+
             try:
                 result = subprocess.run(
                     ["tail", "-n", str(max(1, lines)), str(log_path)],
