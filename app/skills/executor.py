@@ -118,7 +118,9 @@ async def execute_tool_loop(
 
     # Stage 1: classify intent (use pre-computed result if available)
     all_tools_map = _get_cached_tools_map(skill_registry, mcp_manager)
-    categories = pre_classified_categories or await classify_intent(user_message, ollama_client)
+    categories = pre_classified_categories or await classify_intent(
+        user_message, ollama_client
+    )
 
     if categories == ["none"]:
         logger.info("Tool router: categories=none, plain chat")
@@ -127,9 +129,10 @@ async def execute_tool_loop(
     # Stage 2: select relevant tools
     tools = select_tools(categories, all_tools_map, max_tools=max_tools)
     logger.info(
-        "Tool router: categories=%s, selected %d tools",
+        "Tool router: categories=%s, selected %d tools: %s",
         categories,
         len(tools),
+        [t.get("function", {}).get("name") for t in tools],
     )
 
     if not tools:
@@ -142,12 +145,19 @@ async def execute_tool_loop(
         response = await ollama_client.chat_with_tools(working_messages, tools=tools)
 
         if not response.tool_calls:
+            logger.info(
+                "Tool iteration %d: LLM decided to reply directly: %r",
+                iteration + 1,
+                response.content[:150],
+            )
             return response.content
 
+        tool_names = [tc.get("function", {}).get("name") for tc in response.tool_calls]
         logger.info(
-            "Tool iteration %d: %d tool call(s)",
+            "Tool iteration %d: LLM generated %d tool call(s): %s",
             iteration + 1,
             len(response.tool_calls),
+            tool_names,
         )
 
         # Append assistant message with tool_calls
@@ -161,11 +171,16 @@ async def execute_tool_loop(
 
         # Execute all tool calls in parallel, append results in order
         tool_messages = await asyncio.gather(
-            *[_run_tool_call(tc, skill_registry, mcp_manager) for tc in response.tool_calls]
+            *[
+                _run_tool_call(tc, skill_registry, mcp_manager)
+                for tc in response.tool_calls
+            ]
         )
         working_messages.extend(tool_messages)
 
     # Safety: exceeded max iterations, force a text response without tools
-    logger.warning("Max tool iterations (%d) reached, forcing text response", MAX_TOOL_ITERATIONS)
+    logger.warning(
+        "Max tool iterations (%d) reached, forcing text response", MAX_TOOL_ITERATIONS
+    )
     response = await ollama_client.chat_with_tools(working_messages, tools=None)
     return response.content

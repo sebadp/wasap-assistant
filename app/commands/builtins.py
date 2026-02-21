@@ -86,7 +86,9 @@ async def _save_session_snapshot(conv_id: int, context: CommandContext) -> None:
         return
 
     # Generate slug via LLM
-    conversation_preview = "\n".join(f"{m.role}: {m.content[:100]}" for m in messages[:5])
+    conversation_preview = "\n".join(
+        f"{m.role}: {m.content[:100]}" for m in messages[:5]
+    )
     slug_prompt = (
         "Name this conversation in 3-5 words. Use lowercase and hyphens.\n"
         "Only output the name, nothing else.\n\n"
@@ -118,13 +120,17 @@ async def _save_session_snapshot(conv_id: int, context: CommandContext) -> None:
 
     # Also log a summary entry in today's daily log
     topic = slug.replace("-", " ")
-    await context.daily_log.append(f"Session cleared: {topic} ({len(messages)} messages saved)")
+    await context.daily_log.append(
+        f"Session cleared: {topic} ({len(messages)} messages saved)"
+    )
     logger.info("Saved session snapshot: %s", path.name)
 
 
 async def cmd_setup(args: str, context: CommandContext) -> str:
     await context.repository.reset_user_profile(context.phone_number)
-    return "Tu perfil ha sido reiniciado. Envíame cualquier mensaje y empezamos de cero."
+    return (
+        "Tu perfil ha sido reiniciado. Envíame cualquier mensaje y empezamos de cero."
+    )
 
 
 async def cmd_review_skill(args: str, context: CommandContext) -> str:
@@ -153,7 +159,9 @@ async def cmd_review_skill(args: str, context: CommandContext) -> str:
                 for s in servers:
                     icon = "🟢" if s["status"] == "connected" else "🔴"
                     desc = f" — {s['description']}" if s.get("description") else ""
-                    lines.append(f"- {icon} {s['name']} ({s['status']}, {s['tools']} tools){desc}")
+                    lines.append(
+                        f"- {icon} {s['name']} ({s['status']}, {s['tools']} tools){desc}"
+                    )
 
         if not lines:
             return "No skills or MCP servers installed."
@@ -346,6 +354,32 @@ async def cmd_help(args: str, context: CommandContext) -> str:
     return "\n".join(lines)
 
 
+async def cmd_debug(args: str, context: CommandContext) -> str:
+    """Toggle Auto Debug mode on or off."""
+    profile = await context.repository.get_user_profile(context.phone_number)
+    state = profile.get("onboarding_state", "pending")
+    data = profile.get("data", {})
+
+    current_debug = bool(data.get("debug_mode", False))
+    args = args.strip().lower()
+
+    if args == "on":
+        new_debug = True
+    elif args == "off":
+        new_debug = False
+    else:
+        new_debug = not current_debug
+
+    data["debug_mode"] = new_debug
+
+    await context.repository.save_user_profile(context.phone_number, state, data)
+
+    if new_debug:
+        return "🪲 Auto Debug activado. A partir de ahora enviaré un log de mis ejecuciones para ayudarte a investigar."
+    else:
+        return "Auto Debug desactivado. He vuelto a mi modo normal."
+
+
 def register_builtins(registry: CommandRegistry) -> None:
     registry.register(
         CommandSpec(
@@ -425,6 +459,14 @@ def register_builtins(registry: CommandRegistry) -> None:
             description="Activar una versión de prompt propuesta por el agente",
             usage="/approve-prompt <nombre> <versión>",
             handler=cmd_approve_prompt,
+        )
+    )
+    registry.register(
+        CommandSpec(
+            name="debug",
+            description="Activar o desactivar el modo de autodiagnóstico",
+            usage="/debug [on|off]",
+            handler=cmd_debug,
         )
     )
     registry.register(
