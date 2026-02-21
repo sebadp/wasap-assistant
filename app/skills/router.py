@@ -92,6 +92,7 @@ TOOL_CATEGORIES: dict[str, list[str]] = {
         "propose_prompt_change",
         "get_dashboard_stats",
     ],
+    "conversation": ["get_recent_messages"],
 }
 
 DEFAULT_CATEGORIES = ["time", "math", "weather", "search"]

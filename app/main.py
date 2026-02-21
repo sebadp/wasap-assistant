@@ -93,6 +93,11 @@ async def lifespan(app: FastAPI):
     # Skills
     skill_registry = SkillRegistry(skills_dir=settings.skills_dir)
     skill_registry.load_skills()
+
+    from app.skills.tools import conversation_tools
+
+    conversation_tools.register(skill_registry, repository)
+
     register_builtin_tools(
         skill_registry,
         repository,

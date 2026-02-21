@@ -22,5 +22,10 @@ def build_system_prompt(base: str, profile: dict, current_date: str) -> str:
     if preferences := profile.get("preferences"):
         lines.append(f"Preferences: {preferences}.")
 
-    lines.append(f"Current Date: {current_date}")
+    if profile.get("debug_mode"):
+        lines.append(
+            "\n[🪲 DEBUG MODE ENABLED]: You are currently in auto-debug mode. If the user reports an error or asks to investigate, proactively use `get_recent_logs` to check internal backend execution errors, and `get_recent_messages` to review past conversation turns. Explain technical root causes explicitly."
+        )
+
+    lines.append(f"\nCurrent Date: {current_date}")
     return "\n".join(lines)

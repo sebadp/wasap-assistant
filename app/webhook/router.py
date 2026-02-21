@@ -887,11 +887,13 @@ async def _handle_message(
         )
 
         # Set current user context for tools that need it (e.g. scheduler, projects)
+        from app.skills.tools.conversation_tools import set_current_user as set_conversation_user
         from app.skills.tools.project_tools import set_current_user as set_project_user
         from app.skills.tools.scheduler_tools import set_current_user
 
         set_current_user(msg.from_number, received_at=now)
         set_project_user(msg.from_number)
+        set_conversation_user(msg.from_number)
 
         try:
             if trace_ctx:
