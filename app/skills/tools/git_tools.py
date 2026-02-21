@@ -56,11 +56,17 @@ def register(registry: SkillRegistry) -> None:
     async def git_diff() -> str:
         """Show a summary of staged and unstaged changes (--stat format)."""
         code, out, err = await asyncio.to_thread(_run_git, "diff", "--stat")
-        staged_code, staged_out, _ = await asyncio.to_thread(_run_git, "diff", "--cached", "--stat")
+        staged_code, staged_out, staged_err = await asyncio.to_thread(
+            _run_git, "diff", "--cached", "--stat"
+        )
         parts = []
-        if out:
+        if code != 0:
+            parts.append(f"Error reading unstaged diff: {err}")
+        elif out:
             parts.append(f"Unstaged:\n{out}")
-        if staged_out:
+        if staged_code != 0:
+            parts.append(f"Error reading staged diff: {staged_err}")
+        elif staged_out:
             parts.append(f"Staged:\n{staged_out}")
         if not parts:
             return "(no changes)"
@@ -68,11 +74,11 @@ def register(registry: SkillRegistry) -> None:
 
     async def git_create_branch(branch_name: str) -> str:
         """Create and switch to a new Git branch."""
-        # Validate name (no spaces, no special chars except - and /)
         clean = branch_name.strip()
         if not clean or " " in clean:
             return "Error: branch name cannot be empty or contain spaces."
-        code, out, err = await asyncio.to_thread(_run_git, "checkout", "-b", clean)
+        # Use `--` to prevent branch names starting with `-` being interpreted as flags
+        code, out, err = await asyncio.to_thread(_run_git, "checkout", "-b", "--", clean)
         if code != 0:
             return f"Error creating branch '{clean}': {err}"
         return f"✅ Created and switched to branch: {clean}"
@@ -81,8 +87,10 @@ def register(registry: SkillRegistry) -> None:
         """Stage ALL changes (git add -A) and create a commit with the given message."""
         if not message.strip():
             return "Error: commit message cannot be empty."
-        # Stage
-        await asyncio.to_thread(_run_git, "add", "-A")
+        # Stage — check for errors before committing
+        add_code, _, add_err = await asyncio.to_thread(_run_git, "add", "-A")
+        if add_code != 0:
+            return f"Error staging changes (git add -A): {add_err}"
         # Commit
         code, out, err = await asyncio.to_thread(_run_git, "commit", "-m", message.strip())
         if code != 0:
@@ -93,10 +101,15 @@ def register(registry: SkillRegistry) -> None:
 
     async def git_push(branch_name: str = "") -> str:
         """Push the current branch (or the specified branch) to origin."""
+        cmd: list[str]
         if branch_name:
-            cmd = ("push", "--set-upstream", "origin", branch_name.strip())
+            clean = branch_name.strip()
+            # Block flag injection: names starting with `-` would be interpreted as git flags
+            if clean.startswith("-"):
+                return f"Error: invalid branch name '{clean}' (cannot start with '-')."
+            cmd = ["push", "--set-upstream", "origin", "--", clean]
         else:
-            cmd = ("push",)
+            cmd = ["push"]
         code, out, err = await asyncio.to_thread(_run_git, *cmd)
         if code != 0:
             return f"Error pushing: {err}"

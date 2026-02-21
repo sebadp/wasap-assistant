@@ -40,7 +40,9 @@ def register(registry: SkillRegistry) -> None:
                 dt = datetime.strptime(time, fmt)
                 dt = dt.replace(tzinfo=from_tz)
                 converted = dt.astimezone(to_tz)
-                result = converted.strftime("%A, %Y-%m-%d %H:%M:%S %Z")
+                # Omit %A (day-of-week): strptime defaults to 1900-01-01, so
+                # the weekday would always be "Monday" for time-only inputs.
+                result = converted.strftime("%Y-%m-%d %H:%M:%S %Z")
                 logger.info(f"Converted time: {result}")
                 return result
             except ValueError:

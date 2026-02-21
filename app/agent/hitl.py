@@ -53,6 +53,8 @@ async def request_user_approval(
         return f"TIMEOUT: The user did not respond within {timeout} seconds. Proceeding with the safest option."
     finally:
         _pending_approvals.pop(phone_number, None)
+        _approval_replies.pop(phone_number, None)  # Fix: also clean up on timeout
+
 
 
 def resolve_hitl(phone_number: str, user_message: str) -> bool:

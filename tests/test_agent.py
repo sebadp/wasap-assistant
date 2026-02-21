@@ -12,8 +12,7 @@ Tests cover:
 from __future__ import annotations
 
 import asyncio
-from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
@@ -26,9 +25,8 @@ from app.agent.loop import (
 )
 from app.agent.models import AgentSession, AgentStatus
 from app.agent.task_memory import register_task_memory_tools
-from app.skills.registry import SkillRegistry
 from app.skills.models import ToolCall
-
+from app.skills.registry import SkillRegistry
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -378,8 +376,8 @@ async def test_git_commit_nothing_to_commit(fresh_registry):
 
 
 async def test_cmd_cancel_no_session(repository, memory_file):
-    from app.commands.context import CommandContext
     from app.commands.builtins import cmd_cancel
+    from app.commands.context import CommandContext
 
     ctx = CommandContext(
         phone_number="5491112345678",
@@ -391,8 +389,8 @@ async def test_cmd_cancel_no_session(repository, memory_file):
 
 
 async def test_cmd_cancel_active_session(repository, memory_file, sample_session):
-    from app.commands.context import CommandContext
     from app.commands.builtins import cmd_cancel
+    from app.commands.context import CommandContext
 
     _active_sessions[sample_session.phone_number] = sample_session
 
@@ -407,8 +405,8 @@ async def test_cmd_cancel_active_session(repository, memory_file, sample_session
 
 
 async def test_cmd_agent_status_no_session(repository, memory_file):
-    from app.commands.context import CommandContext
     from app.commands.builtins import cmd_agent_status
+    from app.commands.context import CommandContext
 
     ctx = CommandContext(
         phone_number="5491112345678",
@@ -420,8 +418,8 @@ async def test_cmd_agent_status_no_session(repository, memory_file):
 
 
 async def test_cmd_agent_status_with_session(repository, memory_file, sample_session):
-    from app.commands.context import CommandContext
     from app.commands.builtins import cmd_agent_status
+    from app.commands.context import CommandContext
 
     sample_session.task_plan = "- [x] Step 1\n- [ ] Step 2"
     _active_sessions[sample_session.phone_number] = sample_session

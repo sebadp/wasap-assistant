@@ -80,6 +80,7 @@ class OllamaClient:
         tool_calls = msg.get("tool_calls")
 
         if content:
+            logger.debug("LLM raw response: %s", content[:500])
             # Strip deepseek/qwen reasoning blocks: <think>...</think>
             content = re.sub(r"<think>.*?</think>\n*", "", content, flags=re.DOTALL)
             # Edge-cases if the LLM gets truncated exactly after opening or closing tags
@@ -87,9 +88,10 @@ class OllamaClient:
             content = content.split("<think>")[0].strip()
 
         logger.debug(
-            "LLM raw response: %s", content[:500] if content else "(tool_calls)"
+            "LLM processed response: %s", content[:500] if content else "(tool_calls)"
         )
         return ChatResponse(content=content, tool_calls=tool_calls)
+
 
     async def chat(self, messages: list[ChatMessage], model: str | None = None) -> str:
         response = await self.chat_with_tools(messages, tools=None, model=model)

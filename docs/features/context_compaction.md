@@ -4,7 +4,7 @@ This document outlines the **Context Compaction** architecture, introduced in 20
 
 ## The Problem: "Context Rot" & Hardware Limits
 
-When an LLM agent uses external tools to retrieve information (for example, fetching a user's repositories from GitHub), the tools often return huge JSON payloads containing dozens of fields and metadata point. 
+When an LLM agent uses external tools to retrieve information (for example, fetching a user's repositories from GitHub), the tools often return huge JSON payloads containing dozens of fields and metadata points. 
 
 1. **Context Overflow**: If the payload exceeds the physical context window limit (e.g. `4000` tokens), the prompt is strictly truncated. A truncation occurring in the middle of a JSON string inevitably corrupts its syntax.
 2. **Context Rot (The "Lost in the Middle" problem)**: Even if the LLM possesses a massive context window (e.g. 1 Million tokens), stuffing unoptimized raw JSON payloads degrades its attention mechanism. The LLM loses track of the original user request and often hallucinates responses by blindly autocompleting the JSON structure instead of answering.

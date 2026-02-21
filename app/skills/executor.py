@@ -120,13 +120,13 @@ async def execute_tool_loop(
     pre_classified_categories: list[str] | None = None,
 ) -> str:
     """Run the tool calling loop: classify intent, select tools, execute."""
-    # Extract last user message for classification (only if not pre-classified)
+    # Always extract last user message — needed for tool output compaction
+    # regardless of whether intent classification is pre-computed.
     user_message = ""
-    if pre_classified_categories is None:
-        for msg in reversed(messages):
-            if msg.role == "user":
-                user_message = msg.content
-                break
+    for msg in reversed(messages):
+        if msg.role == "user":
+            user_message = msg.content
+            break
 
     # Stage 1: classify intent (use pre-computed result if available)
     all_tools_map = _get_cached_tools_map(skill_registry, mcp_manager)

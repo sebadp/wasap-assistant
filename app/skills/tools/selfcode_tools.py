@@ -364,6 +364,10 @@ def register(
         if not _is_safe_path(target):
             return f"Blocked: '{path}' is outside the project root or is a sensitive file."
 
+        _BLOCKED_EXT = {".pyc", ".pyo", ".db", ".sqlite", ".jpg", ".jpeg", ".png", ".gif", ".zip", ".tar"}
+        if target.suffix.lower() in _BLOCKED_EXT:
+            return f"Blocked: Cannot patch binary or database file ({target.suffix})"
+
         def _patch() -> str:
             if not target.exists():
                 return f"Error: File '{path}' does not exist. Use write_source_file to create it."
@@ -392,6 +396,7 @@ def register(
 
         logger.info("Agent apply_patch: %s (search=%d chars)", path, len(search))
         return await asyncio.to_thread(_patch)
+
 
     # Register all tools
     registry.register_tool(

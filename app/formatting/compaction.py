@@ -52,7 +52,7 @@ async def compact_tool_output(
             ChatMessage(role="user", content=prompt),
         ]
 
-        # We explicitly ask the client to avoid 'think' tokens for speed if possible
+        # Use the default model; compaction doesn't need special model settings
         summary = await ollama_client.chat(messages, model=None)
 
         if not summary or summary.isspace():

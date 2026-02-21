@@ -20,6 +20,8 @@ logger = logging.getLogger(__name__)
 
 # Active sessions indexed by phone number - one concurrent session per user
 _active_sessions: dict[str, AgentSession] = {}
+# asyncio Tasks for each active session, so we can actually cancel them
+_active_tasks: dict[str, asyncio.Task] = {}
 
 _AGENT_SYSTEM_PROMPT = """\
 You are in AGENT MODE. You have been given an objective by the user and must complete \
@@ -47,20 +49,22 @@ def _register_session_tools(
     session: AgentSession,
     skill_registry: SkillRegistry,
     wa_client: WhatsAppClient,
-) -> None:
-    """Register session-scoped tools into the skill registry.
+) -> SkillRegistry:
+    """Create a session-scoped copy of the registry and register HITL + task-memory tools.
 
-    These tools require access to the current AgentSession or wa_client,
-    so they must be registered fresh for each session.
-    Two tool groups:
-    1. Task memory: create_task_plan, get_task_plan, update_task_status
-    2. HITL: request_user_approval
+    Returns a new SkillRegistry derived from skill_registry so that concurrent
+    agent sessions do not overwrite each other's handler closures.
     """
     from app.agent.hitl import request_user_approval as _hitl_request
     from app.agent.task_memory import register_task_memory_tools
+    from app.skills.registry import SkillRegistry as _Reg
+
+    # Shallow copy: inherits all existing tools, adds session-specific ones on top
+    session_registry = _Reg(skills_dir=skill_registry._skills_dir)  # type: ignore[attr-defined]
+    session_registry._tools = dict(skill_registry._tools)  # type: ignore[attr-defined]  # copy tool map
 
     # Register the three task-memory tools
-    register_task_memory_tools(skill_registry, lambda: session)
+    register_task_memory_tools(session_registry, lambda: session)
 
     # Register the HITL approval tool
     async def request_user_approval(question: str) -> str:
@@ -80,7 +84,7 @@ def _register_session_tools(
             session.status = AgentStatus.RUNNING
         return result
 
-    skill_registry.register_tool(
+    session_registry.register_tool(
         name="request_user_approval",
         description=(
             "Pause the agent session and ask the user a question via WhatsApp. "
@@ -100,6 +104,8 @@ def _register_session_tools(
         handler=request_user_approval,
         skill_name="agent",
     )
+
+    return session_registry
 
 
 async def run_agent_session(
@@ -131,14 +137,15 @@ async def run_agent_session(
             ChatMessage(role="user", content=session.objective),
         ]
 
-        # Register session-scoped tools (task memory + HITL approval)
-        _register_session_tools(session, skill_registry, wa_client)
+        # Build a session-scoped registry with HITL + task-memory tools.
+        # This prevents concurrent sessions from overwriting each other's closures.
+        session_registry = _register_session_tools(session, skill_registry, wa_client)
 
         # Run the tool loop with elevated max_tools to allow multi-step autonomy
         reply = await execute_tool_loop(
             messages=messages,
             ollama_client=ollama_client,
-            skill_registry=skill_registry,
+            skill_registry=session_registry,
             mcp_manager=mcp_manager,
             max_tools=session.max_iterations,
         )
@@ -180,11 +187,17 @@ def get_active_session(phone_number: str) -> AgentSession | None:
 def cancel_session(phone_number: str) -> bool:
     """Cancel the active agent session for this phone number.
 
-    Returns True if a session was found and cancelled, False otherwise.
+    Cancels the underlying asyncio.Task so the loop actually stops,
+    not just setting a status flag. Also handles WAITING_USER state.
+    Returns True if a session was found and cancel was requested.
     """
     session = _active_sessions.get(phone_number)
-    if session and session.status == AgentStatus.RUNNING:
+    cancellable = {AgentStatus.RUNNING, AgentStatus.WAITING_USER}
+    if session and session.status in cancellable:
         session.status = AgentStatus.CANCELLED
+        task = _active_tasks.get(phone_number)
+        if task and not task.done():
+            task.cancel()
         return True
     return False
 

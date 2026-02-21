@@ -81,7 +81,7 @@ Registra tres tools en el skill registry de la sesión:
 
 #### `app/agent/hitl.py`
 
-Permite al agente pausar y esperar aprobación humana antes de accciones críticas.
+Permite al agente pausar y esperar aprobación humana antes de acciones críticas.
 
 - **`request_user_approval(phone_number, question, wa_client, timeout=120)`**  
   Envía la pregunta al usuario y bloquea la corutina hasta recibir respuesta (o timeout de 120s).
