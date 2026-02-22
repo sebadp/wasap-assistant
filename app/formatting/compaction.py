@@ -6,6 +6,7 @@ Strategy (ordered by preference):
 3. Fall back to LLM summarization with a strict prompt
 4. Hard truncate as last resort
 """
+
 from __future__ import annotations
 
 import json
@@ -39,8 +40,8 @@ _JSON_KEY_FIELDS: list[str] = [
     "stargazers_count",
     "open_issues_count",
     "default_branch",
-    "login",   # user objects
-    "body",    # issue/PR body (truncated)
+    "login",  # user objects
+    "body",  # issue/PR body (truncated)
 ]
 
 
@@ -181,7 +182,9 @@ async def compact_tool_output(
         if not summary or summary.isspace():
             raise ValueError("Empty summary from LLM")
 
-        logger.info("Tool '%s' compacted via LLM: %d → %d chars", tool_name, len(text), len(summary))
+        logger.info(
+            "Tool '%s' compacted via LLM: %d → %d chars", tool_name, len(text), len(summary)
+        )
         return summary
     except Exception as e:
         logger.error("LLM compaction failed for '%s': %s", tool_name, e, exc_info=True)

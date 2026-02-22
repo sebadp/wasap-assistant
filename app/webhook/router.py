@@ -740,6 +740,8 @@ async def _handle_message(
                     if settings.semantic_search_enabled and vec_available
                     else None
                 ),
+                wa_client=wa_client,
+                settings=settings,
             )
             try:
                 reply = await spec.handler(cmd_args, ctx)
@@ -937,12 +939,11 @@ async def _handle_message(
         if memories:
             try:
                 from app.context.fact_extractor import extract_facts
-                memory_strings = [m.content if hasattr(m, 'content') else str(m) for m in memories]
+
+                memory_strings = [m.content if hasattr(m, "content") else str(m) for m in memories]
                 user_facts = extract_facts(memory_strings)
                 if user_facts:
-                    logger.debug(
-                        "Extracted user_facts from memories: %s", list(user_facts.keys())
-                    )
+                    logger.debug("Extracted user_facts from memories: %s", list(user_facts.keys()))
             except Exception:
                 logger.debug("user_facts extraction failed", exc_info=True)
 
@@ -1030,13 +1031,13 @@ async def _handle_message(
             try:
                 tools_used = pre_classified and pre_classified not in (["none"], [])
                 if tools_used:
-                    _track_task(asyncio.create_task(
-                        repository.save_sticky_categories(conv_id, pre_classified)
-                    ))
+                    _track_task(
+                        asyncio.create_task(
+                            repository.save_sticky_categories(conv_id, pre_classified)
+                        )
+                    )
                 else:
-                    _track_task(asyncio.create_task(
-                        repository.clear_sticky_categories(conv_id)
-                    ))
+                    _track_task(asyncio.create_task(repository.clear_sticky_categories(conv_id)))
             except Exception:
                 logger.debug("Could not save sticky_categories", exc_info=True)
 

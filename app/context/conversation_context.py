@@ -9,6 +9,7 @@ Key design decisions:
 - Carries routing state (sticky_categories) so the classifier can fall back intelligently
 - Carries user_facts for tool loop injection without extra DB queries
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -87,8 +88,12 @@ class ConversationContext:
         memories_raw, history, summary, sticky = await asyncio.gather(
             repository.get_active_memories(),
             conversation_manager.get_history(phone_number),
-            repository.get_latest_summary(conv_id) if conv_id else asyncio.coroutine(lambda: None)(),
-            repository.get_sticky_categories(conv_id) if conv_id else asyncio.coroutine(lambda: [])(),
+            repository.get_latest_summary(conv_id)
+            if conv_id
+            else asyncio.coroutine(lambda: None)(),
+            repository.get_sticky_categories(conv_id)
+            if conv_id
+            else asyncio.coroutine(lambda: [])(),
         )
 
         user_facts = extract_facts(memories_raw)

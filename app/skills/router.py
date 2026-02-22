@@ -58,6 +58,8 @@ TOOL_CATEGORIES: dict[str, list[str]] = {
         "search_source_code",
         "get_skill_details",
         "get_recent_logs",
+        "get_file_outline",
+        "read_lines",
     ],
     "expand": [
         "search_mcp_registry",
@@ -94,6 +96,8 @@ TOOL_CATEGORIES: dict[str, list[str]] = {
         "get_dashboard_stats",
     ],
     "conversation": ["get_recent_messages"],
+    "shell": ["run_command", "manage_process"],
+    "workspace": ["list_workspaces", "switch_workspace", "get_workspace_info"],
 }
 
 DEFAULT_CATEGORIES = ["time", "math", "weather", "search"]
@@ -153,9 +157,7 @@ async def classify_intent(
             context_lines.append(f"{role_label}: {content_preview}")
         if context_lines:
             recent_context = (
-                "Recent conversation (for context only):\n"
-                + "\n".join(context_lines)
-                + "\n\n"
+                "Recent conversation (for context only):\n" + "\n".join(context_lines) + "\n\n"
             )
 
     prompt = _CLASSIFIER_PROMPT_TEMPLATE.format(

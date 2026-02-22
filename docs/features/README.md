@@ -30,6 +30,7 @@ Cada archivo en este directorio documenta una feature implementada: qué hace, c
 | Eval Skill | [`eval_skill.md`](eval_skill.md) | Fase 8 |
 | Maduración del Pipeline | [`eval_maduración.md`](eval_maduración.md) | Fase 8 |
 | Sesiones Agénticas | [`agentic_sessions.md`](agentic_sessions.md) | Agent Mode |
+| Autonomous Agent (Shell, Loop Detection) | [`autonomous_agent.md`](autonomous_agent.md) | Agent Mode |
 
 ## Cómo crear un nuevo walkthrough
 

@@ -112,6 +112,35 @@ CREATE TABLE IF NOT EXISTS conversation_state (
     sticky_categories TEXT NOT NULL DEFAULT '[]',
     updated_at        TEXT NOT NULL DEFAULT (datetime('now'))
 );
+
+CREATE TABLE IF NOT EXISTS agent_command_log (
+    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_id     TEXT NOT NULL,
+    phone_number   TEXT NOT NULL,
+    command        TEXT NOT NULL,
+    decision       TEXT NOT NULL
+                   CHECK (decision IN ('allow', 'deny', 'ask_approved', 'ask_rejected')),
+    exit_code      INTEGER,
+    stdout_preview TEXT,
+    stderr_preview TEXT,
+    duration_ms    INTEGER,
+    started_at     TEXT NOT NULL DEFAULT (datetime('now')),
+    completed_at   TEXT,
+    error          TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_cmd_log_session ON agent_command_log(session_id);
+CREATE INDEX IF NOT EXISTS idx_cmd_log_phone ON agent_command_log(phone_number);
+
+CREATE TABLE IF NOT EXISTS user_cron_jobs (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    phone_number TEXT NOT NULL,
+    cron_expr    TEXT NOT NULL,
+    message      TEXT NOT NULL,
+    timezone     TEXT NOT NULL DEFAULT 'UTC',
+    active       INTEGER NOT NULL DEFAULT 1,
+    created_at   TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_cron_phone ON user_cron_jobs(phone_number, active);
 """
 
 TRACING_SCHEMA = """

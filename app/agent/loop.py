@@ -13,11 +13,14 @@ tool dispatching (which stays in execute_tool_loop).
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import logging
 import uuid
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 from app.agent.models import AgentSession, AgentStatus
+from app.agent.persistence import append_to_session
 from app.models import ChatMessage
 from app.skills.executor import _clear_old_tool_results, execute_tool_loop
 
@@ -29,6 +32,8 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+_PROJECT_ROOT = Path(__file__).resolve().parents[2]
+
 # Active sessions indexed by phone number - one concurrent session per user
 _active_sessions: dict[str, AgentSession] = {}
 # asyncio Tasks for each active session, so we can actually cancel them
@@ -37,19 +42,35 @@ _active_tasks: dict[str, asyncio.Task] = {}
 # Tools per round: conservative cap so each round can do 1-2 meaningful actions
 _TOOLS_PER_ROUND = 8
 
+# Loop detection thresholds
+_LOOP_WARNING_THRESHOLD = 3
+_LOOP_CIRCUIT_BREAKER = 5
+_LOOP_HISTORY_SIZE = 20
+
 _AGENT_SYSTEM_PROMPT = """\
-You are in AGENT MODE. You have been given an objective by the user and must complete \
-it autonomously using the available tools.
+You are a senior software engineer working autonomously on this codebase.
 
 OBJECTIVE: {objective}
 
+WORKFLOW:
+1. UNDERSTAND: list_source_files, read_source_file, search_source_code to learn the codebase.
+2. PLAN: create_task_plan with concrete, small steps.
+3. EXECUTE: Use preview_patch FIRST to verify diffs visualmente, then apply_patch for actual edits. Use write_source_file only for NEW files.
+4. TEST: run_command("pytest ...") after EVERY code change.
+5. FIX: if tests fail, read errors, fix, re-test (max 3 attempts per step).
+6. DELIVER: git_commit, git_push when all tests pass.
+
 RULES:
-1. Break the objective into small, concrete steps using create_task_plan first.
-2. Execute one step at a time using tools.
-3. After completing each step, call update_task_status to mark it done.
-4. If you need user input before a critical action, call request_user_approval.
-5. Never loop on the same action — if a tool fails, try a different approach or skip.
-6. When ALL steps are done, write a concise summary of what was accomplished.
+- Always test after edits. Never commit untested code.
+- Prefer preview_patch before apply_patch to catch formatting/indentation mistakes.
+- Use apply_patch for edits to existing files. Only use write_source_file for NEW files.
+- Use conventional commit messages: "fix: ...", "feat: ...", "refactor: ..."
+- If a step fails 3 times, skip it and move to the next. Note the failure in the plan.
+- Ask for approval (request_user_approval) before destructive operations.
+- After completing each step, call update_task_status to mark it done.
+- For large files (>200 lines): use get_file_outline first, then read_lines for specific sections.
+  Do NOT use read_source_file on files >200 lines — use the outline+read_lines pattern.
+- When ALL steps are done, write a concise summary of what was accomplished.
 """
 
 _PLAN_REMINDER = """\
@@ -146,6 +167,93 @@ def _inject_task_plan(messages: list[ChatMessage], task_plan: str) -> None:
     messages.insert(insert_pos, ChatMessage(role="system", content=plan_content))
 
 
+def _check_loop_detection(tool_history: list[tuple[str, str]]) -> str | None:
+    """Detect if the agent is stuck in a loop.
+
+    Returns a warning message if a loop is detected, or None if OK.
+    Raises RuntimeError if circuit breaker threshold is reached.
+
+    Args:
+        tool_history: List of (tool_name, params_hash) tuples from recent calls.
+    """
+    if len(tool_history) < _LOOP_WARNING_THRESHOLD:
+        return None
+
+    # --- genericRepeat: same (name, hash) repeated N times ---
+    from collections import Counter
+
+    counts = Counter(tool_history[-_LOOP_HISTORY_SIZE:])
+    for (tool_name, _), count in counts.most_common(3):
+        if count >= _LOOP_CIRCUIT_BREAKER:
+            logger.warning(
+                "agent.loop.detected",
+                extra={
+                    "detector": "genericRepeat",
+                    "repeated_tool": tool_name,
+                    "count": count,
+                    "action": "circuit_breaker",
+                },
+            )
+            raise RuntimeError(
+                f"Loop detected: {tool_name} called {count} times with same params. "
+                "Aborting round to prevent infinite loop."
+            )
+        if count >= _LOOP_WARNING_THRESHOLD:
+            logger.warning(
+                "agent.loop.detected",
+                extra={
+                    "detector": "genericRepeat",
+                    "repeated_tool": tool_name,
+                    "count": count,
+                    "action": "warning",
+                },
+            )
+            return (
+                f"⚠️ You have called `{tool_name}` {count} times with identical parameters. "
+                "This looks like a loop. Try a different approach or skip this step."
+            )
+
+    # --- pingPong: A→B→A→B pattern ---
+    recent = tool_history[-6:]
+    if len(recent) >= 4:
+        names = [t[0] for t in recent]
+        # Check for alternating pattern: a,b,a,b
+        if len(set(names[-4:])) == 2 and names[-4] == names[-2] and names[-3] == names[-1]:
+            logger.warning(
+                "agent.loop.detected",
+                extra={
+                    "detector": "pingPong",
+                    "tools": f"{names[-2]}<->{names[-1]}",
+                    "action": "warning",
+                },
+            )
+            return (
+                f"⚠️ Ping-pong detected: alternating between `{names[-2]}` and `{names[-1]}` "
+                "without progress. Try a different approach."
+            )
+
+    return None
+
+
+def _extract_tool_history(messages: list[ChatMessage]) -> list[tuple[str, str]]:
+    """Extract (tool_name, params_hash) from recent assistant messages containing tool calls."""
+    history: list[tuple[str, str]] = []
+    for msg in messages:
+        if msg.role != "assistant":
+            continue
+        # Tool calls are embedded in the message content as JSON by Ollama
+        # We look for patterns like tool_name + params in the content
+        content = msg.content
+        if not content or len(content) < 5:
+            continue
+        # Create a rough hash of the content to detect repetition
+        content_hash = hashlib.md5(content.encode()).hexdigest()[:8]
+        # Use a simplified name — the first word or tool indicator
+        name = content.split("(")[0].split(":")[0].strip()[:40] if content else "unknown"
+        history.append((name, content_hash))
+    return history[-_LOOP_HISTORY_SIZE:]
+
+
 def _is_session_complete(session: AgentSession, last_reply: str) -> bool:
     """Heuristic: determine if the agent considers the session complete.
 
@@ -168,8 +276,15 @@ def _is_session_complete(session: AgentSession, last_reply: str) -> bool:
 
     # Fallback: no task plan yet, look for completion signals in the text
     completion_signals = [
-        "completad", "terminad", "finaliz", "listo", "done", "finished",
-        "accomplished", "all done", "todo completo",
+        "completad",
+        "terminad",
+        "finaliz",
+        "listo",
+        "done",
+        "finished",
+        "accomplished",
+        "all done",
+        "todo completo",
     ]
     lower_reply = last_reply.lower()
     return any(sig in lower_reply for sig in completion_signals)
@@ -206,6 +321,17 @@ async def run_agent_session(
 
     try:
         system_content = _AGENT_SYSTEM_PROMPT.format(objective=session.objective)
+
+        # Build dynamic context from optional bootstrap files
+        bootstrap_files = ["SOUL.md", "USER.md", "TOOLS.md"]
+        for bs_file in bootstrap_files:
+            bs_path = _PROJECT_ROOT / bs_file
+            if bs_path.exists():
+                try:
+                    content = bs_path.read_text(encoding="utf-8")
+                    system_content += f"\n\n--- {bs_file} ---\n{content}\n"
+                except Exception as e:
+                    logger.warning("Could not read bootstrap file %s: %s", bs_file, e)
 
         messages: list[ChatMessage] = [
             ChatMessage(role="system", content=system_content),
@@ -260,6 +386,53 @@ async def run_agent_session(
                     iteration + 1,
                 )
                 break
+
+            # --- Loop detection ---
+            tool_history = _extract_tool_history(messages)
+            try:
+                loop_warning = _check_loop_detection(tool_history)
+                if loop_warning:
+                    messages.append(ChatMessage(role="system", content=loop_warning))
+            except RuntimeError as e:
+                logger.error("Agent session %s: circuit breaker — %s", session.session_id, e)
+                messages.append(ChatMessage(role="system", content=str(e)))
+                break
+
+            # --- Progress update via WhatsApp ---
+            if session.task_plan:
+                done = session.task_plan.count("[x]")
+                total = done + session.task_plan.count("[ ]")
+                logger.info(
+                    "agent.progress",
+                    extra={
+                        "session_id": session.session_id,
+                        "iteration": iteration + 1,
+                        "steps_done": done,
+                        "steps_total": total,
+                    },
+                )
+                try:
+                    await wa_client.send_message(
+                        session.phone_number,
+                        f"🔧 Round {iteration + 1}: {done}/{total} steps done",
+                    )
+                except Exception:
+                    pass  # Best-effort, don't break the agent loop
+
+            # --- Session Persistence ---
+            try:
+                round_data = {
+                    "iteration": iteration + 1,
+                    "task_plan": session.task_plan,
+                    "reply": reply,
+                    "messages": [
+                        m.model_dump() if hasattr(m, "model_dump") else m.dict()
+                        for m in messages[-4:]  # Save recent context
+                    ],
+                }
+                append_to_session(session.phone_number, session.session_id, round_data)
+            except Exception as e:
+                logger.error("Error saving session round: %s", e)
 
             # Tool result clearing between rounds:
             # Keep only the last 2 raw tool results — older ones become 1-line summaries.

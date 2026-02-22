@@ -97,5 +97,11 @@ class Settings(BaseSettings):
     agent_write_enabled: bool = False  # Habilita write tools (seguridad: OFF por defecto)
     agent_max_iterations: int = 15  # Límite de iteraciones por sesión agéntica
     agent_session_timeout: int = 300  # Timeout en segundos (5 minutos)
+    agent_shell_allowlist: str = (
+        "pytest,ruff,mypy,make,npm,pip,git,cat,head,tail,wc,ls,find,grep,echo,python,node"
+    )
+    github_token: str | None = None
+    github_repo: str | None = None
+    projects_root: str = ""  # Base directory for multi-project workspace (empty = single project)
 
     model_config = {"env_file": ".env"}

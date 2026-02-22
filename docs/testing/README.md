@@ -23,6 +23,7 @@ Cada archivo en este directorio cubre el testing manual de una feature específi
 | Eval Skill (Fase 8) | [`eval_skill_testing.md`](eval_skill_testing.md) |
 | Maduración del Pipeline (Fase 8) | [`eval_maduración_testing.md`](eval_maduración_testing.md) |
 | Sesiones Agénticas | [`agentic_sessions.md`](agentic_sessions.md) |
+| Autonomous Agent (Shell, Loop Detection) | [`autonomous_agent_testing.md`](autonomous_agent_testing.md) |
 
 ## Convenciones
 

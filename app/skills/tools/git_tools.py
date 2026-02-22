@@ -16,7 +16,10 @@ import subprocess
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+import httpx
+
 if TYPE_CHECKING:
+    from app.config import Settings
     from app.skills.registry import SkillRegistry
 
 logger = logging.getLogger(__name__)
@@ -44,7 +47,7 @@ def _run_git(*args: str) -> tuple[int, str, str]:
         return -1, "", str(e)
 
 
-def register(registry: SkillRegistry) -> None:
+def register(registry: SkillRegistry, settings: Settings | None = None) -> None:
     """Register all git tools in the skill registry."""
 
     async def git_status() -> str:
@@ -119,6 +122,38 @@ def register(registry: SkillRegistry) -> None:
             return f"Error pushing: {err}"
         return f"✅ Pushed successfully.\n{out or err}"
 
+    async def git_create_pr(
+        title: str, body: str, head_branch: str, base_branch: str = "main"
+    ) -> str:
+        """Create a Pull Request on GitHub using the REST API."""
+        if not settings or not settings.github_token or not settings.github_repo:
+            return "Error: GITHUB_TOKEN or GITHUB_REPO not configured in .env"
+
+        url = f"https://api.github.com/repos/{settings.github_repo}/pulls"
+        headers = {
+            "Accept": "application/vnd.github.v3+json",
+            "Authorization": f"Bearer {settings.github_token}",
+            "X-GitHub-Api-Version": "2022-11-28",
+        }
+        data = {
+            "title": title,
+            "body": body,
+            "head": head_branch,
+            "base": base_branch,
+        }
+
+        async with httpx.AsyncClient() as client:
+            try:
+                # Use a short timeout because APIs can hang
+                response = await client.post(url, headers=headers, json=data, timeout=15.0)
+                if response.status_code == 201:
+                    pr_data = response.json()
+                    return f"✅ Pull Request created successfully!\nURL: {pr_data.get('html_url')}"
+                else:
+                    return f"Error creating PR (HTTP {response.status_code}): {response.text}"
+            except Exception as e:
+                return f"Error connecting to GitHub API: {e}"
+
     registry.register_tool(
         name="git_status",
         description="Show the current Git status of the project (short format with branch info)",
@@ -185,5 +220,38 @@ def register(registry: SkillRegistry) -> None:
             },
         },
         handler=git_push,
+        skill_name="git",
+    )
+
+    registry.register_tool(
+        name="git_create_pr",
+        description=(
+            "Create a Pull Request on GitHub for the specified branch. "
+            "Requires GITHUB_TOKEN and GITHUB_REPO in the environment."
+        ),
+        parameters={
+            "type": "object",
+            "properties": {
+                "title": {
+                    "type": "string",
+                    "description": "The title of the pull request",
+                },
+                "body": {
+                    "type": "string",
+                    "description": "The contents of the pull request body (markdown supported)",
+                },
+                "head_branch": {
+                    "type": "string",
+                    "description": "The name of the branch where your changes are implemented",
+                },
+                "base_branch": {
+                    "type": "string",
+                    "description": "The name of the branch you want the changes pulled into. Default is 'main'.",
+                    "default": "main",
+                },
+            },
+            "required": ["title", "body", "head_branch"],
+        },
+        handler=git_create_pr,
         skill_name="git",
     )

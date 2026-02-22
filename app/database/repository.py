@@ -179,9 +179,7 @@ class Repository:
         except (json.JSONDecodeError, TypeError):
             return []
 
-    async def save_sticky_categories(
-        self, conversation_id: int, categories: list[str]
-    ) -> None:
+    async def save_sticky_categories(self, conversation_id: int, categories: list[str]) -> None:
         """Persist sticky categories for this conversation."""
         await self._conn.execute(
             "INSERT INTO conversation_state (conversation_id, sticky_categories, updated_at) "
@@ -225,7 +223,6 @@ class Repository:
         return cursor.rowcount
 
     # --- Deduplication ---
-
 
     async def try_claim_message(self, wa_message_id: str) -> bool:
         """Atomically claim a message ID. Returns True if already processed (duplicate)."""
@@ -1302,5 +1299,63 @@ class Repository:
                 created_at=r[7],
                 updated_at=r[8],
             )
+            for r in rows
+        ]
+
+    # --- Cron Jobs ---
+
+    async def create_cron_job(
+        self,
+        phone_number: str,
+        cron_expr: str,
+        message: str,
+        timezone: str = "UTC",
+    ) -> int:
+        """Persist a user cron job and return its ID."""
+        # Enforce max 20 active crons per user
+        cursor = await self._conn.execute(
+            "SELECT COUNT(*) FROM user_cron_jobs WHERE phone_number = ? AND active = 1",
+            (phone_number,),
+        )
+        row = await cursor.fetchone()
+        if row and row[0] >= 20:
+            raise ValueError("Maximum of 20 active cron jobs per user reached.")
+        cursor = await self._conn.execute(
+            "INSERT INTO user_cron_jobs (phone_number, cron_expr, message, timezone) VALUES (?, ?, ?, ?)",
+            (phone_number, cron_expr, message, timezone),
+        )
+        await self._conn.commit()
+        return cursor.lastrowid  # type: ignore[return-value]
+
+    async def list_cron_jobs(self, phone_number: str) -> list[dict]:
+        """Return all active cron jobs for a user."""
+        cursor = await self._conn.execute(
+            "SELECT id, cron_expr, message, timezone, created_at FROM user_cron_jobs "
+            "WHERE phone_number = ? AND active = 1 ORDER BY id",
+            (phone_number,),
+        )
+        rows = await cursor.fetchall()
+        return [
+            {"id": r[0], "cron_expr": r[1], "message": r[2], "timezone": r[3], "created_at": r[4]}
+            for r in rows
+        ]
+
+    async def delete_cron_job(self, job_id: int, phone_number: str) -> bool:
+        """Soft-delete a cron job (mark inactive). Returns True if found and deleted."""
+        cursor = await self._conn.execute(
+            "UPDATE user_cron_jobs SET active = 0 WHERE id = ? AND phone_number = ? AND active = 1",
+            (job_id, phone_number),
+        )
+        await self._conn.commit()
+        return cursor.rowcount > 0
+
+    async def get_active_cron_jobs(self) -> list[dict]:
+        """Return all active cron jobs across all users (for scheduler restore at boot)."""
+        cursor = await self._conn.execute(
+            "SELECT id, phone_number, cron_expr, message, timezone FROM user_cron_jobs WHERE active = 1 ORDER BY id",
+        )
+        rows = await cursor.fetchall()
+        return [
+            {"id": r[0], "phone_number": r[1], "cron_expr": r[2], "message": r[3], "timezone": r[4]}
             for r in rows
         ]

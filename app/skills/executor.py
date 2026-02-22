@@ -176,6 +176,7 @@ async def execute_tool_loop(
     # This prevents the LLM from guessing or hallucinating values like owner names in GitHub calls.
     if user_facts:
         from app.context.fact_extractor import format_facts_for_prompt
+
         facts_text = format_facts_for_prompt(user_facts)
         if facts_text:
             working_messages.insert(

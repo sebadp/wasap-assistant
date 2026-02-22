@@ -115,12 +115,41 @@ async def lifespan(app: FastAPI):
     # Scheduler Skill
     from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
-    from app.skills.tools.scheduler_tools import set_scheduler
+    from app.skills.tools.scheduler_tools import set_repository, set_scheduler
 
     scheduler = AsyncIOScheduler()
     scheduler.start()
     set_scheduler(scheduler, app.state.whatsapp_client)
+    set_repository(repository)
     app.state.scheduler = scheduler
+
+    # Restore persistent cron jobs from DB
+    try:
+        from zoneinfo import ZoneInfo
+
+        from apscheduler.triggers.cron import CronTrigger
+
+        active_crons = await repository.get_active_cron_jobs()
+        for cron in active_crons:
+            try:
+                tz_obj = ZoneInfo(cron.get("timezone", "UTC"))
+                trigger = CronTrigger.from_crontab(cron["cron_expr"], timezone=tz_obj)
+                from app.skills.tools.scheduler_tools import _send_reminder
+
+                scheduler.add_job(
+                    _send_reminder,
+                    trigger,
+                    args=[cron["phone_number"], cron["message"]],
+                    name=cron["message"],
+                    id=f"cron_{cron['id']}",
+                    replace_existing=True,
+                )
+            except Exception:
+                logger.exception("Failed to restore cron job %s", cron.get("id"))
+        if active_crons:
+            logger.info("Restored %d cron job(s) from database", len(active_crons))
+    except Exception:
+        logger.exception("Cron job restore failed at startup")
 
     # Trace cleanup job: daily purge of traces older than trace_retention_days
     if settings.tracing_enabled:
@@ -163,6 +192,7 @@ async def lifespan(app: FastAPI):
     )
     # Also run once at startup to clean up pre-existing stale corrections
     import asyncio as _asyncio
+
     _asyncio.create_task(_cleanup_self_corrections())
 
     # Memory file watcher (bidirectional sync)

@@ -403,8 +403,8 @@ async def test_cmd_cancel_active_session(repository, memory_file, sample_session
     assert sample_session.status == AgentStatus.CANCELLED
 
 
-async def test_cmd_agent_status_no_session(repository, memory_file):
-    from app.commands.builtins import cmd_agent_status
+async def test_cmd_agent_no_session(repository, memory_file):
+    from app.commands.builtins import cmd_agent
     from app.commands.context import CommandContext
 
     ctx = CommandContext(
@@ -412,12 +412,12 @@ async def test_cmd_agent_status_no_session(repository, memory_file):
         repository=repository,
         memory_file=memory_file,
     )
-    result = await cmd_agent_status("", ctx)
+    result = await cmd_agent("", ctx)
     assert "No hay" in result
 
 
-async def test_cmd_agent_status_with_session(repository, memory_file, sample_session):
-    from app.commands.builtins import cmd_agent_status
+async def test_cmd_agent_with_session(repository, memory_file, sample_session):
+    from app.commands.builtins import cmd_agent
     from app.commands.context import CommandContext
 
     sample_session.task_plan = "- [x] Step 1\n- [ ] Step 2"
@@ -428,6 +428,6 @@ async def test_cmd_agent_status_with_session(repository, memory_file, sample_ses
         repository=repository,
         memory_file=memory_file,
     )
-    result = await cmd_agent_status("", ctx)
+    result = await cmd_agent("", ctx)
     assert "running" in result
     assert "Fix the login bug" in result

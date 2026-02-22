@@ -67,4 +67,14 @@ def register_builtin_tools(
 
         register_eval(registry, repository, ollama_client=ollama_client)
 
-    register_git(registry)
+    register_git(registry, settings=settings)
+
+    if settings is not None:
+        from app.skills.tools.shell_tools import register as register_shell
+
+        register_shell(registry, settings)
+
+    if settings is not None:
+        from app.skills.tools.workspace_tools import register as register_workspace
+
+        register_workspace(registry, projects_root=getattr(settings, "projects_root", ""))

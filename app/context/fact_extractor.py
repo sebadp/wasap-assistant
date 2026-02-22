@@ -3,6 +3,7 @@
 No LLM calls — fast regex-based extraction of known fact types.
 Used by ConversationContext.build() to create user_facts for tool loop injection.
 """
+
 from __future__ import annotations
 
 import re
