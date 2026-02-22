@@ -19,8 +19,8 @@ async def test_get_current_datetime_utc():
     )
     assert result.success
     assert "UTC" in result.content
-    # Should match datetime format
-    assert re.match(r"\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}", result.content)
+    # Should match datetime format, optionally preceded by a weekday name
+    assert re.search(r"\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}", result.content)
 
 
 async def test_get_current_datetime_default():

@@ -4,6 +4,7 @@ import asyncio
 import logging
 from typing import TYPE_CHECKING
 
+from app.formatting.compaction import compact_tool_output
 from app.llm.client import OllamaClient
 from app.models import ChatMessage
 from app.skills.models import ToolCall
@@ -64,6 +65,8 @@ async def _run_tool_call(
     tc: dict,
     skill_registry: SkillRegistry,
     mcp_manager: McpManager | None,
+    ollama_client: OllamaClient,
+    user_message: str,
 ) -> ChatMessage:
     """Execute a single tool call and return the result as a tool message."""
     func = tc.get("function", {})
@@ -93,8 +96,17 @@ async def _run_tool_call(
     logger.info("Tool %s -> %s", tool_name, result.content[:100])
 
     final_content = result.content
+
+    # Compress the context if it is massive
+    final_content = await compact_tool_output(
+        tool_name=tool_name,
+        text=final_content,
+        user_request=user_message,
+        ollama_client=ollama_client,
+    )
+
     if instructions:
-        final_content = f"{instructions}\n\nResult:\n{result.content}"
+        final_content = f"{instructions}\n\nResult:\n{final_content}"
 
     return ChatMessage(role="tool", content=final_content)
 
@@ -108,19 +120,17 @@ async def execute_tool_loop(
     pre_classified_categories: list[str] | None = None,
 ) -> str:
     """Run the tool calling loop: classify intent, select tools, execute."""
-    # Extract last user message for classification (only if not pre-classified)
+    # Always extract last user message — needed for tool output compaction
+    # regardless of whether intent classification is pre-computed.
     user_message = ""
-    if pre_classified_categories is None:
-        for msg in reversed(messages):
-            if msg.role == "user":
-                user_message = msg.content
-                break
+    for msg in reversed(messages):
+        if msg.role == "user":
+            user_message = msg.content
+            break
 
     # Stage 1: classify intent (use pre-computed result if available)
     all_tools_map = _get_cached_tools_map(skill_registry, mcp_manager)
-    categories = pre_classified_categories or await classify_intent(
-        user_message, ollama_client
-    )
+    categories = pre_classified_categories or await classify_intent(user_message, ollama_client)
 
     if categories == ["none"]:
         logger.info("Tool router: categories=none, plain chat")
@@ -172,15 +182,13 @@ async def execute_tool_loop(
         # Execute all tool calls in parallel, append results in order
         tool_messages = await asyncio.gather(
             *[
-                _run_tool_call(tc, skill_registry, mcp_manager)
+                _run_tool_call(tc, skill_registry, mcp_manager, ollama_client, user_message)
                 for tc in response.tool_calls
             ]
         )
         working_messages.extend(tool_messages)
 
     # Safety: exceeded max iterations, force a text response without tools
-    logger.warning(
-        "Max tool iterations (%d) reached, forcing text response", MAX_TOOL_ITERATIONS
-    )
+    logger.warning("Max tool iterations (%d) reached, forcing text response", MAX_TOOL_ITERATIONS)
     response = await ollama_client.chat_with_tools(working_messages, tools=None)
     return response.content

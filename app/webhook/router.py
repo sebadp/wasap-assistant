@@ -187,6 +187,21 @@ async def process_message(
     except Exception:
         logger.debug("Failed to send initial WhatsApp signals")
 
+    # HITL: if the agent is waiting for user input, route the message to it
+    if msg.text:
+        from app.agent.hitl import resolve_hitl
+
+        if resolve_hitl(msg.from_number, msg.text):
+            logger.info(
+                "HITL response from %s consumed by active agent session",
+                msg.from_number,
+            )
+            try:
+                await wa_client.send_reaction(msg.message_id, msg.from_number, "")
+            except Exception:
+                pass
+            return
+
     try:
         await _handle_message(
             msg,
@@ -247,7 +262,8 @@ async def _get_memories(
             )
         except Exception:
             logger.warning(
-                "Semantic memory search failed, falling back to all memories", exc_info=True
+                "Semantic memory search failed, falling back to all memories",
+                exc_info=True,
             )
     return await repository.get_active_memories(limit=settings.semantic_search_top_k)
 
@@ -471,20 +487,18 @@ async def _handle_guardrail_failure(
 
     failed_names = {r.check_name for r in report.results if not r.passed}
 
-    # PII: redact in-place, no re-prompt needed
-    if "no_pii" in failed_names:
-        return redact_pii(original_reply)
+    current_reply = original_reply
 
     # Empty: try once more
     if "not_empty" in failed_names:
         try:
             retry = await ollama_client.chat(context)
-            return retry if retry.strip() else "Disculpa, no pude generar una respuesta."
+            current_reply = retry if retry.strip() else "Disculpa, no pude generar una respuesta."
         except Exception:
-            return "Disculpa, no pude generar una respuesta."
+            current_reply = "Disculpa, no pude generar una respuesta."
 
     # Language mismatch: re-prompt with explicit language instruction
-    if "language_match" in failed_names:
+    elif "language_match" in failed_names:
         lang_result = next(r for r in report.results if r.check_name == "language_match")
         expected_lang = lang_result.details
         hint_msg = ChatMessage(
@@ -492,12 +506,19 @@ async def _handle_guardrail_failure(
             content=f"IMPORTANT: Respond in {expected_lang}. Repeat your previous answer in that language.",
         )
         try:
-            return await ollama_client.chat(context + [hint_msg])
+            retry = await ollama_client.chat(context + [hint_msg])
+            if retry.strip():
+                current_reply = retry
         except Exception:
-            return original_reply
+            pass
+
+    # PII: redact in-place, no re-prompt needed
+    # Done after generating text so it applies to the (potentially) regenerated reply as well
+    if "no_pii" in failed_names:
+        current_reply = redact_pii(current_reply)
 
     # Everything else (excessive_length, no_raw_tool_json): log and pass through
-    return original_reply
+    return current_reply
 
 
 # --- Correction detection patterns ---
@@ -596,7 +617,8 @@ async def _handle_message(
         except Exception:
             logger.exception("Audio transcription failed")
             await wa_client.send_message(
-                msg.from_number, "Sorry, I couldn't process that audio. Please try again."
+                msg.from_number,
+                "Sorry, I couldn't process that audio. Please try again.",
             )
             return
 
@@ -613,7 +635,9 @@ async def _handle_message(
             # Step 1: llava describes the image
             vision_messages = [
                 ChatMessage(
-                    role="user", content="Describe this image in detail.", images=[image_b64]
+                    role="user",
+                    content="Describe this image in detail.",
+                    images=[image_b64],
                 ),
             ]
             description = await ollama_client.chat(vision_messages, model=settings.vision_model)
@@ -671,7 +695,8 @@ async def _handle_message(
         except Exception:
             logger.exception("Image processing failed")
             await wa_client.send_message(
-                msg.from_number, "Sorry, I couldn't process that image. Please try again."
+                msg.from_number,
+                "Sorry, I couldn't process that image. Please try again.",
             )
         return
 
@@ -690,9 +715,11 @@ async def _handle_message(
                 mcp_manager=mcp_manager,
                 ollama_client=ollama_client,
                 daily_log=daily_log,
-                embed_model=settings.embedding_model
-                if settings.semantic_search_enabled and vec_available
-                else None,
+                embed_model=(
+                    settings.embedding_model
+                    if settings.semantic_search_enabled and vec_available
+                    else None
+                ),
             )
             try:
                 reply = await spec.handler(cmd_args, ctx)
@@ -816,8 +843,8 @@ async def _handle_message(
                             asyncio.create_task(
                                 add_correction_pair(
                                     previous_trace_id=prev_trace_id,
-                                    input_text=prev_trace["input_text"] if prev_trace else "",
-                                    bad_output=prev_trace["output_text"] if prev_trace else None,
+                                    input_text=(prev_trace["input_text"] if prev_trace else ""),
+                                    bad_output=(prev_trace["output_text"] if prev_trace else None),
                                     correction_text=user_text,
                                     repository=repository,
                                 )
@@ -845,7 +872,12 @@ async def _handle_message(
         else:
             memories, relevant_notes, summary, history, projects_summary = await asyncio.gather(
                 _get_memories(
-                    user_text, settings, ollama_client, repository, vec_available, query_embedding
+                    user_text,
+                    settings,
+                    ollama_client,
+                    repository,
+                    vec_available,
+                    query_embedding,
                 ),
                 _get_relevant_notes(query_embedding, settings, repository, vec_available),
                 repository.get_latest_summary(conv_id),
@@ -887,7 +919,9 @@ async def _handle_message(
         )
 
         # Set current user context for tools that need it (e.g. scheduler, projects)
-        from app.skills.tools.conversation_tools import set_current_user as set_conversation_user
+        from app.skills.tools.conversation_tools import (
+            set_current_user as set_conversation_user,
+        )
         from app.skills.tools.project_tools import set_current_user as set_project_user
         from app.skills.tools.scheduler_tools import set_current_user
 
@@ -986,9 +1020,11 @@ async def _handle_message(
                             repository=repository,
                             memory_file=memory_file,
                             ollama_client=ollama_client,
-                            embed_model=settings.embedding_model
-                            if settings.semantic_search_enabled and vec_available
-                            else None,
+                            embed_model=(
+                                settings.embedding_model
+                                if settings.semantic_search_enabled and vec_available
+                                else None
+                            ),
                             vec_available=vec_available,
                         )
                     )
@@ -1055,9 +1091,11 @@ async def _handle_message(
                     daily_log=daily_log,
                     memory_file=memory_file,
                     flush_enabled=settings.memory_flush_enabled,
-                    embed_model=settings.embedding_model
-                    if settings.semantic_search_enabled and vec_available
-                    else None,
+                    embed_model=(
+                        settings.embedding_model
+                        if settings.semantic_search_enabled and vec_available
+                        else None
+                    ),
                 )
             )
         )
