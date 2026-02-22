@@ -95,7 +95,7 @@ class Settings(BaseSettings):
 
     # Agent Mode
     agent_write_enabled: bool = False  # Habilita write tools (seguridad: OFF por defecto)
-    agent_max_iterations: int = 15     # Límite de iteraciones por sesión agéntica
-    agent_session_timeout: int = 300   # Timeout en segundos (5 minutos)
+    agent_max_iterations: int = 15  # Límite de iteraciones por sesión agéntica
+    agent_session_timeout: int = 300  # Timeout en segundos (5 minutos)
 
     model_config = {"env_file": ".env"}

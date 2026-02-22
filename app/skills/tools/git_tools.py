@@ -7,6 +7,7 @@ Provides a set of tools for interacting with the local Git repository:
 - git_commit: Stage all changes and commit
 - git_push: Push the current branch to origin
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -85,7 +86,6 @@ def register(registry: SkillRegistry) -> None:
         if code != 0:
             return f"Error creating branch '{clean}': {err}"
         return f"✅ Created and switched to branch: {clean}"
-
 
     async def git_commit(message: str) -> str:
         """Stage ALL changes (git add -A) and create a commit with the given message."""

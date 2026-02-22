@@ -87,11 +87,8 @@ class OllamaClient:
             content = content.split("</think>")[-1]
             content = content.split("<think>")[0].strip()
 
-        logger.debug(
-            "LLM processed response: %s", content[:500] if content else "(tool_calls)"
-        )
+        logger.debug("LLM processed response: %s", content[:500] if content else "(tool_calls)")
         return ChatResponse(content=content, tool_calls=tool_calls)
-
 
     async def chat(self, messages: list[ChatMessage], model: str | None = None) -> str:
         response = await self.chat_with_tools(messages, tools=None, model=model)

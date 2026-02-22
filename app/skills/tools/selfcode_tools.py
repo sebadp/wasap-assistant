@@ -396,7 +396,6 @@ def register(
         logger.info("Agent apply_patch: %s (search=%d chars)", path, len(search))
         return await asyncio.to_thread(_patch)
 
-
     # Register all tools
     registry.register_tool(
         name="get_version_info",
@@ -561,4 +560,3 @@ def register(
         handler=apply_patch,
         skill_name="selfcode",
     )
-

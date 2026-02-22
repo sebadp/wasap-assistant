@@ -5,6 +5,7 @@ Registers three tools that the LLM can call during an agent session:
 - create_task_plan: Create or replace the task plan with a markdown checklist
 - update_task_status: Mark a specific task item as done or pending
 """
+
 from __future__ import annotations
 
 import logging

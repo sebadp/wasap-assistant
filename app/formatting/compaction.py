@@ -63,7 +63,4 @@ async def compact_tool_output(
     except Exception as e:
         logger.error("Failed to compact tool output with LLM: %s", e, exc_info=True)
         # Safe fallback: structural hard cut
-        return (
-            text[:max_length]
-            + "\n...[Output truncated due to length/compaction failure]"
-        )
+        return text[:max_length] + "\n...[Output truncated due to length/compaction failure]"

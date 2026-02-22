@@ -9,6 +9,7 @@ Tests cover:
 - /cancel and /agent commands
 - loop.py helpers (create_session, get_active_session, cancel_session)
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -136,9 +137,7 @@ async def test_task_plan_full_lifecycle(registry_with_tasks):
 
     # Create plan
     plan = "- [ ] Step 1\n- [ ] Step 2\n- [ ] Step 3"
-    result = await reg.execute_tool(
-        ToolCall(name="create_task_plan", arguments={"plan": plan})
-    )
+    result = await reg.execute_tool(ToolCall(name="create_task_plan", arguments={"plan": plan}))
     assert "3 pending" in result.content
     assert session.task_plan == plan
 
@@ -279,7 +278,9 @@ async def test_write_source_file_disabled(write_disabled_settings, fresh_registr
     assert "disabled" in result.content.lower()
 
 
-async def test_write_source_file_blocked_sensitive(write_enabled_settings, fresh_registry, tmp_path):
+async def test_write_source_file_blocked_sensitive(
+    write_enabled_settings, fresh_registry, tmp_path
+):
     """Cannot write to .env or password files even when write is enabled."""
     from app.skills.tools.selfcode_tools import register
 
@@ -316,9 +317,7 @@ async def test_git_status_success(fresh_registry):
 
     register(fresh_registry)
     with patch("app.skills.tools.git_tools._run_git", return_value=(0, "M  app/main.py", "")):
-        result = await fresh_registry.execute_tool(
-            ToolCall(name="git_status", arguments={})
-        )
+        result = await fresh_registry.execute_tool(ToolCall(name="git_status", arguments={}))
     assert "M  app/main.py" in result.content
 
 

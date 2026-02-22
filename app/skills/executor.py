@@ -130,9 +130,7 @@ async def execute_tool_loop(
 
     # Stage 1: classify intent (use pre-computed result if available)
     all_tools_map = _get_cached_tools_map(skill_registry, mcp_manager)
-    categories = pre_classified_categories or await classify_intent(
-        user_message, ollama_client
-    )
+    categories = pre_classified_categories or await classify_intent(user_message, ollama_client)
 
     if categories == ["none"]:
         logger.info("Tool router: categories=none, plain chat")
@@ -184,17 +182,13 @@ async def execute_tool_loop(
         # Execute all tool calls in parallel, append results in order
         tool_messages = await asyncio.gather(
             *[
-                _run_tool_call(
-                    tc, skill_registry, mcp_manager, ollama_client, user_message
-                )
+                _run_tool_call(tc, skill_registry, mcp_manager, ollama_client, user_message)
                 for tc in response.tool_calls
             ]
         )
         working_messages.extend(tool_messages)
 
     # Safety: exceeded max iterations, force a text response without tools
-    logger.warning(
-        "Max tool iterations (%d) reached, forcing text response", MAX_TOOL_ITERATIONS
-    )
+    logger.warning("Max tool iterations (%d) reached, forcing text response", MAX_TOOL_ITERATIONS)
     response = await ollama_client.chat_with_tools(working_messages, tools=None)
     return response.content

@@ -43,7 +43,6 @@ async def cmd_agent_status(args: str, context: CommandContext) -> str:
     )
 
 
-
 async def cmd_remember(args: str, context: CommandContext) -> str:
     if not args.strip():
         return "Usage: /remember <something to remember>"
@@ -120,9 +119,7 @@ async def _save_session_snapshot(conv_id: int, context: CommandContext) -> None:
         return
 
     # Generate slug via LLM
-    conversation_preview = "\n".join(
-        f"{m.role}: {m.content[:100]}" for m in messages[:5]
-    )
+    conversation_preview = "\n".join(f"{m.role}: {m.content[:100]}" for m in messages[:5])
     slug_prompt = (
         "Name this conversation in 3-5 words. Use lowercase and hyphens.\n"
         "Only output the name, nothing else.\n\n"
@@ -154,17 +151,13 @@ async def _save_session_snapshot(conv_id: int, context: CommandContext) -> None:
 
     # Also log a summary entry in today's daily log
     topic = slug.replace("-", " ")
-    await context.daily_log.append(
-        f"Session cleared: {topic} ({len(messages)} messages saved)"
-    )
+    await context.daily_log.append(f"Session cleared: {topic} ({len(messages)} messages saved)")
     logger.info("Saved session snapshot: %s", path.name)
 
 
 async def cmd_setup(args: str, context: CommandContext) -> str:
     await context.repository.reset_user_profile(context.phone_number)
-    return (
-        "Tu perfil ha sido reiniciado. Envíame cualquier mensaje y empezamos de cero."
-    )
+    return "Tu perfil ha sido reiniciado. Envíame cualquier mensaje y empezamos de cero."
 
 
 async def cmd_review_skill(args: str, context: CommandContext) -> str:
@@ -193,9 +186,7 @@ async def cmd_review_skill(args: str, context: CommandContext) -> str:
                 for s in servers:
                     icon = "🟢" if s["status"] == "connected" else "🔴"
                     desc = f" — {s['description']}" if s.get("description") else ""
-                    lines.append(
-                        f"- {icon} {s['name']} ({s['status']}, {s['tools']} tools){desc}"
-                    )
+                    lines.append(f"- {icon} {s['name']} ({s['status']}, {s['tools']} tools){desc}")
 
         if not lines:
             return "No skills or MCP servers installed."

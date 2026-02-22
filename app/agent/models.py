@@ -1,4 +1,5 @@
 """Agent session data models."""
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -18,11 +19,10 @@ class AgentStatus(StrEnum):
 class AgentSession:
     session_id: str
     phone_number: str
-    objective: str               # El pedido original del usuario
+    objective: str  # El pedido original del usuario
     status: AgentStatus = AgentStatus.RUNNING
     iteration: int = 0
     max_iterations: int = 15
     started_at: datetime = field(default_factory=lambda: datetime.now(UTC))
     context_messages: list = field(default_factory=list)
     task_plan: str | None = None  # task.md content (actualizado por el agente durante la sesión)
-

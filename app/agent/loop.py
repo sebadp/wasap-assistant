@@ -1,4 +1,5 @@
 """Agentic session loop: autonomous background execution."""
+
 from __future__ import annotations
 
 import asyncio
