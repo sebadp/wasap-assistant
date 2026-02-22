@@ -118,8 +118,24 @@ async def execute_tool_loop(
     mcp_manager: McpManager | None = None,
     max_tools: int = 8,
     pre_classified_categories: list[str] | None = None,
+    user_facts: dict[str, str] | None = None,
+    recent_messages: list[ChatMessage] | None = None,
+    sticky_categories: list[str] | None = None,
 ) -> str:
-    """Run the tool calling loop: classify intent, select tools, execute."""
+    """Run the tool calling loop: classify intent, select tools, execute.
+
+    Args:
+        messages: Conversation history including the latest user message.
+        ollama_client: LLM client.
+        skill_registry: Registry of available tools.
+        mcp_manager: Optional MCP manager for external tools.
+        max_tools: Maximum number of tools to offer the LLM per iteration.
+        pre_classified_categories: Skip classification if already done.
+        user_facts: Structured user facts from memory (e.g. github_username). Injected
+            as a system message so the LLM has explicit access during tool calls.
+        recent_messages: Recent conversation history for contextual classification.
+        sticky_categories: Fallback categories from previous tool-using turn.
+    """
     # Always extract last user message — needed for tool output compaction
     # regardless of whether intent classification is pre-computed.
     user_message = ""
@@ -130,7 +146,12 @@ async def execute_tool_loop(
 
     # Stage 1: classify intent (use pre-computed result if available)
     all_tools_map = _get_cached_tools_map(skill_registry, mcp_manager)
-    categories = pre_classified_categories or await classify_intent(user_message, ollama_client)
+    categories = pre_classified_categories or await classify_intent(
+        user_message,
+        ollama_client,
+        recent_messages=recent_messages,
+        sticky_categories=sticky_categories,
+    )
 
     if categories == ["none"]:
         logger.info("Tool router: categories=none, plain chat")
@@ -150,6 +171,18 @@ async def execute_tool_loop(
         return await ollama_client.chat(messages)
 
     working_messages = list(messages)
+
+    # Inject user facts as a system message so the LLM has explicit access during tool calls.
+    # This prevents the LLM from guessing or hallucinating values like owner names in GitHub calls.
+    if user_facts:
+        from app.context.fact_extractor import format_facts_for_prompt
+        facts_text = format_facts_for_prompt(user_facts)
+        if facts_text:
+            working_messages.insert(
+                1 if working_messages and working_messages[0].role == "system" else 0,
+                ChatMessage(role="system", content=facts_text),
+            )
+            logger.debug("Injected user_facts into tool loop: %s", list(user_facts.keys()))
 
     for iteration in range(MAX_TOOL_ITERATIONS):
         response = await ollama_client.chat_with_tools(working_messages, tools=tools)
@@ -188,7 +221,32 @@ async def execute_tool_loop(
         )
         working_messages.extend(tool_messages)
 
+        # Tool result clearing: replace old (raw) tool results with compact placeholders
+        # to prevent context bloat on iterations 3+. Keep the last 2 rounds intact.
+        _clear_old_tool_results(working_messages, keep_last_n=2)
+
     # Safety: exceeded max iterations, force a text response without tools
     logger.warning("Max tool iterations (%d) reached, forcing text response", MAX_TOOL_ITERATIONS)
     response = await ollama_client.chat_with_tools(working_messages, tools=None)
     return response.content
+
+
+def _clear_old_tool_results(messages: list[ChatMessage], keep_last_n: int = 2) -> None:
+    """Replace old tool results with compact summaries to free context window space.
+
+    Keeps the last `keep_last_n` tool messages intact (most recent are most useful).
+    This implements the Anthropic-recommended 'tool result clearing' pattern:
+    once a raw API response is processed, there's no reason to keep it verbatim.
+    """
+    tool_indices = [i for i, m in enumerate(messages) if m.role == "tool"]
+
+    if len(tool_indices) <= keep_last_n:
+        return  # Not enough tool results to warrant clearing
+
+    for idx in tool_indices[:-keep_last_n]:
+        old_content = messages[idx].content
+        first_line = old_content.split("\n")[0][:120].strip()
+        messages[idx] = ChatMessage(
+            role="tool",
+            content=f"[Previous result processed — summary: {first_line}]",
+        )

@@ -102,7 +102,8 @@ _CLASSIFIER_PROMPT_TEMPLATE = (
     "Classify this message into tool categories. "
     'Reply with ONLY category names separated by commas, or "none".\n'
     "Categories: {categories}, none\n\n"
-    "Message: {user_message}"
+    "{recent_context}"
+    "Message to classify: {user_message}"
 )
 
 
@@ -125,11 +126,42 @@ def register_dynamic_category(category: str, tool_names: list[str]) -> None:
 async def classify_intent(
     user_message: str,
     ollama_client: OllamaClient,
+    recent_messages: list[ChatMessage] | None = None,
+    sticky_categories: list[str] | None = None,
 ) -> list[str]:
-    """Call the LLM without tools/think to classify the user message into categories."""
+    """Classify the user message into tool categories with optional conversational context.
+
+    Args:
+        user_message: The latest user message to classify.
+        ollama_client: LLM client for classification.
+        recent_messages: Last few conversation messages for context. Helps classify
+            ambiguous follow-ups like 'Ambos' or 'Los de los últimos meses'.
+        sticky_categories: Categories from the previous tool-using turn. Used as
+            fallback when the classifier returns 'none' for short follow-ups.
+    """
     categories_str = ", ".join(TOOL_CATEGORIES.keys())
+
+    # Build recent context block (last 3 turns = up to 6 messages)
+    recent_context = ""
+    if recent_messages:
+        context_lines = []
+        for msg in recent_messages[-6:]:
+            if msg.role not in ("user", "assistant"):
+                continue
+            role_label = "User" if msg.role == "user" else "Assistant"
+            content_preview = msg.content[:200].replace("\n", " ")
+            context_lines.append(f"{role_label}: {content_preview}")
+        if context_lines:
+            recent_context = (
+                "Recent conversation (for context only):\n"
+                + "\n".join(context_lines)
+                + "\n\n"
+            )
+
     prompt = _CLASSIFIER_PROMPT_TEMPLATE.format(
-        categories=categories_str, user_message=user_message
+        categories=categories_str,
+        user_message=user_message,
+        recent_context=recent_context,
     )
     messages = [ChatMessage(role="user", content=prompt)]
 
@@ -138,6 +170,14 @@ async def classify_intent(
         raw = response.content.strip().lower()
 
         if raw == "none":
+            # Sticky fallback: if the user is continuing a tool-heavy conversation
+            # (e.g., asking a follow-up about GitHub repos), reuse last categories.
+            if sticky_categories:
+                logger.info(
+                    "Classifier returned 'none', falling back to sticky categories: %s",
+                    sticky_categories,
+                )
+                return sticky_categories
             return ["none"]
 
         # Parse comma-separated categories, keep only valid ones

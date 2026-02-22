@@ -106,6 +106,12 @@ CREATE TABLE IF NOT EXISTS project_notes (
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 CREATE INDEX IF NOT EXISTS idx_pnotes_project ON project_notes(project_id);
+
+CREATE TABLE IF NOT EXISTS conversation_state (
+    conversation_id   INTEGER PRIMARY KEY REFERENCES conversations(id),
+    sticky_categories TEXT NOT NULL DEFAULT '[]',
+    updated_at        TEXT NOT NULL DEFAULT (datetime('now'))
+);
 """
 
 TRACING_SCHEMA = """

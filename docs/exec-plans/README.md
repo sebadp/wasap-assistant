@@ -8,6 +8,7 @@ Documentos técnicos que bajan una intención de producto a cambios concretos en
 |---|---|---|
 | Arquitectura de Evaluación y Mejora Continua | [`eval_implementation_plan.md`](eval_implementation_plan.md) | 📋 Pendiente |
 | Sesiones Agénticas (Agent Mode) | [`agentic_sessions_plan.md`](agentic_sessions_plan.md) | ✅ Completado |
+| Context Engineering | [`context_engineering_plan.md`](context_engineering_plan.md) | ✅ Completado |
 
 ## Convenciones
 

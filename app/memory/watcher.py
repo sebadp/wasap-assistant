@@ -127,7 +127,9 @@ class MemoryWatcher:
             return
 
         file_memories = parse_memory_file(content)
-        db_memories = await self._repository.list_memories()
+        all_db_memories = await self._repository.list_memories()
+        # Exclude self_correction from sync so it stays in DB but not in user's markdown
+        db_memories = [m for m in all_db_memories if m.category != "self_correction"]
 
         # Build sets for comparison
         file_set = {(c, cat) for c, cat in file_memories}

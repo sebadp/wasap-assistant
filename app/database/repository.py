@@ -163,7 +163,69 @@ class Repository:
         await self._conn.commit()
         return cursor.rowcount
 
+    # --- Sticky Categories (context engineering) ---
+
+    async def get_sticky_categories(self, conversation_id: int) -> list[str]:
+        """Return sticky tool categories from the last tool-using turn."""
+        cursor = await self._conn.execute(
+            "SELECT sticky_categories FROM conversation_state WHERE conversation_id = ?",
+            (conversation_id,),
+        )
+        row = await cursor.fetchone()
+        if not row:
+            return []
+        try:
+            return json.loads(row[0]) or []
+        except (json.JSONDecodeError, TypeError):
+            return []
+
+    async def save_sticky_categories(
+        self, conversation_id: int, categories: list[str]
+    ) -> None:
+        """Persist sticky categories for this conversation."""
+        await self._conn.execute(
+            "INSERT INTO conversation_state (conversation_id, sticky_categories, updated_at) "
+            "VALUES (?, ?, datetime('now')) "
+            "ON CONFLICT(conversation_id) DO UPDATE SET "
+            "sticky_categories = excluded.sticky_categories, "
+            "updated_at = excluded.updated_at",
+            (conversation_id, json.dumps(categories, ensure_ascii=False)),
+        )
+        await self._conn.commit()
+
+    async def clear_sticky_categories(self, conversation_id: int) -> None:
+        """Clear sticky categories when a turn doesn't use tools."""
+        await self.save_sticky_categories(conversation_id, [])
+
+    # --- Self-Correction Cooldown ---
+
+    async def get_recent_self_corrections(self, hours: int = 2) -> list[Memory]:
+        """Return active self_correction memories created within the last N hours."""
+        cursor = await self._conn.execute(
+            "SELECT id, content, category, active, created_at FROM memories "
+            "WHERE category = 'self_correction' AND active = 1 "
+            "AND created_at > datetime('now', ?)",
+            (f"-{hours} hours",),
+        )
+        rows = await cursor.fetchall()
+        return [
+            Memory(id=r[0], content=r[1], category=r[2], active=bool(r[3]), created_at=r[4])
+            for r in rows
+        ]
+
+    async def cleanup_expired_self_corrections(self, ttl_hours: int = 24) -> int:
+        """Deactivate self_correction memories older than TTL. Returns count removed."""
+        cursor = await self._conn.execute(
+            "UPDATE memories SET active = 0 "
+            "WHERE category = 'self_correction' AND active = 1 "
+            "AND created_at < datetime('now', ?)",
+            (f"-{ttl_hours} hours",),
+        )
+        await self._conn.commit()
+        return cursor.rowcount
+
     # --- Deduplication ---
+
 
     async def try_claim_message(self, wa_message_id: str) -> bool:
         """Atomically claim a message ID. Returns True if already processed (duplicate)."""

@@ -1,4 +1,14 @@
-"""Agentic session loop: autonomous background execution."""
+"""Agentic session loop: autonomous background execution.
+
+Phase 4 refactor: the agent now has its own outer loop (max_iterations rounds)
+separate from the inner tool loop (max 8 tool calls per round). Between rounds:
+  - Old tool results are cleared to keep context lean
+  - The task plan is re-injected so the agent stays oriented
+  - Completion is detected before burning the next round
+
+This gives us explicit control over the agent's state without reimplementing
+tool dispatching (which stays in execute_tool_loop).
+"""
 
 from __future__ import annotations
 
@@ -9,7 +19,7 @@ from typing import TYPE_CHECKING
 
 from app.agent.models import AgentSession, AgentStatus
 from app.models import ChatMessage
-from app.skills.executor import execute_tool_loop
+from app.skills.executor import _clear_old_tool_results, execute_tool_loop
 
 if TYPE_CHECKING:
     from app.llm.client import OllamaClient
@@ -23,6 +33,9 @@ logger = logging.getLogger(__name__)
 _active_sessions: dict[str, AgentSession] = {}
 # asyncio Tasks for each active session, so we can actually cancel them
 _active_tasks: dict[str, asyncio.Task] = {}
+
+# Tools per round: conservative cap so each round can do 1-2 meaningful actions
+_TOOLS_PER_ROUND = 8
 
 _AGENT_SYSTEM_PROMPT = """\
 You are in AGENT MODE. You have been given an objective by the user and must complete \
@@ -39,10 +52,13 @@ RULES:
 6. When ALL steps are done, write a concise summary of what was accomplished.
 """
 
-_PLAN_REMINDER = """
+_PLAN_REMINDER = """\
+
 --- CURRENT TASK PLAN ---
 {task_plan}
 --- END TASK PLAN ---
+
+Continue executing the next pending [ ] step. Do not repeat steps already marked [x].
 """
 
 
@@ -111,6 +127,54 @@ def _register_session_tools(
     return session_registry
 
 
+def _inject_task_plan(messages: list[ChatMessage], task_plan: str) -> None:
+    """Insert or update the task plan reminder as the second system message.
+
+    Replaces the previous plan reminder if one exists, to avoid duplication.
+    Always keeps it right after the main system prompt (index 1).
+    """
+    plan_content = _PLAN_REMINDER.format(task_plan=task_plan)
+
+    # Find and replace an existing plan reminder
+    for i, msg in enumerate(messages):
+        if msg.role == "system" and "CURRENT TASK PLAN" in msg.content:
+            messages[i] = ChatMessage(role="system", content=plan_content)
+            return
+
+    # First time: insert right after the main system prompt
+    insert_pos = 1 if messages and messages[0].role == "system" else 0
+    messages.insert(insert_pos, ChatMessage(role="system", content=plan_content))
+
+
+def _is_session_complete(session: AgentSession, last_reply: str) -> bool:
+    """Heuristic: determine if the agent considers the session complete.
+
+    Returns True when:
+    - The task plan has no remaining [ ] steps (all done), OR
+    - The reply contains a completion signal and there's no task plan
+
+    This is a soft check — max_iterations is always the hard safety net.
+    """
+    # Primary signal: task plan exhausted
+    if session.task_plan is not None:
+        pending = session.task_plan.count("[ ]")
+        if pending == 0:
+            logger.info(
+                "Agent session %s: task plan complete (no pending steps)",
+                session.session_id,
+            )
+            return True
+        return False  # Still has work to do — don't check text signals
+
+    # Fallback: no task plan yet, look for completion signals in the text
+    completion_signals = [
+        "completad", "terminad", "finaliz", "listo", "done", "finished",
+        "accomplished", "all done", "todo completo",
+    ]
+    lower_reply = last_reply.lower()
+    return any(sig in lower_reply for sig in completion_signals)
+
+
 async def run_agent_session(
     session: AgentSession,
     ollama_client: OllamaClient,
@@ -120,7 +184,12 @@ async def run_agent_session(
 ) -> None:
     """Run a full agentic session in the background.
 
-    The agent iterates: Think → Call Tools → Observe → Loop
+    Phase 4 architecture:
+    - Outer loop: up to max_iterations rounds (controlled here)
+    - Inner loop: up to _TOOLS_PER_ROUND tool calls per round (in execute_tool_loop)
+    - Between rounds: task plan re-injected, old tool results cleared
+
+    The agent iterates: Think → Call Tools → Observe → Update Plan → Loop
     until the objective is complete or max_iterations is reached.
     Proactively sends the result to the user via WhatsApp when done.
     """
@@ -147,24 +216,78 @@ async def run_agent_session(
         # This prevents concurrent sessions from overwriting each other's closures.
         session_registry = _register_session_tools(session, skill_registry, wa_client)
 
-        # Run the tool loop with elevated max_tools to allow multi-step autonomy
-        reply = await execute_tool_loop(
-            messages=messages,
-            ollama_client=ollama_client,
-            skill_registry=session_registry,
-            mcp_manager=mcp_manager,
-            max_tools=session.max_iterations,
+        reply = ""
+
+        # --- Outer agent loop ---
+        for iteration in range(session.max_iterations):
+            session.iteration = iteration
+            logger.info(
+                "Agent session %s — round %d/%d",
+                session.session_id,
+                iteration + 1,
+                session.max_iterations,
+            )
+
+            # Re-inject task plan before each round so the agent stays oriented.
+            # The first round may not have a plan yet (agent creates it on round 1).
+            if session.task_plan:
+                _inject_task_plan(messages, session.task_plan)
+
+            # Run one round of tool execution
+            reply = await execute_tool_loop(
+                messages=messages,
+                ollama_client=ollama_client,
+                skill_registry=session_registry,
+                mcp_manager=mcp_manager,
+                max_tools=_TOOLS_PER_ROUND,
+            )
+
+            # Append the agent's reply to the working history
+            messages.append(ChatMessage(role="assistant", content=reply))
+
+            logger.debug(
+                "Agent session %s round %d reply: %r",
+                session.session_id,
+                iteration + 1,
+                reply[:150],
+            )
+
+            # Check for completion before clearing context
+            if _is_session_complete(session, reply):
+                logger.info(
+                    "Agent session %s: detected completion at round %d",
+                    session.session_id,
+                    iteration + 1,
+                )
+                break
+
+            # Tool result clearing between rounds:
+            # Keep only the last 2 raw tool results — older ones become 1-line summaries.
+            # This is the key difference from the old single-call approach.
+            _clear_old_tool_results(messages, keep_last_n=2)
+
+        # --- Session ended (completion or max_iterations) ---
+        session.status = AgentStatus.COMPLETED
+        logger.info(
+            "Agent session %s completed after %d round(s)",
+            session.session_id,
+            session.iteration + 1,
         )
 
-        session.status = AgentStatus.COMPLETED
-        logger.info("Agent session %s completed", session.session_id)
+        # Final task plan summary (if present)
+        final_message = reply
+        if session.task_plan:
+            done = session.task_plan.count("[x]")
+            pending = session.task_plan.count("[ ]")
+            plan_status = f"_Plan: {done} pasos completados, {pending} pendientes._\n\n"
+            final_message = plan_status + reply
 
         # Send final result to the user via WhatsApp
         from app.formatting.markdown_to_wa import markdown_to_whatsapp
 
         await wa_client.send_message(
             session.phone_number,
-            markdown_to_whatsapp(f"✅ *Sesión agéntica completada*\n\n{reply}"),
+            markdown_to_whatsapp(f"✅ *Sesión agéntica completada*\n\n{final_message}"),
         )
 
     except asyncio.CancelledError:

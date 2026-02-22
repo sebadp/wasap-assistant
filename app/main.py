@@ -145,6 +145,26 @@ async def lifespan(app: FastAPI):
             settings.trace_retention_days,
         )
 
+    # Self-correction memory cleanup: expire corrections older than 24h
+    async def _cleanup_self_corrections() -> None:
+        try:
+            removed = await repository.cleanup_expired_self_corrections(ttl_hours=24)
+            if removed:
+                logger.info("Self-correction cleanup: expired %d old corrections", removed)
+        except Exception:
+            logger.exception("Self-correction cleanup job failed")
+
+    scheduler.add_job(
+        _cleanup_self_corrections,
+        trigger="interval",
+        hours=1,
+        id="self_correction_cleanup",
+        replace_existing=True,
+    )
+    # Also run once at startup to clean up pre-existing stale corrections
+    import asyncio as _asyncio
+    _asyncio.create_task(_cleanup_self_corrections())
+
     # Memory file watcher (bidirectional sync)
     memory_watcher = None
     if settings.memory_file_watch_enabled:

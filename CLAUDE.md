@@ -4,11 +4,20 @@
 > Este archivo documenta **convenciones de código y patrones arquitectónicos**.
 
 ## Protocolo de Documentación (OBLIGATORIO al terminar una feature)
+
+### Documentos a crear/actualizar
 1. Crear `docs/features/<nombre>.md` (template: `docs/features/TEMPLATE.md`)
 2. Crear `docs/testing/<nombre>_testing.md` (template: `docs/testing/TEMPLATE.md`)
-3. Para features complejas: crear `docs/exec-plans/<nombre>.md` **antes** de implementar
+3. Actualizar `docs/features/README.md` y `docs/testing/README.md` con la nueva entrada
 4. Actualizar `CLAUDE.md` con patrones que deben preservarse
 5. Actualizar `AGENTS.md` si se agrega un skill, módulo o comando nuevo
+
+### Exec Plans (para features complejas)
+- Crear `docs/exec-plans/<nombre>.md` **antes** de implementar si se afectan ≥3 archivos
+- El plan es artefacto de primera clase: documenta **decisiones**, no solo pasos
+- Incluir siempre: objetivo, archivos a modificar, schema de datos, orden de implementación
+- Marcar el estado al terminar: 📋 Pendiente → 🚧 En progreso → ✅ Completado
+- Ver convenciones detalladas y planes existentes: [`docs/exec-plans/README.md`](docs/exec-plans/README.md)
 
 ## Stack
 - **Framework**: FastAPI (async, lifespan pattern)
@@ -27,7 +36,7 @@
 ## Estructura
 ```
 app/
-  main.py              # FastAPI app + lifespan
+  main.py              # FastAPI app + lifespan + scheduler jobs
   guardrails/          # Validación pre-entrega (Eval Fase 1)
     models.py          # GuardrailResult, GuardrailReport
     checks.py          # check_not_empty, check_language_match, check_no_pii, etc.
@@ -35,6 +44,9 @@ app/
   tracing/             # Trazabilidad estructurada (Eval Fase 2)
     context.py         # TraceContext (async ctx mgr), SpanData, get_current_trace()
     recorder.py        # TraceRecorder — persistencia SQLite best-effort
+  context/             # Context engineering (Fase 5)
+    fact_extractor.py  # Extracción de user_facts con regex (sin LLM)
+    conversation_context.py  # ConversationContext dataclass + build()
   config.py            # Settings (pydantic-settings, .env)
   models.py            # Pydantic models
   dependencies.py      # FastAPI dependency injection
@@ -43,40 +55,47 @@ app/
     indexer.py         # embed_memory, backfill_embeddings (best-effort)
   llm/client.py        # OllamaClient (chat + tool calling + embeddings)
   whatsapp/client.py   # WhatsApp Cloud API client
-  webhook/router.py    # Webhook endpoints + process_message + graceful shutdown
+  webhook/router.py    # Webhook endpoints + _handle_message + graceful shutdown
   webhook/parser.py    # Extrae mensajes del payload (text, audio, image, reply context)
   webhook/security.py  # HMAC signature validation
   webhook/rate_limiter.py
   audio/transcriber.py # faster-whisper wrapper
-  formatting/whatsapp.py  # Markdown -> WhatsApp
-  formatting/splitter.py  # Split mensajes largos
+  formatting/
+    markdown_to_wa.py  # Markdown → WhatsApp
+    splitter.py        # Split mensajes largos
+    compaction.py      # JSON-aware compaction (3 niveles: JSON → LLM → truncate)
   skills/              # Sistema de skills y tool calling
     models.py          # ToolDefinition, ToolCall, ToolResult, SkillMetadata
     loader.py          # Parser de SKILL.md (frontmatter con regex, sin PyYAML)
-    registry.py        # SkillRegistry (registro, schemas Ollama, ejecucion) — get_skill(), get_tools_for_skill(), reload()
-    executor.py        # Tool calling loop (max 5 iteraciones) — reset_tools_cache()
-    router.py          # classify_intent, select_tools, TOOL_CATEGORIES — register_dynamic_category()
+    registry.py        # SkillRegistry — registro, schemas Ollama, ejecución
+    executor.py        # Tool calling loop + _clear_old_tool_results
+    router.py          # classify_intent, select_tools, TOOL_CATEGORIES
     tools/             # Handlers de tools builtin
       datetime_tools.py
       calculator_tools.py
       weather_tools.py
       notes_tools.py
-      selfcode_tools.py  # Auto-inspección: version, source, config, health, search
-      expand_tools.py    # Auto-expansión: Smithery registry, hot-install MCP, skill from URL
-      project_tools.py   # Proyectos, tareas, actividad y notas con embeddings
-  commands/             # Sistema de comandos (/remember, /forget, etc)
-  conversation/         # ConversationManager + Summarizer (con pre-compaction flush)
-  database/             # SQLite init + sqlite-vec + Repository
-  memory/               # Sistema de memoria
-    markdown.py        # Sync bidireccional SQLite <-> MEMORY.md
+      selfcode_tools.py
+      expand_tools.py
+      project_tools.py
+  agent/               # Modo agéntico
+    loop.py            # Outer agent loop (rounds × tool calls), task plan injection
+    models.py          # AgentSession, AgentStatus
+    hitl.py            # Human-in-the-loop (request_user_approval)
+    task_memory.py     # create_task_plan, update_task_status, get_task_plan
+  commands/            # Sistema de comandos (/remember, /forget, etc)
+  conversation/        # ConversationManager + Summarizer
+  database/            # SQLite init + sqlite-vec + Repository
+  memory/              # Sistema de memoria
+    markdown.py        # Sync bidireccional SQLite ↔ MEMORY.md
     watcher.py         # File watcher (watchdog) para edición manual de MEMORY.md
     daily_log.py       # Daily logs append-only + session snapshots
     consolidator.py    # Dedup/merge de memorias via LLM
-  eval/                 # Dataset vivo + curación automática
+  eval/                # Dataset vivo + curación automática
     dataset.py         # maybe_curate_to_dataset() (3-tier), add_correction_pair()
     exporter.py        # export_to_jsonl() para tests offline
-  mcp/                  # MCP server integration
-skills/                 # SKILL.md definitions (configurable via skills_dir)
+  mcp/                 # MCP server integration
+skills/                # SKILL.md definitions (configurable via skills_dir)
 tests/
 ```
 
@@ -96,25 +115,29 @@ tests/
 - **ruff ignores**: `E501` (lineas largas), `B008` (FastAPI usa `Depends(...)` como default)
 - Antes de pushear: `make check` (lint + typecheck + tests)
 
-## Fase 7 — Performance Optimization
-- Critical path parallelizado en `_handle_message` (router.py) en fases:
-  - **Phase A** (`asyncio.gather`): embed(query) ‖ save_message(conv_id) ‖ load_daily_logs()
-  - **Phase B** (`asyncio.gather`): search_memories ‖ search_notes ‖ get_latest_summary ‖ get_recent_messages
-  - **Phase C**: `await classify_task` (kicked off antes de Phase A, corre en paralelo)
-  - **Phase D**: `_build_context()` (sync) → chat_with_tools (LLM principal)
-- `_build_context()` helper en router.py — construye el contexto LLM a partir de datos ya pre-fetched (sin DB calls)
-- `pre_classified_categories` param en `execute_tool_loop` — evita segunda llamada a `classify_intent`
-- Cache module-level `_cached_tools_map` en executor.py — `_get_cached_tools_map()` construye el map una sola vez
-- Parallel tool calls dentro de una iteración: `asyncio.gather(*[_run_tool_call(...) for tc in tool_calls])`
-- `_run_tool_call()` helper en executor.py para ejecutar un tool call y retornar `ChatMessage(role="tool")`
-- WA calls iniciales (mark_as_read + send_reaction) paralelizadas con `asyncio.gather`
-- Blocking I/O en `daily_log.py` y `markdown.py` → `asyncio.to_thread()` (stdlib Python 3.9+)
-- Cache de conv_id en `ConversationManager._conv_id_cache` (dict phone→id, permanente durante runtime)
-  - Método privado `_get_conv_id()` usado por todos los métodos del manager
-- `get_active_memories(limit=...)` — fallback con límite (`settings.semantic_search_top_k`) para evitar cargar todo
-- SQLite PRAGMA tuning en `db.py`: `synchronous=NORMAL`, `cache_size=-32000` (32MB), `temp_store=MEMORY`
-- Model warmup en `main.py` startup: `embed(["warmup"]) ‖ chat_with_tools([...])` — non-critical, wrapped in try/except
-- `import datetime` movido al top de router.py (era inline dentro de la función)
+## Performance — Critical Path en `_handle_message`
+
+El procesamiento de cada mensaje está paralelizado en fases:
+
+| Fase | Qué corre en paralelo (asyncio.gather) | Bloqueante |
+|------|----------------------------------------|-----------|
+| **Phase A** | embed(query) ‖ save_message \| load_daily_logs | Sí |
+| **Phase B** | search_memories ‖ search_notes ‖ get_summary ‖ get_recent_messages ‖ get_projects_summary | Sí |
+| **Phase C** | await classify_task + load sticky_categories + extract user_facts | Sí |
+| **Phase D** | `_build_context()` (sync) → LLM principal | Sí |
+
+- `classify_intent` se lanza como `asyncio.create_task` antes de Phase A — corre en paralelo con las fases I/O-bound. Si retorna `"none"`, se re-clasifica con contexto (historial + sticky categories).
+- `_build_context()` en router.py — construye el contexto LLM a partir de datos pre-fetched, sin DB calls.
+- `pre_classified_categories` en `execute_tool_loop` — evita segunda llamada a `classify_intent`.
+- Cache module-level `_cached_tools_map` en executor.py — construye el map de tools una vez.
+- Tool calls en paralelo dentro de una iteración: `asyncio.gather(*[_run_tool_call(...)])` .
+- WA calls iniciales (mark_as_read + send_reaction) paralelizadas con `asyncio.gather`.
+- Blocking I/O en `daily_log.py` y `markdown.py` → `asyncio.to_thread()` (stdlib Python 3.9+).
+- Cache de conv_id en `ConversationManager._conv_id_cache` (dict phone→id, permanente durante runtime).
+- `get_active_memories(limit=...)` — fallback con límite (`settings.semantic_search_top_k`).
+- SQLite PRAGMA tuning en `db.py`: `synchronous=NORMAL`, `cache_size=-32000` (32MB), `temp_store=MEMORY`.
+- Model warmup en `main.py` startup: `embed(["warmup"]) ‖ chat_with_tools([...])` — non-critical, wrapped en try/except.
+
 
 ## Patrones
 - Todo async, nunca bloquear el event loop (usar `run_in_executor` para sync code como Whisper)
@@ -154,5 +177,6 @@ tests/
 - **Guardrails** (`app/guardrails/`): pipeline de validación pre-entrega. Checks determinísticos (sin LLM): `not_empty`, `language_match` (solo si ≥30 chars — `langdetect` falla en textos cortos), `no_pii`/`redact_pii` (regex), `excessive_length` (>8000 chars), `no_raw_tool_json`. Fail-open: errores en checks → pasan. Remediation single-shot en `_handle_guardrail_failure` (sin recursión). Scores de guardrails → `trace_scores` (value=1.0/0.0, source="system"). Integrado en `_run_normal_flow()` dentro de `_handle_message`.
 - **Trazabilidad** (`app/tracing/`): `TraceContext` usa `contextvars.ContextVar` — sub-tasks de asyncio heredan el trace automáticamente sin cambiar firmas. `TraceRecorder` best-effort (excepciones capturadas, nunca propagadas). `TRACING_SCHEMA` en `db.py` crea tablas `traces`, `trace_spans`, `trace_scores` con `CREATE TABLE IF NOT EXISTS`. `WhatsAppClient.send_message()` retorna `str | None` (wa_message_id del primer chunk) para vincular trazas a mensajes WA. Flujo normal refactorizado en `_run_normal_flow()` inner function en `router.py` — permite toggle de tracing sin duplicar lógica. `tracing_sample_rate` check con `random.random()` antes de crear el `TraceContext` (sampling a nivel de mensaje completo).
 - **Dataset vivo** (`app/eval/`): `DATASET_SCHEMA` en `db.py` — tablas `eval_dataset` + `eval_dataset_tags` (tags como tabla join separada, no JSON array — permite índices eficientes). Curación 3-tier en `maybe_curate_to_dataset()`: failure (guardrail<0.3 o usuario negativo) > golden confirmado (sistema OK + usuario positivo) > golden candidato (sistema OK, sin señal de usuario, `metadata.confirmed=False`). Se llama como background task al final de `_run_normal_flow()` cuando `eval_auto_curate=True`. Correction pairs: `add_correction_pair()` guarda `entry_type="correction"` con `expected_output=correction_text` al detectar corrección high-confidence (score==0.0). FK de `eval_dataset.trace_id` → `traces(id)` enforced con `PRAGMA foreign_keys=ON`. `exporter.py`: `export_to_jsonl()` exporta a JSONL para tests offline.
-- **Auto-evolución** (`app/eval/prompt_manager.py` + `app/eval/evolution.py`): `PROMPT_SCHEMA` en `db.py` — tabla `prompt_versions` (unique index por `prompt_name+version`, constraint `is_active` enforced a nivel app en `activate_prompt_version()` — SQLite no soporta partial unique index). Cache en memoria `_active_prompts` dict en `prompt_manager.py` — se invalida vía `invalidate_prompt_cache()`. `get_active_prompt()` lazy-loads desde DB, fallback al default de `config.py`. Integrado en `_run_normal_flow()` reemplazando `settings.system_prompt`. Memorias de auto-corrección: guardrail failure → `_save_self_correction_memory()` background task → `add_memory(category="self_correction")` + `memory_file.sync()` + embed best-effort. `propose_prompt_change()` en `evolution.py`: LLM genera prompt modificado → `save_prompt_version(created_by="agent")`. Comando `/approve-prompt <nombre> <versión>` → `activate_prompt_version()` + `invalidate_prompt_cache()`.
+- **Auto-evolución** (`app/eval/prompt_manager.py` + `app/eval/evolution.py`): `PROMPT_SCHEMA` en `db.py` — tabla `prompt_versions` (unique index por `prompt_name+version`, constraint `is_active` enforced a nivel app en `activate_prompt_version()` — SQLite no soporta partial unique index). Cache en memoria `_active_prompts` dict en `prompt_manager.py` — se invalida vía `invalidate_prompt_cache()`. `get_active_prompt()` lazy-loads desde DB, fallback al default de `config.py`. Integrado en `_run_normal_flow()` reemplazando `settings.system_prompt`. Memorias de auto-corrección: guardrail failure → `_save_self_correction_memory()` background task → `add_memory(category="self_correction")` + cooldown 2h por tipo de check + TTL 24h. `propose_prompt_change()` en `evolution.py`: LLM genera prompt modificado → `save_prompt_version(created_by="agent")`. Comando `/approve-prompt <nombre> <versión>` → `activate_prompt_version()` + `invalidate_prompt_cache()`.
 - **Eval skill** (`skills/eval/SKILL.md` + `app/skills/tools/eval_tools.py`): 8 tools — `get_eval_summary` (métricas agregadas de scores), `list_recent_failures` (trazas con score<0.5), `diagnose_trace` (deep-dive con spans y scores), `propose_correction` (correction pair vía LLM), `add_to_dataset` (curación manual), `get_dataset_stats` (composición del dataset), `run_quick_eval` (eval offline usando `ollama_client.chat()` directo — SIN tool loop para evitar recursión). Registrado en `register_builtin_tools()` con guard `settings.tracing_enabled`. Categoría `"evaluation"` agregada a `TOOL_CATEGORIES` en `app/skills/router.py` — el classifier dinámicamente incluye la categoría (usa `TOOL_CATEGORIES.keys()`). Patrón: closures sobre `repository` + `ollama_client` dentro de `register()`, igual que `selfcode_tools.py`.
+- **Context Engineering** (`app/context/`, `app/formatting/compaction.py`, `app/webhook/router.py`, `app/agent/loop.py`): sticky categories persisten en tabla `conversation_state` — categorías del turno anterior se usan como fallback si `classify_intent` retorna `"none"`. `user_facts` (github_username, name, etc.) se extraen de memorias con regex en `fact_extractor.py` e inyectan como system message al tool loop. `_clear_old_tool_results(keep_last_n=2)` en executor.py resume tool results viejos. `compact_tool_output()` usa JSON-aware extraction antes del LLM — preserva nombres/IDs exactos. `self_correction` category solo en DB, excluida de MEMORY.md sync. Agente con loop externo en `agent/loop.py` (15 rounds × 8 tools), task plan re-inyectado entre rounds, completion via `[ ]` pendientes en task plan. Ver: [`docs/features/context_engineering.md`](docs/features/context_engineering.md)
