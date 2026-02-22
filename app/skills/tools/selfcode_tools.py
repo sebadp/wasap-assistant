@@ -25,6 +25,7 @@ _SENSITIVE = {
 }
 
 _BLOCKED_NAME_PATTERNS = {".env", "secret", "token", "password", ".key", ".pem"}
+_BLOCKED_EXT = {".pyc", ".pyo", ".db", ".sqlite", ".jpg", ".jpeg", ".png", ".gif", ".zip", ".tar"}
 
 
 def _is_safe_path(path: Path) -> bool:
@@ -334,7 +335,6 @@ def register(
         if not _is_safe_path(target):
             return f"Blocked: '{path}' is outside the project root or is a sensitive file."
 
-        _BLOCKED_EXT = {".pyc", ".pyo", ".db", ".sqlite", ".jpg", ".jpeg", ".png", ".gif", ".zip", ".tar"}
         if target.suffix.lower() in _BLOCKED_EXT:
             return f"Blocked: Cannot write binary or database file ({target.suffix})"
 
@@ -364,7 +364,6 @@ def register(
         if not _is_safe_path(target):
             return f"Blocked: '{path}' is outside the project root or is a sensitive file."
 
-        _BLOCKED_EXT = {".pyc", ".pyo", ".db", ".sqlite", ".jpg", ".jpeg", ".png", ".gif", ".zip", ".tar"}
         if target.suffix.lower() in _BLOCKED_EXT:
             return f"Blocked: Cannot patch binary or database file ({target.suffix})"
 

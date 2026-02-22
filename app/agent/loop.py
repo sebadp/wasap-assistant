@@ -59,9 +59,11 @@ def _register_session_tools(
     from app.agent.task_memory import register_task_memory_tools
     from app.skills.registry import SkillRegistry as _Reg
 
-    # Shallow copy: inherits all existing tools, adds session-specific ones on top
+    # Shallow copy: inherits all existing tools, skills metadata, and adds session-specific ones on top
     session_registry = _Reg(skills_dir=skill_registry._skills_dir)  # type: ignore[attr-defined]
     session_registry._tools = dict(skill_registry._tools)  # type: ignore[attr-defined]  # copy tool map
+    session_registry._skills = dict(skill_registry._skills)  # type: ignore[attr-defined]  # copy skill metadata for get_skill_instructions()
+    session_registry._loaded_instructions = set(skill_registry._loaded_instructions)  # type: ignore[attr-defined]
 
     # Register the three task-memory tools
     register_task_memory_tools(session_registry, lambda: session)
@@ -122,6 +124,9 @@ async def run_agent_session(
     Proactively sends the result to the user via WhatsApp when done.
     """
     _active_sessions[session.phone_number] = session
+    current_task = asyncio.current_task()
+    if current_task is not None:
+        _active_tasks[session.phone_number] = current_task
     logger.info(
         "Agent session %s started for %s: %s",
         session.session_id,
@@ -177,6 +182,7 @@ async def run_agent_session(
         )
     finally:
         _active_sessions.pop(session.phone_number, None)
+        _active_tasks.pop(session.phone_number, None)
 
 
 def get_active_session(phone_number: str) -> AgentSession | None:

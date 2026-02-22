@@ -77,11 +77,15 @@ def register(registry: SkillRegistry) -> None:
         clean = branch_name.strip()
         if not clean or " " in clean:
             return "Error: branch name cannot be empty or contain spaces."
-        # Use `--` to prevent branch names starting with `-` being interpreted as flags
-        code, out, err = await asyncio.to_thread(_run_git, "checkout", "-b", "--", clean)
+        if clean.startswith("-"):
+            return f"Error: invalid branch name '{clean}' (cannot start with '-')."
+        # Note: no `--` here — `git checkout -b` interprets `--` as the branch name
+        # itself. Git already rejects names starting with `-`, so no injection is possible.
+        code, out, err = await asyncio.to_thread(_run_git, "checkout", "-b", clean)
         if code != 0:
             return f"Error creating branch '{clean}': {err}"
         return f"✅ Created and switched to branch: {clean}"
+
 
     async def git_commit(message: str) -> str:
         """Stage ALL changes (git add -A) and create a commit with the given message."""
