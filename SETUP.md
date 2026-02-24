@@ -120,6 +120,10 @@ CONVERSATION_MAX_MESSAGES=20
 NGROK_AUTHTOKEN=2xxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 
 LOG_LEVEL=INFO
+
+LANGFUSE_PUBLIC_KEY=pk-lf-...
+LANGFUSE_SECRET_KEY=sk-lf-...
+LANGFUSE_HOST=http://localhost:3000
 ```
 
 ---
@@ -184,6 +188,14 @@ t=... lvl=info msg="started tunnel" ... url=https://xxxx-xx-xx.ngrok-free.app
 ```
 
 Copiar esa URL, la vas a necesitar para el paso siguiente.
+
+### Verificar Langfuse (Observabilidad)
+
+El stack incluye un servidor local de Langfuse para ver las trazas de ejecución.
+1. Ingresá a `http://localhost:3000`
+2. Si es la primera vez, creá una cuenta local (los datos quedan en tu máquina).
+3. Entrá a Settings -> API Keys, generá un par nuevo y pegalos en tu `.env`.
+4. Reiniciá el asistente: `docker compose restart wasap`
 
 ---
 

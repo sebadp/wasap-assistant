@@ -22,26 +22,52 @@ Documentos técnicos que bajan una intención de producto a cambios concretos en
 - Incluir siempre: objetivo, archivos a modificar, schema de datos, orden de implementación
 - Marcar el estado al terminar: 📋 Pendiente → 🚧 En progreso → ✅ Completado
 
-## Template mínimo de exec plan
+## Template de PRD (Product Requirements Document)
+
+Usar este como `docs/exec-plans/<numero>-<nombre>_prd.md` para asentar propósitos e intención.
 
 ```markdown
-# Plan: [Nombre]
+# PRD: [Nombre de la Feature]
 
-## Objetivo
-[Qué problema resuelve esta implementación]
+## Objetivo y Contexto
+[Qué problema resuelve esta implementación y por qué es importante]
 
-## Archivos a modificar
-| Archivo | Cambio |
-|---|---|
+## Alcance (In Scope & Out of Scope)
+- **In Scope:** [Lista...]
+- **Out of Scope:** [Lista...]
 
-## Schema de datos (si aplica)
-[Tablas SQL nuevas, modelos Pydantic, etc.]
+## Casos de Uso Críticos
+1. [Escenario 1]
+2. [Escenario 2]
 
-## Orden de implementación
-1. [Paso 1 — sin dependencias]
-2. [Paso 2 — depende de 1]
-...
+## Restricciones Arquitectónicas / Requerimientos Técnicos
+- [Dependencias o frameworks que no deben evadirse]
+- [Criterios de seguridad]
+```
 
-## Decisiones de diseño
-[Por qué este enfoque y no otro]
+## Template de PRP (Product Requirements Plan)
+
+Usar este como `docs/exec-plans/<numero>-<nombre>_prp.md` para asentar ejecución técnica y checkboxes. **OBLIGATORIO: MARCAR LOS CHECKS DURANTE LA EJECUCIÓN.**
+
+```markdown
+# PRP: [Nombre de la Feature]
+
+## Archivos a Modificar
+- `ruta/al/archivo1.py`: [Qué se cambia]
+- `ruta/al/archivo2.md`: [Nuevo archivo]
+
+## Fases de Implementación (con Checkboxes)
+
+### Phase 1: Fundamentos
+- [ ] Implementar X
+- [ ] Escribir tests para X
+
+### Phase 2: Integración
+- [ ] Agregar Y al webhook router
+- [ ] Escribir validaciones de borde de Y
+
+### Phase 3: Documentación
+- [ ] Correr `make check`
+- [ ] Escribir `docs/features/...`
+- [ ] Escribir `docs/testing/...`
 ```

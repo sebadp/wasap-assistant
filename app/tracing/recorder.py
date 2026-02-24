@@ -20,8 +20,7 @@ class TraceRecorder:
 
     def __init__(self, repository) -> None:
         self._repo = repository
-        settings = Settings()
-        
+        settings = Settings()  # type: ignore[call-arg]
         self.langfuse: Langfuse | None = None
         if settings.langfuse_public_key and settings.langfuse_secret_key:
             try:
@@ -124,7 +123,7 @@ class TraceRecorder:
             if self.langfuse:
                 level = "ERROR" if status == "failed" else "DEFAULT"
                 md = metadata or {}
-                
+
                 # Extract OTel GenAI Semantic Conventions if present
                 usage: dict[str, int] = {}
                 in_tokens = md.pop("gen_ai.usage.input_tokens", None)
@@ -134,7 +133,7 @@ class TraceRecorder:
                 if out_tokens is not None:
                     usage["output"] = out_tokens
                 model = md.pop("gen_ai.request.model", None)
-                
+
                 # Check what type of observation this was by trying to update context on it
                 # The python SDK requires us to call the right method
                 if usage or model:

@@ -61,13 +61,14 @@ Estos son los documentos que constituyen el "contrato" entre humano y agente en 
 
 **Regla**: este archivo es el GPS. Un agente que lea solo este archivo debe saber a dónde ir para cualquier tarea.
 
-### 3.4 `docs/exec-plans/` — Planes de Ejecución
+### 3.4 `docs/exec-plans/` — Planes de Ejecución (PRD & PRP)
 
 **Audiencia**: humano (para revisar) y agente (para seguir).
-**Contiene**: un archivo por feature compleja (≥3 archivos afectados). Las convenciones exigen un prefijo numérico cronológico (ej. `01-setup.md`, `02-auth.md`) para mantener el orden histórico.
-**Cada plan incluye**: objetivo, archivos a modificar, schema de datos, orden de implementación, decisiones de diseño, riesgos.
+**Contiene**: El pipeline de desarrollo de features complejas se divide estrictamente en dos artefactos complementarios con un prefijo numérico cronológico (ej. `23-feature_prd.md` y `23-feature_prp.md`):
+- **PRD (Product Requirements Document)**: Define el "Qué" y el "Por qué". Establece los criterios de aceptación formales y las restricciones de negocio o técnicas. Es inmutable durante el sprint.
+- **PRP (Product Requirements Plan)**: Define el "Cómo". Detalla qué archivos se tocan, el orden de fases e implementaciones de UI. **Regla estricta:** Cada tarea en el PRP debe tener obligatoriamente un checkbox Markdown (`[ ]`).
 
-**Regla**: se crea **antes** de implementar. Es un artefacto de primera clase: documenta **decisiones**, no solo pasos. El humano aprueba el plan antes de que el agente empiece a codear.
+**Regla**: Los PRDs y PRPs se crean **antes** de implementar. El PRP sirve de mapa stateful; el agente _debe_ marcar cada Checkbox como `[x]` al concluir fases para mantener certidumbre en sesiones largas de Claude o Agent loop. El humano aprueba ambos documentos antes de autorizar código.
 
 ### 3.5 `docs/features/` — Walkthroughs de Features
 
@@ -96,11 +97,12 @@ Estos son los documentos que constituyen el "contrato" entre humano y agente en 
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │  1. PLAN      Humano describe intención                     │
-│               Agente crea docs/exec-plans/<feature>.md      │
-│               Humano revisa y aprueba el plan               │
+│               Agente crea docs/exec-plans/<feature>_prd.md  │
+│               Agente crea docs/exec-plans/<feature>_prp.md  │
+│               Humano revisa y aprueba PRD y PRP             │
 │                                                             │
-│  2. IMPLEMENT Agente codea en branch, corre tests aut.      │
-│               Agente pide aprobación para destructivas      │
+│  2. IMPLEMENT Agente codea en branch, marcando `[x]` en PRP │
+│               Agente corre tests aut., pide aprobación HITL │
 │                                                             │
 │  3. DOCUMENT  Agente crea docs/features/<feature>.md        │
 │               Agente crea docs/testing/<feature>_testing.md │
@@ -126,7 +128,7 @@ Estos son los documentos que constituyen el "contrato" entre humano y agente en 
 
 1. **Documentación como transmisión**: el contexto se pasa entre agentes via archivos, no via memoria. Lo que no está escrito, se pierde.
 2. **Restricciones mecánicas > voluntad**: linters, tests y patterns de código previenen la entropía mejor que instrucciones verbales.
-3. **Exec plan antes de código**: para features complejas, el plan es el primer artefacto. El humano aprueba ANTES de que se escriba código.
+3. **PRD/PRP antes que código**: para features complejas, la dupla de planeamiento es el primer artefacto. El agente debe tildar checkboxes a medida que opera (State Tracking). El humano aprueba ANTES de que se escriba código.
 4. **Validación asimétrica**: el agente es responsable de que funcione en la teoría (tests automatizados); el humano es responsable de que funcione en la práctica (test manual iterativo).
 5. **Best-effort para lo no crítico**: logging, embeddings, trazas — nunca bloquean el pipeline principal. Fallan silenciosamente.
 6. **Scope acotado**: cada skill/módulo tiene un dominio claro. No hay "módulo hace todo".
@@ -139,7 +141,7 @@ Estos son los documentos que constituyen el "contrato" entre humano y agente en 
 
 | Anti-pattern | Por qué falla | Alternativa |
 |---|---|---|
-| Implementar sin plan | El agente divaga, el humano no puede revisar el approach | Exec plan → aprobación → código |
+| Implementar sin PRD/PRP | El agente divaga, pierde contexto en sesiones largas, el humano no puede revisar scope | PRD (What/Why) + PRP (Checkboxes) → Aprobación → Código |
 | Dejar docs para "después" | El próximo agente no tiene contexto | Docs son parte de la feature, no un extra |
 | Asumir que los unit tests bastan | Rotura en integración o UX pobre | Humano ejecuta testing manual obligatoriamente |
 | Ignorar blockers de acceso | El agente "alucina" contenido de una URL protegida o local | Framear restricciones explícitas; proveer workarounds (curl, mock) |

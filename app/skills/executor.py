@@ -2,11 +2,15 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from collections.abc import Awaitable, Callable
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 from app.formatting.compaction import compact_tool_output
 from app.llm.client import OllamaClient
 from app.models import ChatMessage
+from app.security.audit import AuditTrail
+from app.security.policy_engine import PolicyEngine
 from app.skills.models import ToolCall
 from app.skills.registry import SkillRegistry
 from app.skills.router import classify_intent, select_tools
@@ -21,6 +25,23 @@ MAX_TOOL_ITERATIONS = 5
 
 # Module-level cache: tools don't change at runtime after initialization
 _cached_tools_map: dict[str, dict] | None = None
+
+_policy_engine: PolicyEngine | None = None
+_audit_trail: AuditTrail | None = None
+
+
+def get_policy_engine() -> PolicyEngine:
+    global _policy_engine
+    if _policy_engine is None:
+        _policy_engine = PolicyEngine(Path("data/security_policies.yaml"))
+    return _policy_engine
+
+
+def get_audit_trail() -> AuditTrail:
+    global _audit_trail
+    if _audit_trail is None:
+        _audit_trail = AuditTrail(Path("data/audit_trail.jsonl"))
+    return _audit_trail
 
 
 def _build_tools_map(
@@ -67,6 +88,7 @@ async def _run_tool_call(
     mcp_manager: McpManager | None,
     ollama_client: OllamaClient,
     user_message: str,
+    hitl_callback: Callable[[str, dict, str], Awaitable[bool]] | None = None,
 ) -> ChatMessage:
     """Execute a single tool call and return the result as a tool message."""
     func = tc.get("function", {})
@@ -75,6 +97,41 @@ async def _run_tool_call(
 
     # Lazy-load skill instructions on first use (only for local skills)
     instructions = skill_registry.get_skill_instructions(tool_name)
+
+    policy = get_policy_engine()
+    audit = get_audit_trail()
+
+    decision = policy.evaluate(tool_name, arguments)
+
+    if decision.is_blocked:
+        audit.record(tool_name, arguments, "block", decision.reason, "blocked_by_policy")
+        error_msg = f"Security Policy Blocked execution: {decision.reason}"
+        logger.warning(f"Blocked tool {tool_name}: {decision.reason}")
+        return ChatMessage(role="tool", content=error_msg)
+
+    if decision.requires_flag:
+        if hitl_callback:
+            audit.record(tool_name, arguments, "flag", decision.reason, "pending_hitl_approval")
+            logger.warning(f"Tool {tool_name} flagged for HITL approval: {decision.reason}")
+            try:
+                approved = await hitl_callback(tool_name, arguments, decision.reason or "")
+                if not approved:
+                    audit.record(
+                        tool_name, arguments, "blocked_via_hitl", decision.reason, "denied_by_user"
+                    )
+                    return ChatMessage(
+                        role="tool", content="Security Policy BLOCK: Execution denied by user."
+                    )
+                audit.record(
+                    tool_name, arguments, "allowed_via_hitl", decision.reason, "approved_by_user"
+                )
+            except Exception as e:
+                return ChatMessage(role="tool", content=f"HITL error: {e}")
+        else:
+            audit.record(tool_name, arguments, "block", decision.reason, "no_hitl_available")
+            return ChatMessage(
+                role="tool", content="Security Policy BLOCK: Flagged but no HITL provided."
+            )
 
     tool_call = ToolCall(name=tool_name, arguments=arguments)
 
@@ -92,6 +149,9 @@ async def _run_tool_call(
             result = await mcp_manager.execute_tool(tool_call)
         else:
             result = await skill_registry.execute_tool(tool_call)
+
+    # Record allowed execution in audit log
+    audit.record(tool_name, arguments, "allow", decision.reason, result.content[:200])
 
     logger.debug("Tool Execution RAW PAYLOAD send to %s: %s", tool_name, arguments)
     logger.debug("Tool Execution RAW OUPUT from %s: %r", tool_name, result.content)
@@ -123,6 +183,7 @@ async def execute_tool_loop(
     user_facts: dict[str, str] | None = None,
     recent_messages: list[ChatMessage] | None = None,
     sticky_categories: list[str] | None = None,
+    hitl_callback: Callable[[str, dict, str], Awaitable[bool]] | None = None,
 ) -> str:
     """Run the tool calling loop: classify intent, select tools, execute.
 
@@ -218,7 +279,9 @@ async def execute_tool_loop(
         # Execute all tool calls in parallel, append results in order
         tool_messages = await asyncio.gather(
             *[
-                _run_tool_call(tc, skill_registry, mcp_manager, ollama_client, user_message)
+                _run_tool_call(
+                    tc, skill_registry, mcp_manager, ollama_client, user_message, hitl_callback
+                )
                 for tc in response.tool_calls
             ]
         )

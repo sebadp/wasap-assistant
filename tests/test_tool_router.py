@@ -87,6 +87,26 @@ async def test_classify_strips_whitespace():
     assert result == ["search", "news"]
 
 
+# --- URL detection tests ---
+
+async def test_classify_url_adds_fetch():
+    client = _mock_ollama("none")
+    result = await classify_intent("Check out this link https://example.com", client)
+    assert "fetch" in result
+
+async def test_classify_url_overrides_none():
+    client = _mock_ollama("none")
+    result = await classify_intent("https://github.com", client)
+    assert result == ["fetch"]
+
+async def test_classify_url_appends_to_others():
+    client = _mock_ollama("search, news")
+    result = await classify_intent("Search for this https://news.com", client)
+    assert "fetch" in result
+    assert "search" in result
+    assert "news" in result
+
+
 # --- select_tools tests ---
 
 

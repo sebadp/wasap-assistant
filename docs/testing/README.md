@@ -24,6 +24,9 @@ Cada archivo en este directorio cubre el testing manual de una feature específi
 | Maduración del Pipeline (Fase 8) | [`17-eval_maduracion_testing.md`](17-eval_maduracion_testing.md) |
 | Sesiones Agénticas | [`18-agentic_sessions.md`](18-agentic_sessions.md) |
 | Autonomous Agent (Shell, Loop Detection) | [`19-autonomous_agent_testing.md`](19-autonomous_agent_testing.md) |
+| Web Browsing & URL Fetching | [`22-web_browsing_testing.md`](22-web_browsing_testing.md) |
+| Observability & Tracing Profundo | [`24-observability_testing.md`](24-observability_testing.md) |
+| Agentic Security Layer | [`23-agentic_security_testing.md`](23-agentic_security_testing.md) |
 
 ## Convenciones
 

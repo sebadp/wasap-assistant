@@ -31,6 +31,9 @@ Cada archivo en este directorio documenta una feature implementada: qué hace, c
 | Maduración del Pipeline | [`17-eval_maduracion.md`](17-eval_maduracion.md) | Fase 8 |
 | Sesiones Agénticas | [`18-agentic_sessions.md`](18-agentic_sessions.md) | Agent Mode |
 | Autonomous Agent (Shell, Loop Detection) | [`19-autonomous_agent.md`](19-autonomous_agent.md) | Agent Mode |
+| Web Browsing & URL Fetching | [`22-web_browsing.md`](22-web_browsing.md) | Agent Mode |
+| Agentic Security Layer | [`23-agentic_security.md`](23-agentic_security.md) | Agent Mode |
+| Observability & Tracing Profundo | [`24-observability.md`](24-observability.md) | Fase 8 |
 
 ## Cómo crear un nuevo walkthrough
 

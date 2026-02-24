@@ -29,7 +29,7 @@ def append_to_session(phone_number: str, session_id: str, data: dict[str, Any]) 
 def load_session_history(phone_number: str, session_id: str) -> list[dict[str, Any]]:
     """Load the full history of a session from its JSONL file."""
     path = _get_session_path(phone_number, session_id)
-    history = []
+    history: list[dict[str, Any]] = []
     if not path.exists():
         return history
 

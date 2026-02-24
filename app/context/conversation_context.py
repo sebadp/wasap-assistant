@@ -84,16 +84,18 @@ class ConversationContext:
         """
         conv_id = await conversation_manager.get_conversation_id(phone_number)
 
+        async def _none() -> None:
+            return None
+
+        async def _empty_list() -> list[str]:
+            return []
+
         # Parallel fetches — all independent of each other
         memories_raw, history, summary, sticky = await asyncio.gather(
             repository.get_active_memories(),
             conversation_manager.get_history(phone_number),
-            repository.get_latest_summary(conv_id)
-            if conv_id
-            else asyncio.coroutine(lambda: None)(),
-            repository.get_sticky_categories(conv_id)
-            if conv_id
-            else asyncio.coroutine(lambda: [])(),
+            repository.get_latest_summary(conv_id) if conv_id else _none(),
+            repository.get_sticky_categories(conv_id) if conv_id else _empty_list(),
         )
 
         user_facts = extract_facts(memories_raw)

@@ -342,6 +342,27 @@ async def run_agent_session(
         # This prevents concurrent sessions from overwriting each other's closures.
         session_registry = _register_session_tools(session, skill_registry, wa_client)
 
+        async def _security_hitl_callback(tool_name: str, arguments: dict, reason: str) -> bool:
+            from app.agent.hitl import request_user_approval
+
+            session.status = AgentStatus.WAITING_USER
+            try:
+                question = f"⚠️ *Alerta de Seguridad*\nEl agente intenta ejecutar `{tool_name}`.\nArgumentos: `{arguments}`\n\nMotivo: *{reason}*\n\n¿Autorizás la ejecución? (Aprobar/Rechazar)"
+                user_reply = await request_user_approval(session.phone_number, question, wa_client)
+                return user_reply.lower().strip() in [
+                    "aprobar",
+                    "sí",
+                    "si",
+                    "yes",
+                    "y",
+                    "ok",
+                    "dale",
+                    "mandale",
+                    "autorizo",
+                ]
+            finally:
+                session.status = AgentStatus.RUNNING
+
         reply = ""
 
         # --- Outer agent loop ---
@@ -366,6 +387,7 @@ async def run_agent_session(
                 skill_registry=session_registry,
                 mcp_manager=mcp_manager,
                 max_tools=_TOOLS_PER_ROUND,
+                hitl_callback=_security_hitl_callback,
             )
 
             # Append the agent's reply to the working history

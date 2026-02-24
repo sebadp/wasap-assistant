@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import re
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -98,9 +99,14 @@ TOOL_CATEGORIES: dict[str, list[str]] = {
     "conversation": ["get_recent_messages"],
     "shell": ["run_command", "manage_process"],
     "workspace": ["list_workspaces", "switch_workspace", "get_workspace_info"],
+    "documentation": [
+        "create_feature_docs",
+        "update_architecture_rules",
+        "update_agent_docs",
+    ],
 }
 
-DEFAULT_CATEGORIES = ["time", "math", "weather", "search"]
+DEFAULT_CATEGORIES = ["time", "math", "weather", "search", "documentation"]
 
 _CLASSIFIER_PROMPT_TEMPLATE = (
     "Classify this message into tool categories. "
@@ -126,7 +132,6 @@ def register_dynamic_category(category: str, tool_names: list[str]) -> None:
     TOOL_CATEGORIES[category] = merged
     logger.info("Dynamic category registered: %s (%d tools)", category, len(merged))
 
-
 async def classify_intent(
     user_message: str,
     ollama_client: OllamaClient,
@@ -144,6 +149,11 @@ async def classify_intent(
             fallback when the classifier returns 'none' for short follow-ups.
     """
     categories_str = ", ".join(TOOL_CATEGORIES.keys())
+
+    # Fast-path for URLs: if the message contains a URL, ensure 'fetch' is an option
+    # so the agent has the web browsing tools available.
+    url_pattern = re.compile(r"https?://(?:[-\w.]|(?:%[\da-fA-F]{2}))+")
+    has_url = bool(url_pattern.search(user_message))
 
     # Build recent context block (last 3 turns = up to 6 messages)
     recent_context = ""
@@ -174,6 +184,11 @@ async def classify_intent(
         logger.debug("Intent Classifier RAW OUTPUT: %r", raw)
 
         if raw == "none":
+            # Fast-path override: even if the LLM says 'none', if there's a URL, we must fetch
+            if has_url:
+                logger.info("URL detected but classifier returned 'none', overriding to ['fetch'].")
+                return ["fetch"]
+
             # Sticky fallback: if the user is continuing a tool-heavy conversation
             # (e.g., asking a follow-up about GitHub repos), reuse last categories.
             if sticky_categories:
@@ -187,6 +202,10 @@ async def classify_intent(
         # Parse comma-separated categories, keep only valid ones
         valid = set(TOOL_CATEGORIES.keys())
         categories = [c.strip() for c in raw.split(",") if c.strip() in valid]
+
+        if has_url and "fetch" not in categories:
+            logger.info("URL detected in message. Forcing 'fetch' category.")
+            categories.append("fetch")
 
         if not categories:
             logger.warning("Classifier returned no valid categories from: %r, using defaults", raw)

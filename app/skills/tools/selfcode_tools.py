@@ -474,7 +474,7 @@ def register(
 
             lines = text.splitlines()
             total_lines = len(lines)
-            items: list[str] = []
+            items: list[tuple[int, str]] = []
 
             if target.suffix == ".py":
                 try:
