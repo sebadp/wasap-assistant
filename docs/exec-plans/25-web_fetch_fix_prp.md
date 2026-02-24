@@ -8,6 +8,7 @@ This plan outlines the execution steps for resolving the issue where the agent f
   2. The LLM preemptively refused to use tools for common domains.
   3. **New finding**: The `mcp-server-fetch` has a hardcoded default `max_length=5000`. When fetching full HTML, 5000 characters is mostly `<head>` boilerplate.
   4. **Latencies**: `wasap-assistant` summarization (`compaction.py`) kicks in at 4000 chars. Processing 5000 chars of garbage HTML took the local LLM ~2 minutes just to summarize nothing.
+  5. **Environment Overrides**: The `docker-compose.yml` and `.env` files hardcoded `SYSTEM_PROMPT`, causing the Docker container to silently ignore all prompt-engineering fixes made in `app/config.py`.
   
 - **Design Decisions**:
   1. **Regex Pattern Fast-Path**: Specialized fast-path in `classify_intent` for URLs to enforce the `fetch` category.
@@ -32,3 +33,6 @@ This plan outlines the execution steps for resolving the issue where the agent f
 - [x] Run `make check` to ensure no linting/typing regressions.
 - [x] Document the updated behavior in `docs/features/22-web_browsing.md` (or similar feature file).
 - [x] Update `docs/features/README.md` and check off tasks in this document to complete the 5-step documentation protocol.
+
+## Phase 5: Docker Configuration Fix
+- [x] Remove the `SYSTEM_PROMPT` override from `docker-compose.yml` and `.env` to ensure `pydantic` loads the enhanced system instructions from `app/config.py`.
