@@ -17,6 +17,7 @@ dependencies = [
     "sqlite-vec>=0.1.6",
     "watchdog>=4.0",
     "langdetect>=1.0.9",
+    "langfuse>=2.0.0",
 ]
 
 [project.optional-dependencies]

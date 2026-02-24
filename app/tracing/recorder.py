@@ -7,7 +7,7 @@ from typing import Any
 
 from langfuse import Langfuse
 
-from app.config import get_settings
+from app.config import Settings
 
 logger = logging.getLogger(__name__)
 
@@ -20,7 +20,7 @@ class TraceRecorder:
 
     def __init__(self, repository) -> None:
         self._repo = repository
-        settings = get_settings()
+        settings = Settings()
         
         self.langfuse: Langfuse | None = None
         if settings.langfuse_public_key and settings.langfuse_secret_key:
