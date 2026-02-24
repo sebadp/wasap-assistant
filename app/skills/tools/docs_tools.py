@@ -99,79 +99,79 @@ async def update_agent_docs(agent_capability_description: str) -> str:
 
 def register(registry) -> None:
     """Register documentation management tools with the skill registry."""
-    registry.register_tools(
+    registry.register_tool(
+        name="create_feature_docs",
+        description=(
+            "Creates the mandatory feature walkthrough and manual testing guide "
+            "using standard templates, and appends them to their respective indices."
+        ),
+        parameters={
+            "type": "object",
+            "properties": {
+                "feature_id": {
+                    "type": "string",
+                    "description": "Chronological ID and name (e.g. '24-observability').",
+                },
+                "feature_title": {
+                    "type": "string",
+                    "description": "Human-readable title (e.g. 'Observability & Tracing').",
+                },
+                "walkthrough_content": {
+                    "type": "string",
+                    "description": "The markdown content detailing What, How, Decisions, and Gotchas.",
+                },
+                "testing_content": {
+                    "type": "string",
+                    "description": "The markdown content detailing the manual test cases and verification steps.",
+                },
+            },
+            "required": [
+                "feature_id",
+                "feature_title",
+                "walkthrough_content",
+                "testing_content",
+            ],
+        },
+        handler=create_feature_docs,
         skill_name="docs",
-        tool_definitions=[
-            ToolDefinition(
-                name="create_feature_docs",
-                description=(
-                    "Creates the mandatory feature walkthrough and manual testing guide "
-                    "using standard templates, and appends them to their respective indices."
-                ),
-                parameters={
-                    "type": "object",
-                    "properties": {
-                        "feature_id": {
-                            "type": "string",
-                            "description": "Chronological ID and name (e.g. '24-observability').",
-                        },
-                        "feature_title": {
-                            "type": "string",
-                            "description": "Human-readable title (e.g. 'Observability & Tracing').",
-                        },
-                        "walkthrough_content": {
-                            "type": "string",
-                            "description": "The markdown content detailing What, How, Decisions, and Gotchas.",
-                        },
-                        "testing_content": {
-                            "type": "string",
-                            "description": "The markdown content detailing the manual test cases and verification steps.",
-                        },
-                    },
-                    "required": [
-                        "feature_id",
-                        "feature_title",
-                        "walkthrough_content",
-                        "testing_content",
-                    ],
-                },
-                handler=create_feature_docs,
-            ),
-            ToolDefinition(
-                name="update_architecture_rules",
-                description=(
-                    "Appends a new architectural rule, pattern, or constraint to CLAUDE.md "
-                    "so future agents respect the design decision."
-                ),
-                parameters={
-                    "type": "object",
-                    "properties": {
-                        "rule_description": {
-                            "type": "string",
-                            "description": "A concise (1-3 sentences) markdown bullet point explaining the pattern and the files involved.",
-                        }
-                    },
-                    "required": ["rule_description"],
-                },
-                handler=update_architecture_rules,
-            ),
-            ToolDefinition(
-                name="update_agent_docs",
-                description=(
-                    "Appends information about a newly added Skill, Command, or MCP Server "
-                    "into AGENTS.md so future agents know of its existence."
-                ),
-                parameters={
-                    "type": "object",
-                    "properties": {
-                        "agent_capability_description": {
-                            "type": "string",
-                            "description": "A bullet point detailing the new capability (Name, Description, Path).",
-                        }
-                    },
-                    "required": ["agent_capability_description"],
-                },
-                handler=update_agent_docs,
-            ),
-        ],
+    )
+
+    registry.register_tool(
+        name="update_architecture_rules",
+        description=(
+            "Appends a new architectural rule, pattern, or constraint to CLAUDE.md "
+            "so future agents respect the design decision."
+        ),
+        parameters={
+            "type": "object",
+            "properties": {
+                "rule_description": {
+                    "type": "string",
+                    "description": "A concise (1-3 sentences) markdown bullet point explaining the pattern and the files involved.",
+                }
+            },
+            "required": ["rule_description"],
+        },
+        handler=update_architecture_rules,
+        skill_name="docs",
+    )
+
+    registry.register_tool(
+        name="update_agent_docs",
+        description=(
+            "Appends information about a newly added Skill, Command, or MCP Server "
+            "into AGENTS.md so future agents know of its existence."
+        ),
+        parameters={
+            "type": "object",
+            "properties": {
+                "agent_capability_description": {
+                    "type": "string",
+                    "description": "A bullet point detailing the new capability (Name, Description, Path).",
+                }
+            },
+            "required": ["agent_capability_description"],
+        },
+        handler=update_agent_docs,
+        skill_name="docs",
     )
