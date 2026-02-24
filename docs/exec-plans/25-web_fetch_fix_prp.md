@@ -17,7 +17,7 @@ This plan outlines the execution steps for resolving the issue where the agent f
 ## Phase 1: Classification Regex Fast-Path
 - [x] Modify `app/skills/router.py` to add a regex matching logic for HTTP/HTTPS URLs at the beginning of `classify_intent()`.
 - [x] If a valid URL is detected as the primary intent, ensure `["fetch"]` is included in the categories list (or returned outright to save LLM tokens).
-- [ ] Add unit tests in `tests/` to verify that `classify_intent` effectively catches URLs and forces the `fetch` category routing.
+- [x] Add unit tests in `tests/` to verify that `classify_intent` effectively catches URLs and forces the `fetch` category routing.
 
 ## Phase 2: Execution Prompting & Instructions
 - [x] Update `app/config.py` `system_prompt` defaults to include explicit tool directives: *"When the user provides a URL and you have fetch tools available, you MUST ALWAYS attempt to use them to read the URL before responding. Do NOT assume a page is private, requires login, or is inaccessible without trying the tool first."*
