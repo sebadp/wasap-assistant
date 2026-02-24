@@ -30,17 +30,19 @@ _policy_engine: PolicyEngine | None = None
 _audit_trail: AuditTrail | None = None
 
 
-def get_policy_engine() -> PolicyEngine:
+async def get_policy_engine() -> PolicyEngine:
     global _policy_engine
     if _policy_engine is None:
-        _policy_engine = PolicyEngine(Path("data/security_policies.yaml"))
+        loop = asyncio.get_running_loop()
+        _policy_engine = await loop.run_in_executor(None, lambda: PolicyEngine(Path("data/security_policies.yaml")))
     return _policy_engine
 
 
-def get_audit_trail() -> AuditTrail:
+async def get_audit_trail() -> AuditTrail:
     global _audit_trail
     if _audit_trail is None:
-        _audit_trail = AuditTrail(Path("data/audit_trail.jsonl"))
+        loop = asyncio.get_running_loop()
+        _audit_trail = await loop.run_in_executor(None, lambda: AuditTrail(Path("data/audit_trail.jsonl")))
     return _audit_trail
 
 
@@ -98,37 +100,49 @@ async def _run_tool_call(
     # Lazy-load skill instructions on first use (only for local skills)
     instructions = skill_registry.get_skill_instructions(tool_name)
 
-    policy = get_policy_engine()
-    audit = get_audit_trail()
+    policy = await get_policy_engine()
+    audit = await get_audit_trail()
+
+    loop = asyncio.get_running_loop()
 
     decision = policy.evaluate(tool_name, arguments)
 
     if decision.is_blocked:
-        audit.record(tool_name, arguments, "block", decision.reason, "blocked_by_policy")
+        await loop.run_in_executor(
+            None, lambda: audit.record(tool_name, arguments, "block", decision.reason, "blocked_by_policy")
+        )
         error_msg = f"Security Policy Blocked execution: {decision.reason}"
         logger.warning(f"Blocked tool {tool_name}: {decision.reason}")
         return ChatMessage(role="tool", content=error_msg)
 
     if decision.requires_flag:
         if hitl_callback:
-            audit.record(tool_name, arguments, "flag", decision.reason, "pending_hitl_approval")
+            await loop.run_in_executor(
+                None, lambda: audit.record(tool_name, arguments, "flag", decision.reason, "pending_hitl_approval")
+            )
             logger.warning(f"Tool {tool_name} flagged for HITL approval: {decision.reason}")
             try:
                 approved = await hitl_callback(tool_name, arguments, decision.reason or "")
                 if not approved:
-                    audit.record(
-                        tool_name, arguments, "blocked_via_hitl", decision.reason, "denied_by_user"
+                    await loop.run_in_executor(
+                        None, lambda: audit.record(
+                            tool_name, arguments, "blocked_via_hitl", decision.reason, "denied_by_user"
+                        )
                     )
                     return ChatMessage(
                         role="tool", content="Security Policy BLOCK: Execution denied by user."
                     )
-                audit.record(
-                    tool_name, arguments, "allowed_via_hitl", decision.reason, "approved_by_user"
+                await loop.run_in_executor(
+                    None, lambda: audit.record(
+                        tool_name, arguments, "allowed_via_hitl", decision.reason, "approved_by_user"
+                    )
                 )
             except Exception as e:
                 return ChatMessage(role="tool", content=f"HITL error: {e}")
         else:
-            audit.record(tool_name, arguments, "block", decision.reason, "no_hitl_available")
+            await loop.run_in_executor(
+                None, lambda: audit.record(tool_name, arguments, "block", decision.reason, "no_hitl_available")
+            )
             return ChatMessage(
                 role="tool", content="Security Policy BLOCK: Flagged but no HITL provided."
             )
@@ -151,7 +165,9 @@ async def _run_tool_call(
             result = await skill_registry.execute_tool(tool_call)
 
     # Record allowed execution in audit log
-    audit.record(tool_name, arguments, "allow", decision.reason, result.content[:200])
+    await loop.run_in_executor(
+        None, lambda: audit.record(tool_name, arguments, "allow", decision.reason, result.content[:200])
+    )
 
     logger.debug("Tool Execution RAW PAYLOAD send to %s: %s", tool_name, arguments)
     logger.debug("Tool Execution RAW OUPUT from %s: %r", tool_name, result.content)
