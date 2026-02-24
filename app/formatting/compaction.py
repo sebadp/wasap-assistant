@@ -124,13 +124,17 @@ async def compact_tool_output(
     text: str,
     user_request: str,
     ollama_client: OllamaClient,
-    max_length: int = 4000,
+    max_length: int | None = None,
 ) -> str:
     """Implement intelligent summarization for tool outputs that exceed max_length.
 
     Tries JSON-aware extraction first (deterministic, no hallucination risk),
     then falls back to LLM summarization, then to hard truncation.
     """
+    if max_length is None:
+        from app.config import Settings
+        max_length = Settings().compaction_threshold  # type: ignore[call-arg]
+
     if len(text) <= max_length:
         return text
 

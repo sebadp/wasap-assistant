@@ -29,13 +29,16 @@ class Settings(BaseSettings):
         "detailed when asked for long or thorough answers. "
         "CRITICAL: When the user provides a URL and you have fetch tools available, you MUST ALWAYS "
         "attempt to use them to read the URL before responding. Do NOT assume a page is private, "
-        "requires login, or is inaccessible without trying the tool first."
+        "requires login, or is inaccessible without trying the tool first. Strongly prefer `fetch_markdown` "
+        "or `fetch_txt` over `fetch_html` as HTML has too much noise. ALWAYS pass `max_length=40000` "
+        "to ensure you see the full content."
     )
     conversation_max_messages: int = 20
 
     # Database
     database_path: str = "data/wasap.db"
     summary_threshold: int = 40
+    compaction_threshold: int = 20000
 
     # ngrok (only used in docker-compose, not by the app itself)
     ngrok_authtoken: str = ""

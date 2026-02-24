@@ -43,7 +43,8 @@ El flujo prioriza la confiabilidad, combinando una validación determinista por 
 | Archivo | Rol |
 |---|---|
 | `app/skills/router.py` | Implementa el `Fast-Path` usando Regex (`re.compile(r"https?://...")`) para inyectar obligatoriamente la categoría `fetch` si hay URL. |
-| `app/config.py` | Contiene el `system_prompt` modificado con una directiva CRÍTICA que previene que el LLM rechace la consulta por sesgos de RLHF. |
+| `app/config.py` | Contiene el `system_prompt` modificado con directivas de selección de herramientas (`fetch_markdown`, `max_length=40000`) y el `compaction_threshold`. |
+| `app/formatting/compaction.py` | Implementa los umbrales dinámicos (`Settings().compaction_threshold`) para evitar el cuello de botella previo con resúmenes innecesarios de HTML por el LLM local. |
 | `data/mcp_servers.json` | Proveedor oficial de la capability de navegación, usando `@modelcontextprotocol/server-puppeteer`. |
 
 ---
@@ -69,7 +70,7 @@ El flujo prioriza la confiabilidad, combinando una validación determinista por 
 | Decisión | Alternativa descartada | Motivo |
 |---|---|---|
 | Mapeo por Regex de URLs pre-LLM | Depender exclusivamente del LLM para clasificar URLs como `fetch` | Los LLMs livianos (Qwen3:8b) a veces agrupan URLs en `news` o `files` por el layout de la request ("share.google..."), lo que causa que la tool correcta nunca llegue a contexto. |
-| Forzar intento mediante System Prompt | Esperar a que el usuario se lo pida explícitamente u omitir URLs complejas | El RLHF comercial hace que los LLMs sean evasivos con links de Meta, LinkedIn o Drive. Obligarlo por prompt es la única forma consistente de activar la tool, superponiéndose a las pesadas capas de seguridad base del modelo cognitivo. |
+| Preferir `fetch_markdown` con `max_length` y aumentar `compaction_threshold` | Dejar que el LLM decida cómo usar `fetch_html` | El servidor MCP provee una trunca por default de 5000 chars que rompe las páginas complejas, y el HTML sucio forzaba a la app a usar el modelo local para compactarlo estresando el Event Loop. |
 
 ---
 
