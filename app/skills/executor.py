@@ -93,6 +93,8 @@ async def _run_tool_call(
         else:
             result = await skill_registry.execute_tool(tool_call)
 
+    logger.debug("Tool Execution RAW PAYLOAD send to %s: %s", tool_name, arguments)
+    logger.debug("Tool Execution RAW OUPUT from %s: %r", tool_name, result.content)
     logger.info("Tool %s -> %s", tool_name, result.content[:100])
 
     final_content = result.content

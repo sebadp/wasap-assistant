@@ -370,7 +370,10 @@ async def cmd_feedback(args: str, context: CommandContext) -> str:
         except (ValueError, Exception):
             pass  # keep default 0.5
 
-    await context.repository.save_trace_score(
+    from app.tracing.recorder import TraceRecorder
+
+    recorder = TraceRecorder(context.repository)
+    await recorder.add_score(
         trace_id=trace_id,
         name="human_feedback",
         value=sentiment_value,
@@ -393,7 +396,10 @@ async def cmd_rate(args: str, context: CommandContext) -> str:
     if not trace_id:
         return "No encontré una interacción reciente para evaluar."
 
-    await context.repository.save_trace_score(
+    from app.tracing.recorder import TraceRecorder
+
+    recorder = TraceRecorder(context.repository)
+    await recorder.add_score(
         trace_id=trace_id,
         name="human_rating",
         value=score / 5.0,

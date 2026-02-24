@@ -89,6 +89,9 @@ class Settings(BaseSettings):
     tracing_enabled: bool = True
     tracing_sample_rate: float = 1.0  # 1.0 = trace everything
     trace_retention_days: int = 90
+    langfuse_public_key: str | None = None
+    langfuse_secret_key: str | None = None
+    langfuse_host: str = "http://localhost:3000"
 
     # Evaluation (Fase 3+)
     eval_auto_curate: bool = True

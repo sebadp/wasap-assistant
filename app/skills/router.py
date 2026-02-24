@@ -168,8 +168,10 @@ async def classify_intent(
     messages = [ChatMessage(role="user", content=prompt)]
 
     try:
+        logger.debug("Intent Classifier FULL PROMPT:\n%s", prompt)
         response = await ollama_client.chat_with_tools(messages, tools=None, think=False)
         raw = response.content.strip().lower()
+        logger.debug("Intent Classifier RAW OUTPUT: %r", raw)
 
         if raw == "none":
             # Sticky fallback: if the user is continuing a tool-heavy conversation

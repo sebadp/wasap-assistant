@@ -661,6 +661,7 @@ async def _handle_message(
                 ),
             ]
             description = await ollama_client.chat(vision_messages, model=settings.vision_model)
+            logger.debug("Vision (LLaVA) RAW OUTPUT: %r", description)
             logger.info("Vision description [%s]: %s", msg.from_number, description[:120])
 
             if in_onboarding:
