@@ -95,7 +95,7 @@ Para features complejas (>3 archivos afectados), crear primero:
 docs/exec-plans/<feature>.md
 ```
 
-El exec plan contiene: objetivo, archivos a modificar, schema de datos si aplica, orden de implementación. Ver `docs/exec-plans/eval_implementation_plan.md` como ejemplo.
+El exec plan contiene: objetivo, archivos a modificar, schema de datos si aplica, orden de implementación. Ver `docs/exec-plans/11-eval_implementation_plan.md` como ejemplo.
 
 ---
 
@@ -158,7 +158,7 @@ El `SKILL.md` define la "personalidad" del skill: cuándo usarlo, cómo responde
 
 ### Eval — Arquitectura de Evaluación y Mejora Continua
 
-Plan completo: `docs/exec-plans/eval_implementation_plan.md`
+Plan completo: `docs/exec-plans/11-eval_implementation_plan.md`
 
 | Iteración | Estado | Descripción |
 |---|---|---|
@@ -170,7 +170,7 @@ Plan completo: `docs/exec-plans/eval_implementation_plan.md`
 | 5 | ✅ | Auto-evolución: memorias de auto-corrección + prompt versioning + `/approve-prompt` |
 | 6 | ✅ | LLM guardrails, span instrumentation de tools, cleanup job, dashboard queries |
 
-Docs: `docs/features/eval_guardrails_tracing.md`, `docs/features/eval_user_signals.md`, `docs/features/eval_dataset.md`, `docs/features/eval_skill.md`, `docs/features/eval_auto_evolution.md`, `docs/features/eval_maduración.md`
+Docs: `docs/features/12-eval_guardrails_tracing.md`, `docs/features/14-eval_user_signals.md`, `docs/features/13-eval_dataset.md`, `docs/features/16-eval_skill.md`, `docs/features/15-eval_auto_evolution.md`, `docs/features/17-eval_maduracion.md`
 
 ---
 

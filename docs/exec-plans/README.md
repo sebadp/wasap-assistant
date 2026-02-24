@@ -6,14 +6,14 @@ Documentos técnicos que bajan una intención de producto a cambios concretos en
 
 | Plan | Archivo | Estado |
 |---|---|---|
-| Arquitectura de Evaluación y Mejora Continua | [`eval_implementation_plan.md`](eval_implementation_plan.md) | 📋 Pendiente |
-| Sesiones Agénticas (Agent Mode) | [`agentic_sessions_plan.md`](agentic_sessions_plan.md) | ✅ Completado |
-| Context Engineering | [`context_engineering_plan.md`](context_engineering_plan.md) | ✅ Completado |
-| Claude Code Experience | [`claude_code_experience.md`](claude_code_experience.md) | 📋 Evaluación |
-| OpenClaw Experience | [`openclaw_experience.md`](openclaw_experience.md) | 📋 Evaluación |
-| **Autonomous Agent Experience** | [`autonomous_agent_plan.md`](autonomous_agent_plan.md) | **✅ Sprint 1 done** |
-| Autonomous Agent Sprint 2 | [`autonomous_agent_sprint2_plan.md`](autonomous_agent_sprint2_plan.md) | **✅ Completado** |
-| Autonomous Agent Sprint 3 | [`autonomous_agent_sprint3_plan.md`](autonomous_agent_sprint3_plan.md) | **📋 Pendiente** |
+| Arquitectura de Evaluación y Mejora Continua | [`11-eval_implementation_plan.md`](11-eval_implementation_plan.md) | 📋 Pendiente |
+| Sesiones Agénticas (Agent Mode) | [`18-agentic_sessions_plan.md`](18-agentic_sessions_plan.md) | ✅ Completado |
+| Context Engineering | [`08-context_engineering_plan.md`](08-context_engineering_plan.md) | ✅ Completado |
+| Claude Code Experience | [`EX-claude_code_experience.md`](EX-claude_code_experience.md) | 📋 Evaluación |
+| OpenClaw Experience | [`EX-openclaw_experience.md`](EX-openclaw_experience.md) | 📋 Evaluación |
+| **Autonomous Agent Experience** | [`19-autonomous_agent_plan.md`](19-autonomous_agent_plan.md) | **✅ Sprint 1 done** |
+| Autonomous Agent Sprint 2 | [`20-autonomous_agent_sprint2_plan.md`](20-autonomous_agent_sprint2_plan.md) | **✅ Completado** |
+| Autonomous Agent Sprint 3 | [`21-autonomous_agent_sprint3_plan.md`](21-autonomous_agent_sprint3_plan.md) | **📋 Pendiente** |
 
 ## Convenciones
 
