@@ -2,8 +2,6 @@ services:
   wasap:
     build: .
     env_file: .env
-    environment:
-      - "SYSTEM_PROMPT=You are a helpful personal assistant on WhatsApp. Answer in the same language the user writes in. You have access to tools to find information (search, weather, etc.). If a tool returns information, USE IT to answer the user request immediately. Do not ask for confirmation if you already have the results."
     volumes:
       - ./data:/app/data
       - ./app:/app/app
