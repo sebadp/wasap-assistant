@@ -3,17 +3,17 @@
 Global Antigravity rules define how Agent behaves across all your workspaces. Use this file to provide specific context and set specific guidelines for Agent.
 
 ## Documentation Protocol (CRITICAL)
-1. You MUST read [CLAUDE.md](cci:7://file:///Users/sebastiandavila/wasap/wasap-assistant/CLAUDE.md:0:0-0:0) and [PRODUCT_PLAN.md](cci:7://file:///Users/sebastiandavila/wasap/wasap-assistant/PRODUCT_PLAN.md:0:0-0:0) at the start of any new implementation or task to understand the architecture constraints and project roadmap.
+1. You MUST read `CLAUDE.md` and `PRODUCT_PLAN.md` at the start of any new implementation or task to understand the architecture constraints and project roadmap.
 2. We follow a strict PRD (Product Requirements Document) and PRP (Product Requirements Plan) workflow to avoid context loss in long sessions:
    - **PRD**: One document per project/feature defining the "What" and "Why" and constraints. This is the immutable reference.
    - **PRP**: Lives in `docs/exec-plans/<name>_prp.md`. Defines the "How" (files, phases, dependencies). **CRITICAL**: Every single task in the PRP must have a Markdown checkbox `[ ]`.
 3. During execution, you must act phase by phase. As you complete each task, you MUST check the box `[x]` in the PRP directly.
 4. If there is any ambiguity or something doesn't fit the system during execution, STOP and ask me before making a decision.
-5. Whenever you finish implementing a feature entirely, follow the final 5-step Protocol defined in [CLAUDE.md](cci:7://file:///Users/sebastiandavila/wasap/wasap-assistant/CLAUDE.md:0:0-0:0):
-   - Document the feature using [docs/features/TEMPLATE.md](cci:7://file:///Users/sebastiandavila/wasap/wasap-assistant/docs/features/TEMPLATE.md:0:0-0:0) and save it to `docs/features/<name>.md`.
-   - Document the manual testing protocol using [docs/testing/TEMPLATE.md](cci:7://file:///Users/sebastiandavila/wasap/wasap-assistant/docs/testing/TEMPLATE.md:0:0-0:0) and save it to `docs/testing/<name>_testing.md`.
-   - Update [docs/features/README.md](cci:7://file:///Users/sebastiandavila/wasap/wasap-assistant/docs/features/README.md:0:0-0:0) and [docs/testing/README.md](cci:7://file:///Users/sebastiandavila/wasap/wasap-assistant/docs/testing/README.md:0:0-0:0) to append the new documentation links to the indices.
-   - Update [CLAUDE.md](cci:7://file:///Users/sebastiandavila/wasap/wasap-assistant/CLAUDE.md:0:0-0:0) if the new feature introduces a new architectural pattern or rule.
+5. Whenever you finish implementing a feature entirely, follow the final 5-step Protocol:
+   - Document the feature using `docs/features/TEMPLATE.md` and save it to `docs/features/<name>.md`.
+   - Document the manual testing protocol using `docs/testing/TEMPLATE.md` and save it to `docs/testing/<name>_testing.md`.
+   - Update `docs/features/README.md` and `docs/testing/README.md` to append the new documentation links to the indices.
+   - Update `CLAUDE.md` if the new feature introduces a new architectural pattern or rule.
    - Update `AGENTS.md` if you add a new skill, MCP server, or slash command.
 
 ## Tech Stack & Code Quality
@@ -25,5 +25,5 @@ Global Antigravity rules define how Agent behaves across all your workspaces. Us
 
 ## Architecture Constraints
 1. Do not use Baileys or unofficial WhatsApp libraries; rely exclusively on Meta's WhatsApp Cloud API.
-2. For persistence, rely on SQLite in WAL mode with `aiosqlite`, and `sqlite-vec` for embeddings. Avoid hardcoded SQL where possible but stick to basic parameterization [(?)](cci:1://file:///Users/sebastiandavila/wasap/wasap-assistant/app/tracing/context.py:103:4-128:13) to prevent SQL Injection.
+2. For persistence, rely on SQLite in WAL mode with `aiosqlite`, and `sqlite-vec` for embeddings. Avoid hardcoded SQL where possible but stick to basic parameterization `(?)` to prevent SQL Injection.
 3. Be mindful of the Event Loop: any blocking operations (like file system writes or API requests) must be handled asynchronously, or offloaded via `asyncio.to_thread()` or `run_in_executor()`.

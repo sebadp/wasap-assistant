@@ -73,6 +73,8 @@ class McpManager:
         self._server_descriptions: dict[str, str] = {}
         # Keep raw server configs for save/reload
         self._server_configs: dict[str, dict] = {}
+        # Tracks which web-fetching backend is active: "puppeteer" | "mcp-fetch" | "unavailable"
+        self._fetch_mode: str = "unavailable"
 
     async def initialize(self) -> None:
         """Load config and connect to all enabled servers."""
@@ -105,11 +107,15 @@ class McpManager:
         # Invalidate cache once after all servers are loaded
         self._invalidate_tools_cache()
 
+        # Register the "fetch" dynamic category so URL fast-path routes to real tools
+        self._register_fetch_category()
+
         if self._tools:
             logger.info(
-                "MCP initialized: %d server(s), %d tool(s)",
+                "MCP initialized: %d server(s), %d tool(s), fetch_mode=%s",
                 len(self._sessions),
                 len(self._tools),
+                self._fetch_mode,
             )
         else:
             logger.info("MCP initialized: no tools loaded")
@@ -224,6 +230,7 @@ class McpManager:
         new_tools = len(self._tools) - tools_before
         self._invalidate_tools_cache()
         self._update_dynamic_categories(name)
+        self._register_fetch_category()
         self._persist_config()
 
         return f"Connected '{name}': {new_tools} new tool(s) available."
@@ -294,9 +301,55 @@ class McpManager:
 
         return result
 
+    def get_fetch_mode(self) -> str:
+        """Return the active web-fetch backend: 'puppeteer', 'mcp-fetch', or 'unavailable'."""
+        return self._fetch_mode
+
     # ------------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------------
+
+    def _register_fetch_category(self) -> None:
+        """Detect available fetch tools and register them under the 'fetch' router category.
+
+        Priority: Puppeteer (full JS rendering) > mcp-fetch (plain HTTP) > unavailable.
+        This ensures the URL fast-path in classify_intent() routes to real tools.
+        """
+        from app.skills.router import register_dynamic_category
+
+        # Puppeteer tools that are useful for URL fetching (primary)
+        _PUPPETEER_FETCH_TOOLS = {
+            "puppeteer_navigate",
+            "puppeteer_screenshot",
+            "puppeteer_evaluate",
+            "puppeteer_click",
+        }
+        puppeteer_tools = [
+            name
+            for name, tool in self._tools.items()
+            if tool.skill_name == "mcp::puppeteer" and name in _PUPPETEER_FETCH_TOOLS
+        ]
+
+        # mcp-fetch tools (fallback, plain HTTP)
+        mcp_fetch_tools = [
+            name
+            for name, tool in self._tools.items()
+            if tool.skill_name == "mcp::mcp-fetch"
+        ]
+
+        if puppeteer_tools:
+            register_dynamic_category("fetch", puppeteer_tools)
+            self._fetch_mode = "puppeteer"
+            logger.info("Fetch mode: puppeteer (tools: %s)", puppeteer_tools)
+        elif mcp_fetch_tools:
+            register_dynamic_category("fetch", mcp_fetch_tools)
+            self._fetch_mode = "mcp-fetch"
+            logger.warning(
+                "Fetch mode: mcp-fetch (Puppeteer unavailable — using plain HTTP fallback for URL requests)"
+            )
+        else:
+            self._fetch_mode = "unavailable"
+            logger.error("Fetch mode: unavailable — no web browsing tools connected")
 
     def _persist_config(self) -> None:
         """Write current server configs back to disk."""

@@ -44,7 +44,7 @@ class _MemoryFileHandler(FileSystemEventHandler):
     def _is_target(self, event: FileSystemEvent) -> bool:
         if event.is_directory:
             return False
-        
+
         # event.src_path can be bytes or str, handle safely
         src_path = os.fsdecode(event.src_path)
         target_name = Path(self._watcher._memory_file._path).name

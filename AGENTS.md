@@ -39,6 +39,8 @@ Antes de modificar un módulo, identificar su dominio. Las reglas de un dominio 
 | LLM client | `app/llm/client.py` | `think: True` incompatible con tools en qwen3 |
 | Guardrails | `app/guardrails/` | Fail-open, single-shot remediation, langdetect umbral 30 chars |
 | Trazabilidad | `app/tracing/` | contextvars propagation, best-effort recorder |
+| Modo agéntico | `app/agent/` | loop.py, models.py, hitl.py, task_memory.py, persistence.py |
+| Seguridad agéntica | `app/security/` | policy_engine.py (YAML regex), audit.py (hash chain SHA-256) |
 
 ---
 
@@ -115,8 +117,13 @@ Los skills son la **unidad de extensión del sistema**. Mantienen el scope de lo
 | `search` | Búsqueda web (DuckDuckGo) | `web_search` |
 | `news` | Noticias con preferencias guardadas | `search_news`, `add_news_preference` |
 | `scheduler` | Recordatorios vía APScheduler | `schedule_reminder`, `list_reminders` |
-| `selfcode` | Auto-inspección del sistema | `get_version_info`, `get_runtime_config`, `search_source_code` |
+| `selfcode` | Auto-inspección del sistema | `get_version_info`, `get_runtime_config`, `search_source_code`, `get_file_outline`, `read_lines`, `write_source_file`, `apply_patch`, `preview_patch` |
 | `expand` | Auto-expansión: MCP + skills dinámicos | `search_mcp_registry`, `install_mcp_server`, `install_skill_from_url` |
+| `shell` | Ejecución de comandos (gated por `AGENT_WRITE_ENABLED`) | `run_command`, `manage_process` |
+| `workspace` | Multi-project workspace navigation | `list_workspaces`, `switch_workspace`, `get_workspace_info` |
+| `docs` | Documentación de features y arquitectura | `create_feature_docs`, `update_architecture_rules`, `update_agent_docs` |
+| `eval` | Evaluación y mejora continua del sistema | `get_eval_summary`, `list_recent_failures`, `diagnose_trace`, ... |
+| `conversation` | Acceso al historial reciente | `get_recent_messages` |
 
 ### 5.2 Cuándo crear un nuevo skill
 

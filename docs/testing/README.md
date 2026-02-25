@@ -27,6 +27,9 @@ Cada archivo en este directorio cubre el testing manual de una feature específi
 | Web Browsing & URL Fetching | [`22-web_browsing_testing.md`](22-web_browsing_testing.md) |
 | Observability & Tracing Profundo | [`24-observability_testing.md`](24-observability_testing.md) |
 | Agentic Security Layer | [`23-agentic_security_testing.md`](23-agentic_security_testing.md) |
+| Autonomous Agent Sprint 2 | [`20-autonomous_agent_sprint2_testing.md`](20-autonomous_agent_sprint2_testing.md) |
+| Autonomous Agent Sprint 3 | [`21-autonomous_agent_sprint3_testing.md`](21-autonomous_agent_sprint3_testing.md) |
+| Web Fetch Fix — Puppeteer-first + mcp-fetch fallback | [`25-web_fetch_fix_testing.md`](25-web_fetch_fix_testing.md) |
 
 ## Convenciones
 

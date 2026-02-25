@@ -4,6 +4,23 @@
 > **Módulo:** Agentic Sessions
 > **Objetivo:** Extender el agente autónomo con capacidades avanzadas: cron jobs persistentes definidos por el usuario, carga inteligente de contexto para archivos grandes, y soporte multi-proyecto para trabajar en más de un codebase.
 
+
+---
+
+## Estado de Implementación
+
+- [x] F8: Tabla `user_cron_jobs` agregada al SCHEMA en app/database/db.py
+- [x] F8: Repository methods: save_cron_job, list_cron_jobs, delete_cron_job, get_all_active_crons
+- [x] F8: scheduler_tools.py — create_cron, list_crons, delete_cron con APScheduler
+- [x] F8: Cron jobs re-cargados desde SQLite en startup (main.py lifespan)
+- [x] F9: get_file_outline en selfcode_tools.py — AST-based para .py, regex para otros
+- [x] F9: read_lines en selfcode_tools.py — lectura de rangos de líneas con offsets
+- [x] F10: app/skills/tools/workspace_tools.py — list_workspaces, switch_workspace, get_workspace_info
+- [x] F10: _PROJECT_ROOT dinámico en selfcode_tools.py (module-level var actualizable)
+- [x] F10: workspaces_dir configurable en app/config.py
+
+---
+
 ## Descripción General
 
 Sprint 1 estableció la autonomía core (shell, loops, prompts). Sprint 2 añadió la UX premium (diffs, PRs, persistencia, bootstrap). **Sprint 3** cierra el ciclo convirtiendo al agente en una herramienta de productividad completa con 3 features:

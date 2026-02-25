@@ -164,6 +164,43 @@ async def _run_tool_call(
         else:
             result = await skill_registry.execute_tool(tool_call)
 
+    # Runtime fallback: if a Puppeteer tool fails, retry with mcp-fetch (plain HTTP)
+    if (
+        not result.success
+        and tool_name.startswith("puppeteer_")
+        and mcp_manager is not None
+    ):
+        mcp_fetch_tools = {
+            name
+            for name, tool in mcp_manager.get_tools().items()
+            if tool.skill_name == "mcp::mcp-fetch"
+        }
+        if mcp_fetch_tools:
+            url = arguments.get("url") or arguments.get("name") or arguments.get("input", "")
+            if url:
+                fallback_name = next(
+                    (t for t in ("fetch_markdown", "fetch", "fetch_txt") if t in mcp_fetch_tools),
+                    None,
+                )
+                if fallback_name:
+                    logger.warning(
+                        "Puppeteer tool %s failed, retrying with mcp-fetch fallback (%s)",
+                        tool_name,
+                        fallback_name,
+                    )
+                    from app.skills.models import ToolCall as _ToolCall
+
+                    fallback_call = _ToolCall(name=fallback_name, arguments={"url": url})
+                    fallback_result = await mcp_manager.execute_tool(fallback_call)
+                    prefix = "[⚠️ Fallback a mcp-fetch — Puppeteer no respondió]\n"
+                    from app.skills.models import ToolResult as _ToolResult
+
+                    result = _ToolResult(
+                        tool_name=fallback_name,
+                        content=prefix + fallback_result.content,
+                        success=fallback_result.success,
+                    )
+
     # Record allowed execution in audit log
     await loop.run_in_executor(
         None, lambda: audit.record(tool_name, arguments, "allow", decision.reason, result.content[:200])

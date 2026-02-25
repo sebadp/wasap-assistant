@@ -7,6 +7,21 @@ Permitir que el agente WasAP visite y extraiga el contenido de cualquier hiperv�
 
 En su lugar, se implementará el soporte a través del **Model Context Protocol (MCP)** conectando un servidor de browser headless (Puppeteer o Playwright).
 
+
+---
+
+## Estado de Implementación
+
+- [x] Decisión de arquitectura: MCP + Browser headless (Puppeteer/Playwright) sobre HTTP llano
+- [x] Evaluación de mcp-server-puppeteer vs Firecrawl MCP — seleccionado approach MCP configurable
+- [x] skills/search/SKILL.md actualizado: instrucciones para usar tool MCP en lugar de alucinar contenido
+- [x] app/mcp/manager.py verificado: soporte HTTP transport para servidores MCP externos (Smithery)
+- [x] Integración fetch_markdown via MCP fetch server como fallback liviano sin browser headless
+- [x] Docker: node/npx disponible en container para mcp-server-puppeteer (si se configura)
+- [x] Documentado en CLAUDE.md: MCP HTTP transport detecta cfg["type"] para routing correcto
+
+---
+
 ## Archivos a modificar
 | Archivo | Cambio |
 |---|---|

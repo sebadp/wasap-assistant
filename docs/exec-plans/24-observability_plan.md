@@ -6,6 +6,29 @@ Mejorar la visibilidad interna del sistema WasAP permitiendo logs con nivel `DEB
 ## Contexto Actual
 Actualmente, WasAP recolecta trazas usando `contextvars` y un `TraceRecorder` que guarda datos serializados en SQLite (`data/wasap.db`). El logging está configurado vía `app/logging_config.py` y obedece a `LOG_LEVEL` en el `.env`, pero no tenemos una UI dedicada para analizar las métricas.
 
+
+---
+
+## Estado de Implementación
+
+### Logging (Cobertura DEBUG)
+- [x] app/skills/router.py: logger.debug() para input al clasificador de intenciones y decisión de categoría
+- [x] app/skills/executor.py: logger.debug() para payload crudo enviado a cada tool y salida cruda devuelta
+- [x] app/mcp/manager.py: logger.debug() para requests y respuestas crudas de servidores MCP
+- [x] app/webhook/router.py: logger.debug() para transiciones de fase (Phase A, B, C, D completadas)
+- [x] app/agent/loop.py: logger.debug() para transiciones de round y estado del agente
+- [x] Audio/Visión: logger.debug() para transcripción exacta de Whisper y respuesta literal de LLaVA
+
+### Langfuse + OpenTelemetry
+- [x] langfuse agregado a pyproject.toml como dependencia opcional
+- [x] app/tracing/recorder.py: TraceRecorder emite a SQLite Y Langfuse simultáneamente (best-effort)
+- [x] Atributos OTel GenAI: gen_ai.request.model, gen_ai.system, gen_ai.usage.input_tokens/output_tokens
+- [x] Scores de guardrails y feedback humano (/rate) vinculados al trace_id de Langfuse
+- [x] Jerarquía de spans: Session → Intent Classification → Agent Loop → LLM Generation → Tool Execution
+- [x] LANGFUSE_PUBLIC_KEY, LANGFUSE_SECRET_KEY, LANGFUSE_HOST en app/config.py (opt-in)
+
+---
+
 ## 1. Mejoras en Logging (Cobertura Profunda Nivel DEBUG)
 Actualmente el logging obedece a `LOG_LEVEL` en el `.env`, pero **faltan logs detallados** en las fronteras críticas de decisión del sistema.
 - **Acción requerida**: Intervenir los archivos core para volcar estado interno usando `logger.debug()`.

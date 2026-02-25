@@ -964,6 +964,21 @@ async def _handle_message(
             except Exception:
                 logger.warning("classify_intent task failed, executor will retry", exc_info=True)
 
+        # Fallback notification: if user sent a URL but Puppeteer is unavailable,
+        # inject a system note so the LLM can inform the user transparently.
+        _url_pattern = _re.compile(r"https?://(?:[-\w.]|(?:%[\da-fA-F]{2}))+")
+        _has_url_in_msg = bool(_url_pattern.search(user_text or ""))
+        _fetch_mode = mcp_manager.get_fetch_mode() if mcp_manager else "unavailable"
+        if _has_url_in_msg and _fetch_mode == "mcp-fetch":
+            logger.info("URL fetch request using mcp-fetch fallback (Puppeteer unavailable)")
+        _mcp_fetch_note: str | None = (
+            "NOTA DEL SISTEMA: Puppeteer no está disponible. "
+            "Estás usando fetch básico (sin renderizado JavaScript). "
+            "Informa brevemente al usuario de esto en tu respuesta."
+            if _has_url_in_msg and _fetch_mode == "mcp-fetch"
+            else None
+        )
+
         # Phase D: build context (sync) → main LLM call (~3-8s)
         context = _build_context(
             system_prompt_with_date,
@@ -975,6 +990,10 @@ async def _handle_message(
             history,
             projects_summary=projects_summary,
         )
+
+        # Inject mcp-fetch fallback note after context is built (append as system message)
+        if _mcp_fetch_note:
+            context.append(ChatMessage(role="system", content=_mcp_fetch_note))
 
         # Set current user context for tools that need it (e.g. scheduler, projects)
         from app.skills.tools.conversation_tools import (

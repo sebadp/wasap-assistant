@@ -27,11 +27,9 @@ class Settings(BaseSettings):
         "Be friendly. Answer in the same language the user writes in. "
         "Adapt your response length to the user's request — be brief for simple questions, "
         "detailed when asked for long or thorough answers. "
-        "CRITICAL: When the user provides a URL and you have fetch tools available, you MUST ALWAYS "
-        "attempt to use them to read the URL before responding. Do NOT assume a page is private, "
-        "requires login, or is inaccessible without trying the tool first. Strongly prefer `fetch_markdown` "
-        "or `fetch_txt` over `fetch_html` as HTML has too much noise. ALWAYS pass `max_length=40000` "
-        "to ensure you see the full content."
+        "CRITICAL: When the user provides a URL and you have URL-reading tools available, "
+        "ALWAYS use them to fetch the content before responding. "
+        "Do NOT assume a page is inaccessible without trying the tool first."
     )
     conversation_max_messages: int = 20
 

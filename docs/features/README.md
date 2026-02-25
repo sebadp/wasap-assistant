@@ -34,6 +34,9 @@ Cada archivo en este directorio documenta una feature implementada: qué hace, c
 | Web Browsing & URL Fetching | [`22-web_browsing.md`](22-web_browsing.md) | Agent Mode |
 | Agentic Security Layer | [`23-agentic_security.md`](23-agentic_security.md) | Agent Mode |
 | Observability & Tracing Profundo | [`24-observability.md`](24-observability.md) | Fase 8 |
+| Autonomous Agent Sprint 2 (Diff, PR, Persistence, Bootstrap) | [`20-autonomous_agent_sprint2.md`](20-autonomous_agent_sprint2.md) | Agent Mode |
+| Autonomous Agent Sprint 3 (Cron, Outline, Workspace) | [`21-autonomous_agent_sprint3.md`](21-autonomous_agent_sprint3.md) | Agent Mode |
+| Web Fetch Fix — Puppeteer-first + mcp-fetch fallback | [`25-web_fetch_fix.md`](25-web_fetch_fix.md) | Agent Mode |
 
 ## Cómo crear un nuevo walkthrough
 

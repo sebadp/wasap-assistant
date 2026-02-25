@@ -4,6 +4,22 @@
 > **Módulo:** Agentic Sessions
 > **Objetivo:** Mejorar la experiencia de usuario (UX) del agente autónomo implementado en el Sprint 1, añadiendo visualización de diffs, creación de PRs, persistencia entre reinicios y personalización del comportamiento.
 
+
+---
+
+## Estado de Implementación
+
+- [x] F4: preview_patch en selfcode_tools.py — unified diff en memoria sin modificar el archivo
+- [x] F4: _AGENT_SYSTEM_PROMPT actualizado en loop.py para solicitar preview antes de apply_patch
+- [x] F5: GITHUB_TOKEN y github_repo_owner/repo_name en app/config.py
+- [x] F5: git_create_pr en git_tools.py usando GitHub REST API (POST /repos/{owner}/{repo}/pulls)
+- [x] F6: app/agent/persistence.py — append-only JSONL en data/agent_sessions/{session_id}.jsonl
+- [x] F6: run_agent_session() guarda eventos (start, round, tool_call, end) en persistence.py
+- [x] F7: Bootstrap files (SOUL.md, USER.md, TOOLS.md) en directorio configurable (agent_bootstrap_dir)
+- [x] F7: Cargados en run_agent_session() al inicio del system prompt del agente
+
+---
+
 ## Descripción General
 
 El Sprint 1 estableció la fundación del agente autónomo (ejecución de comandos, protección contra loops, prompts especializados). El **Sprint 2** (UX Premium) se enfoca en hacer que esta herramienta sea más confiable, transparente y adaptable para el usuario de WhatsApp.

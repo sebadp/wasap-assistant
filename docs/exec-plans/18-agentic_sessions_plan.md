@@ -7,6 +7,23 @@
 
 ---
 
+## Estado de Implementación
+
+- [x] Fase 0: Write tools (write_source_file, apply_patch) en selfcode_tools.py
+- [x] Fase 0: Config toggle `agent_write_enabled` en app/config.py
+- [x] Fase 1: `app/agent/models.py` — AgentSession, AgentStatus dataclasses
+- [x] Fase 1: `app/agent/loop.py` — run_agent_session() con outer loop (15 rounds × 8 tools)
+- [x] Fase 1: `app/agent/__init__.py` — Package init
+- [x] Fase 2: `app/agent/task_memory.py` — create_task_plan, update_task_status, get_task_plan
+- [x] Fase 2: Task plan re-inyectado entre rounds en loop.py
+- [x] Fase 3: `app/skills/tools/git_tools.py` — git_status, git_create_branch, git_commit, git_push, git_create_pr
+- [x] Fase 4: `app/agent/hitl.py` — request_user_approval, resolve_hitl
+- [x] Fase 4: Integración HITL en webhook/router.py (resolve_hitl antes del flujo normal)
+- [x] Fase 4: HITL callback inyectado en execute_tool_loop desde agent/loop.py
+
+
+---
+
 ## Resumen de Fases
 
 | Fase | Capacidad | Dependencias | Archivos principales |

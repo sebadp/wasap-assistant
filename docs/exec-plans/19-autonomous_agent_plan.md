@@ -7,6 +7,27 @@
 
 ---
 
+## Estado de Implementación
+
+### Sprint 1 (Completado)
+- [x] F1: shell_tools.py — run_command + manage_process con seguridad multi-capa
+- [x] F1: CommandDecision (ALLOW/DENY/ASK) + denylist + allowlist configurable
+- [x] F2: Loop detection en loop.py (_check_loop_detection con genericRepeat + pingPong)
+- [x] F3: Coding system prompt + progress updates por round en loop.py
+
+### Sprint 2 (Completado)
+- [x] F4: preview_patch en selfcode_tools.py (unified diff, sin aplicar)
+- [x] F5: git_create_pr en git_tools.py (GitHub REST API, requiere GITHUB_TOKEN)
+- [x] F6: app/agent/persistence.py — append-only JSONL en data/agent_sessions/
+- [x] F7: Bootstrap files (SOUL.md, USER.md, TOOLS.md) cargados en run_agent_session
+
+### Sprint 3 (Completado)
+- [x] F8: Cron jobs en scheduler_tools.py (create_cron, list_crons, delete_cron)
+- [x] F9: get_file_outline + read_lines en selfcode_tools.py (AST-based)
+- [x] F10: workspace_tools.py — list_workspaces, switch_workspace, get_workspace_info
+
+---
+
 ## Objetivo
 
 Convertir el agente WasAP en un **programador autónomo** controlable desde WhatsApp. El usuario describe una tarea ("arreglá el bug de login", "agregá dark mode") y el agente:
