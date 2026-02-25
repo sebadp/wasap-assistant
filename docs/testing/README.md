@@ -30,6 +30,7 @@ Cada archivo en este directorio cubre el testing manual de una feature específi
 | Autonomous Agent Sprint 2 | [`20-autonomous_agent_sprint2_testing.md`](20-autonomous_agent_sprint2_testing.md) |
 | Autonomous Agent Sprint 3 | [`21-autonomous_agent_sprint3_testing.md`](21-autonomous_agent_sprint3_testing.md) |
 | Web Fetch Fix — Puppeteer-first + mcp-fetch fallback | [`25-web_fetch_fix_testing.md`](25-web_fetch_fix_testing.md) |
+| Dynamic Tool Budget & `request_more_tools` | [`27-dynamic_tool_budget_testing.md`](27-dynamic_tool_budget_testing.md) |
 
 ## Convenciones
 

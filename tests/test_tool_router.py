@@ -3,7 +3,9 @@ from unittest.mock import AsyncMock
 from app.llm.client import ChatResponse
 from app.skills.router import (
     DEFAULT_CATEGORIES,
+    REQUEST_MORE_TOOLS_NAME,
     TOOL_CATEGORIES,
+    build_request_more_tools_schema,
     classify_intent,
     select_tools,
 )
@@ -160,3 +162,48 @@ def test_select_empty_categories():
     tools_map = _make_tools_map(["get_weather"])
     result = select_tools([], tools_map)
     assert result == []
+
+
+def test_select_tools_distributes_budget_with_two_categories():
+    """Both categories must be represented when budget is tight (bug fix regression test)."""
+    projects_tools = list(TOOL_CATEGORIES["projects"])
+    github_tools = list(TOOL_CATEGORIES["github"])
+    tools_map = _make_tools_map(projects_tools + github_tools)
+
+    result = select_tools(["projects", "github"], tools_map, max_tools=8)
+    names = [t["function"]["name"] for t in result]
+
+    assert any(n in projects_tools for n in names), "projects category must be represented"
+    assert any(n in github_tools for n in names), "github category must be represented"
+    assert len(result) <= 8
+
+
+def test_select_tools_single_category_unchanged():
+    """Single category should still receive up to max_tools tools (retrocompatibility)."""
+    all_names = list(TOOL_CATEGORIES["projects"])
+    tools_map = _make_tools_map(all_names)
+    result = select_tools(["projects"], tools_map, max_tools=8)
+    # With 1 category: per_cat = max(2, 8//1) = 8 → same as before
+    assert len(result) == min(8, len(all_names))
+
+
+# --- request_more_tools schema tests ---
+
+
+def test_build_request_more_tools_schema_lists_categories():
+    """Schema description must mention all provided categories."""
+    schema = build_request_more_tools_schema(["github", "notes", "weather"])
+    desc = schema["function"]["description"]
+    assert "github" in desc
+    assert "notes" in desc
+    assert "weather" in desc
+
+
+def test_build_request_more_tools_schema_has_required_categories_param():
+    """Schema must have 'categories' as a required array parameter and correct tool name."""
+    schema = build_request_more_tools_schema(["github"])
+    assert schema["function"]["name"] == REQUEST_MORE_TOOLS_NAME
+    params = schema["function"]["parameters"]
+    assert "categories" in params["properties"]
+    assert params["properties"]["categories"]["type"] == "array"
+    assert "categories" in params["required"]

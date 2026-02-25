@@ -13,7 +13,13 @@ from app.security.audit import AuditTrail
 from app.security.policy_engine import PolicyEngine
 from app.skills.models import ToolCall
 from app.skills.registry import SkillRegistry
-from app.skills.router import classify_intent, select_tools
+from app.skills.router import (
+    REQUEST_MORE_TOOLS_NAME,
+    TOOL_CATEGORIES,
+    build_request_more_tools_schema,
+    classify_intent,
+    select_tools,
+)
 from app.tracing.context import get_current_trace
 
 if TYPE_CHECKING:
@@ -273,7 +279,7 @@ async def execute_tool_loop(
         logger.info("Tool router: categories=none, plain chat")
         return await ollama_client.chat(messages)
 
-    # Stage 2: select relevant tools
+    # Stage 2: select relevant tools (budget distributed proportionally across categories)
     tools = select_tools(categories, all_tools_map, max_tools=max_tools)
     logger.info(
         "Tool router: categories=%s, selected %d tools: %s",
@@ -285,6 +291,10 @@ async def execute_tool_loop(
     if not tools:
         logger.info("Tool router: no matching tools found, plain chat")
         return await ollama_client.chat(messages)
+
+    # Prepend the meta-tool so the LLM can request additional categories dynamically
+    meta_tool_schema = build_request_more_tools_schema(list(TOOL_CATEGORIES.keys()))
+    tools = [meta_tool_schema] + tools
 
     working_messages = list(messages)
 
@@ -329,16 +339,71 @@ async def execute_tool_loop(
             )
         )
 
-        # Execute all tool calls in parallel, append results in order
-        tool_messages = await asyncio.gather(
-            *[
-                _run_tool_call(
-                    tc, skill_registry, mcp_manager, ollama_client, user_message, hitl_callback
-                )
-                for tc in response.tool_calls
-            ]
-        )
-        working_messages.extend(tool_messages)
+        # Separate meta-tool calls (handled inline) from regular tool calls
+        meta_indices = [
+            i
+            for i, tc in enumerate(response.tool_calls)
+            if tc.get("function", {}).get("name") == REQUEST_MORE_TOOLS_NAME
+        ]
+        regular_indices = [
+            i
+            for i, tc in enumerate(response.tool_calls)
+            if tc.get("function", {}).get("name") != REQUEST_MORE_TOOLS_NAME
+        ]
+
+        tool_result_map: dict[int, ChatMessage] = {}
+
+        # Handle meta-tool calls: expand the active tool set (no security layer needed)
+        for i in meta_indices:
+            tc = response.tool_calls[i]
+            args = tc.get("function", {}).get("arguments", {})
+            requested_cats = args.get("categories", [])
+            reason = args.get("reason", "")
+
+            new_tools = select_tools(requested_cats, all_tools_map, max_tools=max_tools)
+            existing_names = {t.get("function", {}).get("name") for t in tools}
+            added: list[str] = []
+            for tool_schema in new_tools:
+                tool_schema_name = tool_schema.get("function", {}).get("name")
+                if tool_schema_name and tool_schema_name not in existing_names:
+                    tools.append(tool_schema)
+                    existing_names.add(tool_schema_name)
+                    added.append(tool_schema_name)
+
+            logger.info(
+                "request_more_tools: cats=%s, added=%d: %s (reason: %r)",
+                requested_cats,
+                len(added),
+                added,
+                reason,
+            )
+            confirmation = (
+                f"Loaded {len(added)} new tools: {', '.join(added)}"
+                if added
+                else "No new tools added (already available or unknown category)"
+            )
+            tool_result_map[i] = ChatMessage(role="tool", content=confirmation)
+
+        # Execute regular tool calls in parallel, preserving original index for ordering
+        if regular_indices:
+            regular_results = await asyncio.gather(
+                *[
+                    _run_tool_call(
+                        response.tool_calls[i],
+                        skill_registry,
+                        mcp_manager,
+                        ollama_client,
+                        user_message,
+                        hitl_callback,
+                    )
+                    for i in regular_indices
+                ]
+            )
+            for i, msg in zip(regular_indices, regular_results, strict=True):
+                tool_result_map[i] = msg
+
+        # Append results in original call order
+        working_messages.extend(tool_result_map[i] for i in sorted(tool_result_map))
 
         # Tool result clearing: replace old (raw) tool results with compact placeholders
         # to prevent context bloat on iterations 3+. Keep the last 2 rounds intact.

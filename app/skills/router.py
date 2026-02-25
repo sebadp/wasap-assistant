@@ -225,6 +225,14 @@ def select_tools(
 ) -> list[dict]:
     """Given categories and a map of all available tools (name -> ollama schema), return filtered list.
 
+    Budget is distributed proportionally across categories so every category receives
+    representation when multiple categories are requested:
+
+        per_cat = max(2, max_tools // len(categories))
+
+    A single category falls back to the full budget (per_cat == max_tools).
+    The result is always capped at max_tools via a final slice.
+
     Args:
         categories: List of category names from classify_intent.
         all_tools: Dict mapping tool name to its Ollama tool schema dict.
@@ -233,18 +241,70 @@ def select_tools(
     Returns:
         List of Ollama tool schema dicts, capped at max_tools.
     """
+    if not categories:
+        return []
+
     selected: list[dict] = []
     seen: set[str] = set()
+    per_cat = max(2, max_tools // len(categories))
 
     for category in categories:
         tool_names = TOOL_CATEGORIES.get(category, [])
+        cat_count = 0
         for name in tool_names:
             if name in seen:
                 continue
             if name in all_tools:
                 selected.append(all_tools[name])
                 seen.add(name)
-            if len(selected) >= max_tools:
-                return selected
+                cat_count += 1
+            if cat_count >= per_cat:
+                break
 
-    return selected
+    return selected[:max_tools]
+
+
+# ---------------------------------------------------------------------------
+# Meta-tool: request_more_tools
+# ---------------------------------------------------------------------------
+
+REQUEST_MORE_TOOLS_NAME = "request_more_tools"
+
+
+def build_request_more_tools_schema(available_categories: list[str]) -> dict:
+    """Build the Ollama tool schema for the request_more_tools meta-tool.
+
+    The meta-tool is always prepended to the active tool list so the LLM can
+    request additional categories when the initial selection is insufficient.
+    It is handled inline by execute_tool_loop — it never reaches the skill
+    registry or the security policy engine.
+    """
+    categories_str = ", ".join(sorted(available_categories))
+    return {
+        "type": "function",
+        "function": {
+            "name": REQUEST_MORE_TOOLS_NAME,
+            "description": (
+                "Request additional tool categories when the current tools are insufficient "
+                "for the task. Call this before attempting a task if you need tools that are "
+                f"not in the current set. Available categories: {categories_str}."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "categories": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": (
+                            f"Category names to load. Must be chosen from: {categories_str}"
+                        ),
+                    },
+                    "reason": {
+                        "type": "string",
+                        "description": "Brief explanation of why these tools are needed",
+                    },
+                },
+                "required": ["categories"],
+            },
+        },
+    }

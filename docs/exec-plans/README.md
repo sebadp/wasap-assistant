@@ -13,7 +13,8 @@ Documentos técnicos que bajan una intención de producto a cambios concretos en
 | OpenClaw Experience | [`EX-openclaw_experience.md`](EX-openclaw_experience.md) | 📋 Evaluación |
 | **Autonomous Agent Experience** | [`19-autonomous_agent_plan.md`](19-autonomous_agent_plan.md) | **✅ Sprint 1 done** |
 | Autonomous Agent Sprint 2 | [`20-autonomous_agent_sprint2_plan.md`](20-autonomous_agent_sprint2_plan.md) | **✅ Completado** |
-| Autonomous Agent Sprint 3 | [`21-autonomous_agent_sprint3_plan.md`](21-autonomous_agent_sprint3_plan.md) | **📋 Pendiente** |
+| Autonomous Agent Sprint 3 | [`21-autonomous_agent_sprint3_plan.md`](21-autonomous_agent_sprint3_plan.md) | **✅ Completado** |
+| Dynamic Tool Budget & `request_more_tools` | [`27-dynamic_tool_budget_prd.md`](27-dynamic_tool_budget_prd.md) / [`27-dynamic_tool_budget_prp.md`](27-dynamic_tool_budget_prp.md) | ✅ Completado |
 
 ## Convenciones
 

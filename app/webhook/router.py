@@ -341,7 +341,11 @@ def _build_capabilities_section(
         return None
 
     header = "You have the following capabilities. Use them proactively when the user's message is relevant."
-    return header + "\n\n" + "\n\n".join(sections)
+    meta_note = (
+        "\nTool expansion: if the current tools are insufficient for the task, "
+        "call request_more_tools(categories=[...]) to load additional tool categories dynamically."
+    )
+    return header + "\n\n" + "\n\n".join(sections) + meta_note
 
 
 async def _get_active_projects_summary(phone_number: str, repository) -> str | None:

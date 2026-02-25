@@ -99,6 +99,10 @@ class Repository:
             "DELETE FROM summaries WHERE conversation_id = ?",
             (conversation_id,),
         )
+        await self._conn.execute(
+            "DELETE FROM conversation_state WHERE conversation_id = ?",
+            (conversation_id,),
+        )
         await self._conn.commit()
 
     async def save_summary(

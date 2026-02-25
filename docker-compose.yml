@@ -7,6 +7,7 @@ services:
       - ./app:/app/app
       - ./skills:/app/skills
       - whisper_cache:/home/appuser/.cache/huggingface
+      - npm_cache:/home/appuser/.npm
     depends_on:
       - ollama
     network_mode: host
@@ -66,4 +67,5 @@ services:
 volumes:
   ollama_data:
   whisper_cache:
+  npm_cache:
   langfuse_db_data:
