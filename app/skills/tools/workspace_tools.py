@@ -8,8 +8,8 @@ Requires PROJECTS_ROOT to be set in .env to enable multi-project features.
 
 from __future__ import annotations
 
+import asyncio
 import logging
-import subprocess
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -44,7 +44,10 @@ def _safe_project_name(name: str) -> bool:
     return True
 
 
-def _git_branch(path: Path) -> str:
+def _git_branch_sync(path: Path) -> str:
+    """Blocking helper — always call via asyncio.to_thread."""
+    import subprocess
+
     try:
         result = subprocess.run(
             ["git", "rev-parse", "--abbrev-ref", "HEAD"],
@@ -58,9 +61,13 @@ def _git_branch(path: Path) -> str:
         return "N/A"
 
 
+async def _git_branch(path: Path) -> str:
+    return await asyncio.to_thread(_git_branch_sync, path)
+
+
 def _count_py_files(path: Path) -> int:
     try:
-        return sum(1 for _ in path.rglob("*.py") if ".git" not in str(_))
+        return sum(1 for p in path.rglob("*.py") if ".git" not in p.parts)
     except Exception:
         return 0
 
@@ -87,7 +94,7 @@ async def list_workspaces() -> str:
     lines = [f"**Workspaces** (root: `{_projects_root}`):\n"]
     for proj in projects:
         active = " ← active" if proj.resolve() == current.resolve() else ""
-        branch = _git_branch(proj)
+        branch = await _git_branch(proj)
         py_count = _count_py_files(proj)
         lines.append(f"• `{proj.name}/`  [git: {branch} | {py_count} .py files]{active}")
 
@@ -137,7 +144,7 @@ async def switch_workspace(name: str) -> str:
     except Exception:
         pass
 
-    branch = _git_branch(target)
+    branch = await _git_branch(target)
     py_count = _count_py_files(target)
     logger.info("Switched workspace to '%s' (%s)", name, target)
 
@@ -153,21 +160,26 @@ async def get_workspace_info() -> str:
     current = _current_project_root or _original_project_root
     name = current.name
 
-    branch = _git_branch(current)
+    branch = await _git_branch(current)
     py_count = _count_py_files(current)
 
     # Recent commits
-    try:
-        result = subprocess.run(
-            ["git", "log", "--oneline", "-5"],
-            cwd=current,
-            capture_output=True,
-            text=True,
-            timeout=5,
-        )
-        recent = result.stdout.strip() if result.returncode == 0 else "N/A"
-    except Exception:
-        recent = "N/A"
+    def _git_log_sync() -> str:
+        import subprocess
+
+        try:
+            result = subprocess.run(
+                ["git", "log", "--oneline", "-5"],
+                cwd=current,
+                capture_output=True,
+                text=True,
+                timeout=5,
+            )
+            return result.stdout.strip() if result.returncode == 0 else "N/A"
+        except Exception:
+            return "N/A"
+
+    recent = await asyncio.to_thread(_git_log_sync)
 
     lines = [
         f"**Workspace activo**: `{name}`",

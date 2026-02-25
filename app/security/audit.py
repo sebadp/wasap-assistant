@@ -1,7 +1,8 @@
 import hashlib
 import json
 import logging
-from datetime import datetime
+import threading
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -26,6 +27,7 @@ class AuditTrail:
 
     def __init__(self, log_path: Path):
         self.log_path = log_path
+        self._lock = threading.Lock()
         self._last_hash = self._initialize_log()
 
     def _initialize_log(self) -> str:
@@ -63,37 +65,38 @@ class AuditTrail:
         execution_result: str | None = None,
     ) -> AuditEntry:
         """Appends a new record to the audit trail with a rolling hash."""
-        timestamp = datetime.utcnow().isoformat() + "Z"
+        with self._lock:
+            timestamp = datetime.now(UTC).isoformat()
 
-        payload_to_hash = {
-            "timestamp": timestamp,
-            "tool_name": tool_name,
-            "arguments": arguments,
-            "decision": decision,
-            "decision_reason": decision_reason,
-            "execution_result": execution_result,
-            "previous_hash": self._last_hash,
-        }
+            payload_to_hash = {
+                "timestamp": timestamp,
+                "tool_name": tool_name,
+                "arguments": arguments,
+                "decision": decision,
+                "decision_reason": decision_reason,
+                "execution_result": execution_result,
+                "previous_hash": self._last_hash,
+            }
 
-        entry_hash = self._calculate_hash(payload_to_hash)
+            entry_hash = self._calculate_hash(payload_to_hash)
 
-        # Complete entry
-        entry = AuditEntry(
-            timestamp=timestamp,
-            tool_name=tool_name,
-            arguments=arguments,
-            decision=decision,
-            decision_reason=decision_reason,
-            execution_result=execution_result,
-            previous_hash=self._last_hash,
-            entry_hash=entry_hash,
-        )
+            # Complete entry
+            entry = AuditEntry(
+                timestamp=timestamp,
+                tool_name=tool_name,
+                arguments=arguments,
+                decision=decision,
+                decision_reason=decision_reason,
+                execution_result=execution_result,
+                previous_hash=self._last_hash,
+                entry_hash=entry_hash,
+            )
 
-        try:
-            with open(self.log_path, "a") as f:
-                f.write(entry.model_dump_json() + "\n")
-            self._last_hash = entry_hash
-        except Exception as e:
-            logger.error(f"Failed to write to audit log: {e}")
+            try:
+                with open(self.log_path, "a") as f:
+                    f.write(entry.model_dump_json() + "\n")
+                self._last_hash = entry_hash
+            except Exception as e:
+                logger.error(f"Failed to write to audit log: {e}")
 
         return entry

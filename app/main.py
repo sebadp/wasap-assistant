@@ -193,7 +193,7 @@ async def lifespan(app: FastAPI):
     # Also run once at startup to clean up pre-existing stale corrections
     import asyncio as _asyncio
 
-    _asyncio.create_task(_cleanup_self_corrections())
+    _startup_cleanup_task = _asyncio.create_task(_cleanup_self_corrections())
 
     # Memory file watcher (bidirectional sync)
     memory_watcher = None

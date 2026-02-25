@@ -122,7 +122,7 @@ class TraceRecorder:
             )
             if self.langfuse:
                 level = "ERROR" if status == "failed" else "DEFAULT"
-                md = metadata or {}
+                md = dict(metadata) if metadata else {}
 
                 # Extract OTel GenAI Semantic Conventions if present
                 usage: dict[str, int] = {}

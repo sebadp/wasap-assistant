@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 from datetime import UTC, datetime
 
@@ -8,6 +9,9 @@ from app.commands.registry import CommandRegistry, CommandSpec
 from app.models import ChatMessage
 
 logger = logging.getLogger(__name__)
+
+# Keep references to background agent tasks to prevent GC mid-execution
+_bg_agent_tasks: set[asyncio.Task] = set()
 
 
 async def cmd_cancel(args: str, context: CommandContext) -> str:
@@ -56,8 +60,8 @@ async def cmd_agent(args: str, context: CommandContext) -> str:
     objective = args.strip()
     new_session = create_session(context.phone_number, objective)
 
-    # Run the agent loop in the background
-    asyncio.create_task(
+    # Run the agent loop in the background — save reference to prevent GC mid-execution
+    task = asyncio.create_task(
         run_agent_session(
             session=new_session,
             ollama_client=context.ollama_client,
@@ -66,6 +70,8 @@ async def cmd_agent(args: str, context: CommandContext) -> str:
             mcp_manager=context.mcp_manager,
         )
     )
+    _bg_agent_tasks.add(task)
+    task.add_done_callback(_bg_agent_tasks.discard)
 
     return (
         f"🚀 *Sesión agéntica iniciada*\n_Objetivo:_ {objective}\n\nTe iré informando mi progreso."

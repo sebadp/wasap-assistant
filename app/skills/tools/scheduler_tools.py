@@ -184,7 +184,12 @@ async def create_cron(schedule: str, message: str, timezone: str = "UTC") -> str
         )
     except Exception as e:
         logger.exception("Failed to register cron job in scheduler")
-        return f"Cron job saved (ID: {job_id}) but scheduler registration failed: {e}"
+        # Rollback: remove the DB entry to avoid orphaned records that won't fire
+        try:
+            await _repository.delete_cron_job(job_id, phone)
+        except Exception:
+            pass
+        return f"Error: Failed to schedule cron job. {e}"
 
     logger.info(
         "Created cron job %s for %s: %s @ %s (%s)", job_id, phone, schedule, timezone, message

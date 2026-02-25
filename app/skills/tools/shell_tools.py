@@ -418,7 +418,7 @@ def register(registry: SkillRegistry, settings: Settings) -> None:
                 await asyncio.sleep(0.5)
                 if info.proc.returncode is None:
                     info.proc.kill()
-                info.exit_code = info.proc.returncode or -15
+                info.exit_code = info.proc.returncode if info.proc.returncode is not None else -15
             except ProcessLookupError:
                 info.exit_code = -1
             logger.info(

@@ -1,21 +1,48 @@
+import asyncio
 import logging
+import re
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
 _PROJECT_ROOT = Path(__file__).parent.parent.parent.parent
 
+_SAFE_ID_RE = re.compile(r"^[\w\-]+$")
+
+
+def _validate_feature_id(feature_id: str, base_dir: Path) -> str | None:
+    """Return error message if feature_id is unsafe, else None."""
+    if not _SAFE_ID_RE.match(feature_id):
+        return f"Invalid feature_id '{feature_id}': only alphanumerics, hyphens, underscores allowed."
+    # Verify the resolved path stays within the expected directory
+    feature_path = (base_dir / f"{feature_id}.md").resolve()
+    if not str(feature_path).startswith(str(base_dir.resolve())):
+        return f"Invalid feature_id '{feature_id}': path traversal detected."
+    return None
+
 
 async def create_feature_docs(
     feature_id: str, feature_title: str, walkthrough_content: str, testing_content: str
 ) -> str:
     """Implement rule #1 and #2 of the 5-step documentation protocol: Walkthrough and Testing generation."""
-    feature_path = _PROJECT_ROOT / "docs" / "features" / f"{feature_id}.md"
-    testing_path = _PROJECT_ROOT / "docs" / "testing" / f"{feature_id}_testing.md"
+    features_dir = _PROJECT_ROOT / "docs" / "features"
+    testing_dir = _PROJECT_ROOT / "docs" / "testing"
 
-    try:
+    err = _validate_feature_id(feature_id, features_dir)
+    if err:
+        return f"Error: {err}"
+
+    feature_path = features_dir / f"{feature_id}.md"
+    testing_path = testing_dir / f"{feature_id}_testing.md"
+
+    def _write_files() -> None:
+        feature_path.parent.mkdir(parents=True, exist_ok=True)
+        testing_path.parent.mkdir(parents=True, exist_ok=True)
         feature_path.write_text(walkthrough_content, encoding="utf-8")
         testing_path.write_text(testing_content, encoding="utf-8")
+
+    try:
+        await asyncio.to_thread(_write_files)
     except Exception as e:
         return f"Error writing doc files: {e}"
 

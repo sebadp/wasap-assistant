@@ -479,17 +479,16 @@ def register(
             if target.suffix == ".py":
                 try:
                     tree = ast.parse(text, filename=str(target))
-                    for node in ast.walk(tree):
+                    # Iterate only top-level Module children to avoid double-listing methods
+                    for node in tree.body:
                         if isinstance(node, ast.ClassDef):
                             end = getattr(node, "end_lineno", node.lineno)
                             items.append(
                                 (node.lineno, f"  class {node.name}  [L{node.lineno}-{end}]")
                             )
-                            for child in ast.walk(node):
-                                if (
-                                    isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef))
-                                    and child is not node
-                                ):
+                            # Iterate direct class members only (not nested via ast.walk)
+                            for child in node.body:
+                                if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef)):
                                     cend = getattr(child, "end_lineno", child.lineno)
                                     args = [a.arg for a in child.args.args]
                                     items.append(
@@ -499,7 +498,7 @@ def register(
                                         )
                                     )
                         elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                            # Only top-level functions (parent is Module)
+                            # Top-level functions only (direct children of Module)
                             end = getattr(node, "end_lineno", node.lineno)
                             args = [a.arg for a in node.args.args]
                             items.append(

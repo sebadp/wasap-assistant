@@ -185,7 +185,7 @@ async def classify_intent(
 
         if raw == "none":
             # Fast-path override: even if the LLM says 'none', if there's a URL, we must fetch
-            if has_url:
+            if has_url and "fetch" in TOOL_CATEGORIES:
                 logger.info("URL detected but classifier returned 'none', overriding to ['fetch'].")
                 return ["fetch"]
 

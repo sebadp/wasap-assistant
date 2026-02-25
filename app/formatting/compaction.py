@@ -72,6 +72,9 @@ def _try_json_extraction(text: str, max_length: int) -> str | None:
     # Single object — just filter to key fields
     if isinstance(data, dict):
         compact = _pick_fields(data)
+        if not compact:
+            # No known key fields found — fall through to LLM summarization
+            return None
         result = json.dumps(compact, indent=2, ensure_ascii=False)
         return result if len(result) <= max_length else None
 

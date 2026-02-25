@@ -93,16 +93,20 @@ async def test_classify_strips_whitespace():
 
 async def test_classify_url_adds_fetch():
     client = _mock_ollama("none")
+    # Ensure "fetch" is a known category so the URL override guard passes
+    TOOL_CATEGORIES.setdefault("fetch", ["fetch_markdown"])
     result = await classify_intent("Check out this link https://example.com", client)
     assert "fetch" in result
 
 async def test_classify_url_overrides_none():
     client = _mock_ollama("none")
+    TOOL_CATEGORIES.setdefault("fetch", ["fetch_markdown"])
     result = await classify_intent("https://github.com", client)
     assert result == ["fetch"]
 
 async def test_classify_url_appends_to_others():
     client = _mock_ollama("search, news")
+    TOOL_CATEGORIES.setdefault("fetch", ["fetch_markdown"])
     result = await classify_intent("Search for this https://news.com", client)
     assert "fetch" in result
     assert "search" in result
