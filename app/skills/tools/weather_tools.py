@@ -61,46 +61,60 @@ async def _resolve_and_fetch(client: httpx.AsyncClient, url: str, params: dict) 
 def register(registry: SkillRegistry) -> None:
     async def get_weather(city: str) -> str:
         """
-        Get current weather and forecast for a city using OpenMeteo (IPv6 supported).
+        Get current weather and 3-day forecast for a city using OpenMeteo (IPv6 supported).
+        Returns real data only — do NOT add or invent any information not present in the result.
         """
         try:
-            # Verify SSL is strict but we trust OpenMeteo
-            # Disable verification because we connect via IP (due to IPv6 environment issues)
-            # and the cert is valid for hostname but not IP.
             async with httpx.AsyncClient(timeout=API_TIMEOUT, verify=False) as client:
                 # Step 1: Geocoding (City -> Lat/Lon)
-                logger.info(f"Geocoding city: {city}")
-                geo_params = {"name": city, "count": 1, "language": "en", "format": "json"}
+                # Try full name first; if not found, retry with just the city (before any comma)
+                async def _geocode(name_query: str) -> dict:
+                    logger.info(f"Geocoding city: {name_query}")
+                    geo_params = {"name": name_query, "count": 1, "language": "en", "format": "json"}
+                    geo_resp = await _resolve_and_fetch(client, OPENMETEO_GEOCODING_URL, geo_params)
+                    geo_resp.raise_for_status()
+                    result = geo_resp.json()
+                    logger.info(f"Geocoding response: {result}")
+                    return result
 
-                # Use custom resolver
-                geo_resp = await _resolve_and_fetch(client, OPENMETEO_GEOCODING_URL, geo_params)
+                geo_data = await _geocode(city)
 
-                geo_resp.raise_for_status()
-                geo_data = geo_resp.json()
-                logger.info(f"Geocoding response: {geo_data}")
+                if not geo_data.get("results") and "," in city:
+                    # Retry with just the city name (strip province/country suffix)
+                    city_only = city.split(",")[0].strip()
+                    logger.info(f"No results for full name, retrying with: {city_only!r}")
+                    geo_data = await _geocode(city_only)
 
                 if not geo_data.get("results"):
-                    return f"Could not find location: {city}"
+                    return (
+                        f"Could not find location: '{city}'. "
+                        "Try using just the city name without province or country."
+                    )
 
                 location = geo_data["results"][0]
                 lat = location["latitude"]
                 lon = location["longitude"]
-                name = location["name"]
+                loc_name = location["name"]
                 country = location.get("country", "")
-                logger.info(f"Found location: {name}, {country} ({lat}, {lon})")
+                logger.info(f"Found location: {loc_name}, {country} ({lat}, {lon})")
 
-                # Step 2: Weather Forecast
+                # Step 2: Weather Forecast — 7 days so LLM can answer about any day this week
                 logger.info(f"Fetching forecast for {lat}, {lon}")
                 forecast_params = {
                     "latitude": lat,
                     "longitude": lon,
                     "current": "temperature_2m,relative_humidity_2m,weather_code,wind_speed_10m",
-                    "daily": "temperature_2m_max,temperature_2m_min,precipitation_probability_max",
+                    "daily": (
+                        "weather_code,"
+                        "temperature_2m_max,temperature_2m_min,"
+                        "precipitation_probability_max,precipitation_sum,"
+                        "wind_speed_10m_max,"
+                        "uv_index_max"
+                    ),
                     "timezone": "auto",
-                    "forecast_days": 1,
+                    "forecast_days": 7,
                 }
 
-                # Use custom resolver
                 weather_resp = await _resolve_and_fetch(
                     client, OPENMETEO_FORECAST_URL, forecast_params
                 )
@@ -109,7 +123,7 @@ def register(registry: SkillRegistry) -> None:
                 weather_data = weather_resp.json()
                 logger.info("Forecast received successfully")
 
-                return _format_weather_response(name, country, weather_data)
+                return _format_weather_response(loc_name, country, weather_data)
 
         except httpx.HTTPStatusError as e:
             return f"Weather service error: HTTP {e.response.status_code}"
@@ -121,7 +135,11 @@ def register(registry: SkillRegistry) -> None:
 
     registry.register_tool(
         name="get_weather",
-        description="Get current weather and forecast for a city",
+        description=(
+            "Get current weather and 3-day forecast for a city. "
+            "IMPORTANT: Only report what this tool returns. If it returns an error, "
+            "tell the user the location was not found — do NOT invent or estimate weather data."
+        ),
         parameters={
             "type": "object",
             "properties": {
@@ -143,32 +161,57 @@ def _format_weather_response(name: str, country: str, data: dict[str, Any]) -> s
         daily = data.get("daily", {})
         units = data.get("current_units", {})
 
-        # Current weather
+        temp_unit = units.get("temperature_2m", "°C")
+        wind_unit = units.get("wind_speed_10m", "km/h")
+
+        # Current conditions
         temp = current.get("temperature_2m", "?")
         humidity = current.get("relative_humidity_2m", "?")
         wind = current.get("wind_speed_10m", "?")
         code = current.get("weather_code", 0)
         desc = _get_wmo_description(code)
 
-        temp_unit = units.get("temperature_2m", "°C")
-        wind_unit = units.get("wind_speed_10m", "km/h")
-
         lines = [
             f"Weather in {name}, {country}:",
-            f"  {desc}, {temp}{temp_unit}",
-            f"  Humidity: {humidity}%",
-            f"  Wind: {wind} {wind_unit}",
+            f"  Now: {desc}, {temp}{temp_unit} | Humidity: {humidity}% | Wind: {wind} {wind_unit}",
         ]
 
-        # Daily forecast
-        if daily.get("time"):
-            max_temp = daily["temperature_2m_max"][0]
-            min_temp = daily["temperature_2m_min"][0]
-            precip = daily.get("precipitation_probability_max", [0])[0]
+        # 7-day daily forecast
+        dates = daily.get("time", [])
+        if dates:
+            lines.append(f"  {len(dates)}-Day Forecast:")
+            for i, date in enumerate(dates):
+                def _get(key: str, default: Any = "?", _i: int = i) -> Any:
+                    vals = daily.get(key, [])
+                    return vals[_i] if _i < len(vals) else default
 
-            lines.append(f"  Today: {min_temp}{temp_unit} - {max_temp}{temp_unit}")
-            if precip > 0:
-                lines.append(f"  Precipitation chance: {precip}%")
+                max_t = _get("temperature_2m_max")
+                min_t = _get("temperature_2m_min")
+                d_code = _get("weather_code", 0)
+                d_desc = _get_wmo_description(int(d_code) if d_code != "?" else 0)
+                precip_prob = _get("precipitation_probability_max", 0)
+                precip_mm = _get("precipitation_sum", 0)
+                wind_max = _get("wind_speed_10m_max", "?")
+                uv = _get("uv_index_max", "?")
+
+                if i == 0:
+                    label = f"Today    ({date})"
+                elif i == 1:
+                    label = f"Tomorrow ({date})"
+                else:
+                    label = f"         ({date})"
+
+                # Build compact info string
+                parts = [f"{d_desc}, {min_t}-{max_t}{temp_unit}"]
+                if precip_prob and precip_prob != "?" and int(precip_prob) > 0:
+                    mm_str = f" {precip_mm}mm" if precip_mm and precip_mm != "?" and float(precip_mm) > 0 else ""
+                    parts.append(f"rain:{precip_prob}%{mm_str}")
+                if wind_max and wind_max != "?":
+                    parts.append(f"wind:{wind_max}{wind_unit}")
+                if uv and uv != "?" and float(uv) >= 6:
+                    parts.append(f"UV:{uv}")
+
+                lines.append(f"    {label}: {' | '.join(parts)}")
 
         return "\n".join(lines)
     except Exception as e:
