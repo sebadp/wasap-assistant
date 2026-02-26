@@ -16,6 +16,56 @@ class AgentStatus(StrEnum):
 
 
 @dataclass
+class TaskStep:
+    """A single step in the agent's plan."""
+
+    id: int
+    description: str
+    worker_type: str = "general"  # reader | analyzer | coder | reporter | general
+    tools: list[str] = field(default_factory=list)
+    status: str = "pending"  # pending | in_progress | done | failed
+    result: str | None = None
+    depends_on: list[int] = field(default_factory=list)
+
+
+@dataclass
+class AgentPlan:
+    """Structured plan created by the planner agent."""
+
+    objective: str
+    context_summary: str = ""
+    tasks: list[TaskStep] = field(default_factory=list)
+    current_task_idx: int = 0
+    replans: int = 0
+    max_replans: int = 3
+
+    def next_task(self) -> TaskStep | None:
+        """Return the next pending task whose dependencies are satisfied."""
+        done_ids = {t.id for t in self.tasks if t.status == "done"}
+        for task in self.tasks:
+            if task.status != "pending":
+                continue
+            if all(dep_id in done_ids for dep_id in task.depends_on):
+                return task
+        return None
+
+    def all_done(self) -> bool:
+        return all(t.status in ("done", "failed") for t in self.tasks)
+
+    def to_markdown(self) -> str:
+        """Render the plan as a markdown checklist for task plan injection."""
+        lines = [f"Objective: {self.objective}"]
+        if self.context_summary:
+            lines.append(f"Context: {self.context_summary}")
+        lines.append("")
+        for t in self.tasks:
+            mark = "x" if t.status == "done" else ("!" if t.status == "failed" else " ")
+            deps = f" (after #{','.join(str(d) for d in t.depends_on)})" if t.depends_on else ""
+            lines.append(f"- [{mark}] #{t.id} [{t.worker_type}] {t.description}{deps}")
+        return "\n".join(lines)
+
+
+@dataclass
 class AgentSession:
     session_id: str
     phone_number: str
@@ -26,3 +76,4 @@ class AgentSession:
     started_at: datetime = field(default_factory=lambda: datetime.now(UTC))
     context_messages: list = field(default_factory=list)
     task_plan: str | None = None  # task.md content (actualizado por el agente durante la sesión)
+    plan: AgentPlan | None = None  # Structured plan (planner-orchestrator)

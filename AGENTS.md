@@ -39,7 +39,8 @@ Antes de modificar un módulo, identificar su dominio. Las reglas de un dominio 
 | LLM client | `app/llm/client.py` | `think: True` incompatible con tools en qwen3 |
 | Guardrails | `app/guardrails/` | Fail-open, single-shot remediation, langdetect umbral 30 chars |
 | Trazabilidad | `app/tracing/` | contextvars propagation, best-effort recorder |
-| Modo agéntico | `app/agent/` | loop.py, models.py, hitl.py, task_memory.py, persistence.py |
+| Modo agéntico | `app/agent/` | loop.py (planner-orchestrator), planner.py, workers.py, models.py, hitl.py, task_memory.py, persistence.py |
+| Debug tools | `app/skills/tools/debug_tools.py` | 5 tools: review_interactions, get_tool_output_full, get_interaction_context, write_debug_report, get_conversation_transcript |
 | Seguridad agéntica | `app/security/` | policy_engine.py (YAML regex), audit.py (hash chain SHA-256) |
 
 ---

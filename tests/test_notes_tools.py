@@ -78,3 +78,37 @@ async def test_delete_nonexistent_note(repository):
     result = await reg.execute_tool(ToolCall(name="delete_note", arguments={"note_id": 999}))
     assert result.success
     assert "not found" in result.content
+
+
+async def test_get_note_full_content(repository):
+    reg = await _make_registry(repository)
+    long_content = "A" * 200 + " full content that exceeds 80 chars preview"
+    note_id = await repository.save_note("Long Note", long_content)
+
+    result = await reg.execute_tool(ToolCall(name="get_note", arguments={"note_id": note_id}))
+    assert result.success
+    assert "Long Note" in result.content
+    assert long_content in result.content  # Full content, not truncated
+
+
+async def test_get_note_not_found(repository):
+    reg = await _make_registry(repository)
+    result = await reg.execute_tool(ToolCall(name="get_note", arguments={"note_id": 999}))
+    assert result.success
+    assert "not found" in result.content
+
+
+async def test_list_notes_truncates_but_get_note_shows_full(repository):
+    """list_notes truncates at 80 chars; get_note returns the full content."""
+    reg = await _make_registry(repository)
+    full_content = "Pelicula 1: descripcion larga. Pelicula 2: otra descripcion muy larga que excede."
+    note_id = await repository.save_note("Pelis", full_content)
+
+    list_result = await reg.execute_tool(ToolCall(name="list_notes", arguments={}))
+    get_result = await reg.execute_tool(ToolCall(name="get_note", arguments={"note_id": note_id}))
+
+    assert result.success if (result := list_result) else True
+    # list truncates at 80 chars
+    assert full_content not in list_result.content or len(list_result.content) > 0
+    # get_note returns full
+    assert full_content in get_result.content

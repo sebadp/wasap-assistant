@@ -69,6 +69,11 @@ def register_builtin_tools(
 
         register_eval(registry, repository, ollama_client=ollama_client)
 
+    if settings is not None and settings.tracing_enabled:
+        from app.skills.tools.debug_tools import register as register_debug
+
+        register_debug(registry, repository)
+
     register_git(registry, settings=settings)
 
     if settings is not None:

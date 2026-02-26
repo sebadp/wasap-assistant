@@ -476,6 +476,50 @@ async def cmd_help(args: str, context: CommandContext) -> str:
     return "\n".join(lines)
 
 
+async def cmd_dev_review(args: str, context: CommandContext) -> str:
+    """Launch a planner-orchestrator session to analyze a user's recent interactions."""
+    import asyncio
+
+    from app.agent.loop import create_session, get_active_session, run_agent_session
+
+    session = get_active_session(context.phone_number)
+    if session:
+        return "Ya hay una sesión activa. Usa /cancel antes de iniciar una nueva."
+
+    phone_target = args.strip()
+    if not phone_target:
+        phone_target = context.phone_number
+
+    objective = (
+        f"Analyze the recent interactions of user {phone_target}. "
+        f"1. Read their conversation transcript to understand what happened. "
+        f"2. Review their traces to find anomalies (low scores, errors, hallucinations). "
+        f"3. For any problematic trace, deep-dive into tool calls and context. "
+        f"4. Write a debug report with findings and suggested fixes."
+    )
+
+    new_session = create_session(context.phone_number, objective)
+
+    task = asyncio.create_task(
+        run_agent_session(
+            session=new_session,
+            ollama_client=context.ollama_client,
+            skill_registry=context.skill_registry,
+            wa_client=context.wa_client,
+            mcp_manager=context.mcp_manager,
+            use_planner=True,
+        )
+    )
+    _bg_agent_tasks.add(task)
+    task.add_done_callback(_bg_agent_tasks.discard)
+
+    return (
+        f"🔍 *Dev review iniciado*\n"
+        f"_Analizando interacciones de {phone_target}_\n\n"
+        "Te enviaré un reporte cuando termine."
+    )
+
+
 async def cmd_debug(args: str, context: CommandContext) -> str:
     """Toggle Auto Debug mode on or off."""
     profile = await context.repository.get_user_profile(context.phone_number)
@@ -621,5 +665,13 @@ def register_builtins(registry: CommandRegistry) -> None:
             description="Retomar la última sesión agéntica si el bot se reinició",
             usage="/agent-resume",
             handler=cmd_agent_resume,
+        )
+    )
+    registry.register(
+        CommandSpec(
+            name="dev-review",
+            description="Analizar interacciones recientes de un usuario (planner-orchestrator)",
+            usage="/dev-review [phone_number]",
+            handler=cmd_dev_review,
         )
     )

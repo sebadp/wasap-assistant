@@ -284,6 +284,16 @@ class Repository:
         await self._conn.commit()
         return cursor.rowcount > 0
 
+    async def get_note(self, note_id: int) -> Note | None:
+        cursor = await self._conn.execute(
+            "SELECT id, title, content, created_at FROM notes WHERE id = ?",
+            (note_id,),
+        )
+        row = await cursor.fetchone()
+        if not row:
+            return None
+        return Note(id=row[0], title=row[1], content=row[2], created_at=row[3])
+
     # --- Embeddings (sqlite-vec) ---
 
     @staticmethod
@@ -1362,4 +1372,75 @@ class Repository:
         return [
             {"id": r[0], "phone_number": r[1], "cron_expr": r[2], "message": r[3], "timezone": r[4]}
             for r in rows
+        ]
+
+    # --- Debug / Planner-Orchestrator ---
+
+    async def get_traces_by_phone(self, phone_number: str, limit: int = 10) -> list[dict]:
+        """Return recent traces for a phone number with aggregated scores."""
+        cursor = await self._conn.execute(
+            "SELECT t.id, t.input_text, t.output_text, t.message_type, t.status, "
+            "t.started_at, t.completed_at, "
+            "MIN(s.value) AS min_score, AVG(s.value) AS avg_score, COUNT(s.id) AS score_count "
+            "FROM traces t "
+            "LEFT JOIN trace_scores s ON s.trace_id = t.id "
+            "WHERE t.phone_number = ? "
+            "GROUP BY t.id "
+            "ORDER BY t.started_at DESC LIMIT ?",
+            (phone_number, limit),
+        )
+        rows = await cursor.fetchall()
+        return [
+            {
+                "id": r[0],
+                "input_text": r[1],
+                "output_text": r[2],
+                "message_type": r[3],
+                "status": r[4],
+                "started_at": r[5],
+                "completed_at": r[6],
+                "min_score": r[7],
+                "avg_score": r[8],
+                "score_count": r[9],
+            }
+            for r in rows
+        ]
+
+    async def get_trace_tool_calls(self, trace_id: str) -> list[dict]:
+        """Return tool call spans for a trace with full input/output."""
+        cursor = await self._conn.execute(
+            "SELECT id, name, input, output, status, started_at, latency_ms "
+            "FROM trace_spans WHERE trace_id = ? AND kind = 'tool' ORDER BY started_at",
+            (trace_id,),
+        )
+        rows = await cursor.fetchall()
+        return [
+            {
+                "id": r[0],
+                "name": r[1],
+                "input": json.loads(r[2]) if r[2] else None,
+                "output": json.loads(r[3]) if r[3] else None,
+                "status": r[4],
+                "started_at": r[5],
+                "latency_ms": r[6],
+            }
+            for r in rows
+        ]
+
+    async def get_conversation_transcript(
+        self, phone_number: str, limit: int = 20
+    ) -> list[dict]:
+        """Reconstruct a readable conversation transcript from messages table."""
+        conv_id = await self.get_conversation_id(phone_number)
+        if conv_id is None:
+            return []
+        cursor = await self._conn.execute(
+            "SELECT role, content, created_at FROM messages "
+            "WHERE conversation_id = ? ORDER BY created_at DESC, id DESC LIMIT ?",
+            (conv_id, limit),
+        )
+        rows = list(await cursor.fetchall())
+        return [
+            {"role": r[0], "content": r[1], "timestamp": r[2]}
+            for r in reversed(rows)  # chronological order
         ]

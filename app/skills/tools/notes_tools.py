@@ -84,6 +84,13 @@ def register(
         logger.info(f"Found {len(notes)} matching notes")
         return "\n".join(lines)
 
+    async def get_note(note_id: int) -> str:
+        logger.info(f"Getting full content of note ID: {note_id}")
+        note = await repository.get_note(note_id)
+        if not note:
+            return f"Note {note_id} not found."
+        return f"[{note.id}] {note.title}\n\n{note.content}"
+
     async def delete_note(note_id: int) -> str:
         logger.info(f"Deleting note ID: {note_id}")
         deleted = await repository.delete_note(note_id)
@@ -123,7 +130,10 @@ def register(
 
     registry.register_tool(
         name="list_notes",
-        description="List all saved notes",
+        description=(
+            "List all saved notes with their IDs and a short preview (first 80 chars). "
+            "Use get_note(note_id) to read the full content of a specific note."
+        ),
         parameters={
             "type": "object",
             "properties": {},
@@ -134,7 +144,11 @@ def register(
 
     registry.register_tool(
         name="search_notes",
-        description="Search notes by keyword in title or content",
+        description=(
+            "Search notes by keyword in title or content. "
+            "Returns a short preview (first 80 chars). "
+            "Use get_note(note_id) to read the full content of a specific note."
+        ),
         parameters={
             "type": "object",
             "properties": {
@@ -146,6 +160,23 @@ def register(
             "required": ["query"],
         },
         handler=search_notes,
+        skill_name="notes",
+    )
+
+    registry.register_tool(
+        name="get_note",
+        description="Get the full content of a specific note by its ID. Use this when the user asks to see or read a complete note.",
+        parameters={
+            "type": "object",
+            "properties": {
+                "note_id": {
+                    "type": "integer",
+                    "description": "ID of the note to retrieve",
+                },
+            },
+            "required": ["note_id"],
+        },
+        handler=get_note,
         skill_name="notes",
     )
 

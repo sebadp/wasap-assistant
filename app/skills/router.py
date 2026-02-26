@@ -20,7 +20,7 @@ TOOL_CATEGORIES: dict[str, list[str]] = {
     "weather": ["get_weather"],
     "search": ["web_search"],
     "news": ["search_news", "add_news_preference"],
-    "notes": ["save_note", "list_notes", "search_notes", "delete_note"],
+    "notes": ["save_note", "list_notes", "search_notes", "delete_note", "get_note"],
     "files": [
         "read_file",
         "write_file",
@@ -96,6 +96,13 @@ TOOL_CATEGORIES: dict[str, list[str]] = {
         "propose_prompt_change",
         "get_dashboard_stats",
     ],
+    "debugging": [
+        "review_interactions",
+        "get_tool_output_full",
+        "get_interaction_context",
+        "write_debug_report",
+        "get_conversation_transcript",
+    ],
     "conversation": ["get_recent_messages"],
     "shell": ["run_command", "manage_process"],
     "workspace": ["list_workspaces", "switch_workspace", "get_workspace_info"],
@@ -107,6 +114,16 @@ TOOL_CATEGORIES: dict[str, list[str]] = {
 }
 
 DEFAULT_CATEGORIES = ["time", "math", "weather", "search", "documentation"]
+
+# Maps worker_type -> list of TOOL_CATEGORIES that the worker should use.
+# Used by the planner-orchestrator to give each worker a focused tool set.
+WORKER_TOOL_SETS: dict[str, list[str]] = {
+    "reader": ["conversation", "selfcode", "evaluation", "notes", "debugging"],
+    "analyzer": ["evaluation", "selfcode", "debugging"],
+    "coder": ["selfcode", "shell"],
+    "reporter": ["evaluation", "notes", "debugging"],
+    "general": ["selfcode", "shell", "notes", "evaluation", "conversation", "debugging"],
+}
 
 _CLASSIFIER_PROMPT_TEMPLATE = (
     "Classify this message into tool categories. "

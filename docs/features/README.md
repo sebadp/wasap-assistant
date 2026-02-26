@@ -38,6 +38,7 @@ Cada archivo en este directorio documenta una feature implementada: qué hace, c
 | Autonomous Agent Sprint 3 (Cron, Outline, Workspace) | [`21-autonomous_agent_sprint3.md`](21-autonomous_agent_sprint3.md) | Agent Mode |
 | Web Fetch Fix — Puppeteer-first + mcp-fetch fallback | [`25-web_fetch_fix.md`](25-web_fetch_fix.md) | Agent Mode |
 | Dynamic Tool Budget & `request_more_tools` | [`27-dynamic_tool_budget.md`](27-dynamic_tool_budget.md) | Agent Mode |
+| Planner-Orchestrator | [`28-planner_orchestrator.md`](28-planner_orchestrator.md) | Agent Mode |
 
 ## Cómo crear un nuevo walkthrough
 

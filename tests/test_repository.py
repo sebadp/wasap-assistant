@@ -205,6 +205,20 @@ async def test_delete_nonexistent_note(repository):
     assert deleted is False
 
 
+async def test_get_note(repository):
+    note_id = await repository.save_note("Full Note", "Complete content here")
+    note = await repository.get_note(note_id)
+    assert note is not None
+    assert note.id == note_id
+    assert note.title == "Full Note"
+    assert note.content == "Complete content here"
+
+
+async def test_get_note_not_found(repository):
+    note = await repository.get_note(999)
+    assert note is None
+
+
 # --- Dashboard queries (Iteración 6) ---
 
 
