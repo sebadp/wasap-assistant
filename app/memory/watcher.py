@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import os
 import re
 import threading
 from pathlib import Path
@@ -40,13 +41,22 @@ class _MemoryFileHandler(FileSystemEventHandler):
     def __init__(self, watcher: MemoryWatcher):
         self._watcher = watcher
 
+    def _is_target(self, event: FileSystemEvent) -> bool:
+        if event.is_directory:
+            return False
+
+        # event.src_path can be bytes or str, handle safely
+        src_path = os.fsdecode(event.src_path)
+        target_name = Path(self._watcher._memory_file._path).name
+        return Path(src_path).name == target_name
+
     def on_modified(self, event: FileSystemEvent) -> None:
-        if not event.is_directory:
+        if self._is_target(event):
             self._watcher._on_file_changed()
 
     def on_created(self, event: FileSystemEvent) -> None:
         # Editors with atomic rename create a new file
-        if not event.is_directory:
+        if self._is_target(event):
             self._watcher._on_file_changed()
 
 
@@ -127,7 +137,9 @@ class MemoryWatcher:
             return
 
         file_memories = parse_memory_file(content)
-        db_memories = await self._repository.list_memories()
+        all_db_memories = await self._repository.list_memories()
+        # Exclude self_correction from sync so it stays in DB but not in user's markdown
+        db_memories = [m for m in all_db_memories if m.category != "self_correction"]
 
         # Build sets for comparison
         file_set = {(c, cat) for c, cat in file_memories}

@@ -26,13 +26,17 @@ class Settings(BaseSettings):
         "You are a helpful personal assistant on WhatsApp. "
         "Be friendly. Answer in the same language the user writes in. "
         "Adapt your response length to the user's request — be brief for simple questions, "
-        "detailed when asked for long or thorough answers."
+        "detailed when asked for long or thorough answers. "
+        "CRITICAL: When the user provides a URL and you have URL-reading tools available, "
+        "ALWAYS use them to fetch the content before responding. "
+        "Do NOT assume a page is inaccessible without trying the tool first."
     )
     conversation_max_messages: int = 20
 
     # Database
     database_path: str = "data/wasap.db"
     summary_threshold: int = 40
+    compaction_threshold: int = 20000
 
     # ngrok (only used in docker-compose, not by the app itself)
     ngrok_authtoken: str = ""
@@ -89,6 +93,9 @@ class Settings(BaseSettings):
     tracing_enabled: bool = True
     tracing_sample_rate: float = 1.0  # 1.0 = trace everything
     trace_retention_days: int = 90
+    langfuse_public_key: str | None = None
+    langfuse_secret_key: str | None = None
+    langfuse_host: str = "http://localhost:3000"
 
     # Evaluation (Fase 3+)
     eval_auto_curate: bool = True
@@ -97,5 +104,11 @@ class Settings(BaseSettings):
     agent_write_enabled: bool = False  # Habilita write tools (seguridad: OFF por defecto)
     agent_max_iterations: int = 15  # Límite de iteraciones por sesión agéntica
     agent_session_timeout: int = 300  # Timeout en segundos (5 minutos)
+    agent_shell_allowlist: str = (
+        "pytest,ruff,mypy,make,npm,pip,git,cat,head,tail,wc,ls,find,grep,echo,python,node"
+    )
+    github_token: str | None = None
+    github_repo: str | None = None
+    projects_root: str = ""  # Base directory for multi-project workspace (empty = single project)
 
     model_config = {"env_file": ".env"}

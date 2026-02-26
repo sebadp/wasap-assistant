@@ -91,7 +91,6 @@ logger = logging.getLogger(__name__)
 
 
 def register(registry: SkillRegistry) -> None:
-
     async def calculate(expression: str) -> str:
         logger.info(f"Calculating expression: {expression}")
         try:

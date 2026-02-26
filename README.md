@@ -82,45 +82,6 @@ app/
 ├── config.py                # Pydantic Settings (.env)
 ├── models.py                # Modelos de datos (ChatMessage, Memory, Note, etc.)
 ├── dependencies.py          # FastAPI dependency injection
-├── logging_config.py        # JSON structured logging
-├── database/
-│   ├── db.py                # Inicialización SQLite + sqlite-vec (WAL, schema, vectores)
-│   └── repository.py        # Queries (conversations, messages, memories, notes, embeddings, dedup)
-├── conversation/
-│   ├── manager.py           # ConversationManager (historial, contexto)
-│   └── summarizer.py        # Resumen automático en background
-├── commands/
-│   ├── registry.py          # Registry extensible de comandos
-│   ├── parser.py            # Detección de /comandos
-│   ├── builtins.py          # Comandos built-in (remember, forget, etc.)
-│   └── context.py           # Contexto de ejecución de comandos
-├── skills/
-│   ├── models.py            # ToolDefinition, ToolCall, ToolResult, SkillMetadata
-│   ├── loader.py            # Parser de SKILL.md (frontmatter con regex)
-│   ├── registry.py          # SkillRegistry (registro, schemas Ollama, ejecución)
-│   ├── executor.py          # Tool calling loop (max 5 iteraciones)
-│   └── tools/               # Handlers de tools builtin
-│       ├── datetime_tools.py
-│       ├── calculator_tools.py
-│       ├── weather_tools.py
-│       ├── notes_tools.py
-│       ├── selfcode_tools.py
-│       └── expand_tools.py
-├── embeddings/
-│   └── indexer.py           # Embed/backfill de memorias y notas (best-effort)
-├── llm/
-│   └── client.py            # Cliente Ollama (chat + tool calling + embeddings)
-├── whatsapp/
-│   └── client.py            # Cliente WhatsApp Cloud API
-├── webhook/
-│   ├── router.py            # Endpoints POST/GET /webhook + graceful shutdown
-│   ├── parser.py            # Extracción de mensajes del payload de Meta
-│   ├── security.py          # Validación HMAC-SHA256
-│   └── rate_limiter.py      # Rate limiting por número
-├── audio/
-│   └── transcriber.py       # Transcripción con faster-whisper
-├── formatting/
-│   ├── whatsapp.py          # Markdown -> formato WhatsApp
 │   └── splitter.py          # Split de mensajes largos
 ├── memory/
 │   ├── markdown.py          # Sync SQLite <-> MEMORY.md (bidireccional)
@@ -129,6 +90,9 @@ app/
 │   └── consolidator.py      # Dedup/merge de memorias via LLM
 ├── mcp/
 │   └── manager.py           # McpManager (MCP server connections, hot-add/remove)
+├── tracing/
+│   ├── context.py           # ContextVars locales para aislar asincronismo
+│   └── recorder.py          # Envia spans y scores a Langfuse & SQLite (Best-effort)
 └── health/
     └── router.py            # GET /health
 
@@ -151,6 +115,7 @@ skills/                      # Definiciones de skills (SKILL.md)
 | LLM | Ollama (local) |
 | Embeddings | nomic-embed-text via Ollama (768 dims) |
 | Base de datos | SQLite (WAL mode) + aiosqlite + sqlite-vec |
+| Observabilidad | Langfuse (Server + PostgreSQL en Docker) |
 | Contenedores | Docker + Docker Compose |
 
 ### Flujo de un mensaje
@@ -235,6 +200,9 @@ Variables de entorno (ver [.env.example](.env.example)):
 | `SEMANTIC_SEARCH_TOP_K` | Cantidad de resultados semánticos | `10` |
 | `MEMORY_FILE_WATCH_ENABLED` | Watch de MEMORY.md para sync bidireccional | `true` |
 | `LOG_LEVEL` | Nivel de logging | `INFO` |
+| `LANGFUSE_PUBLIC_KEY` | Llave pública de tu instancia local de Langfuse | `""` |
+| `LANGFUSE_SECRET_KEY` | Llave privada de Langfuse | `""` |
+| `LANGFUSE_HOST` | Host para telemetría | `http://localhost:3000` |
 
 ## Tests
 
@@ -324,6 +292,7 @@ sudo chown -R $(id -u):$(id -g) data/
 - [x] **Fase 5**: Memoria avanzada (daily logs, pre-compaction flush, session snapshots, consolidación)
 - [x] **Fase 6**: Búsqueda semántica (embeddings, sqlite-vec, RAG, MEMORY.md bidireccional)
 - [x] **Fase 7**: CI/CD — pre-commit hooks (ruff, mypy, pytest) + GitHub Actions + AI code review
-- [ ] **Fase 8**: Evaluación y Mejora Continua (Guardrails, Trazabilidad, Evaluación en 3 capas, Dataset vivo, Auto-evolución)
+- [x] **Fase 8**: Observabilidad y Tracing (Langfuse, OpenTelemetry, métricas detalladas).
+- [ ] **Fase 9**: Evaluación y Mejora Continua (Guardrails pre-entrega, Evaluación en 3 capas, Dataset vivo).
 
 Ver [PRODUCT_PLAN.md](PRODUCT_PLAN.md) para el detalle de cada fase.

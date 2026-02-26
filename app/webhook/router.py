@@ -341,7 +341,11 @@ def _build_capabilities_section(
         return None
 
     header = "You have the following capabilities. Use them proactively when the user's message is relevant."
-    return header + "\n\n" + "\n\n".join(sections)
+    meta_note = (
+        "\nTool expansion: if the current tools are insufficient for the task, "
+        "call request_more_tools(categories=[...]) to load additional tool categories dynamically."
+    )
+    return header + "\n\n" + "\n\n".join(sections) + meta_note
 
 
 async def _get_active_projects_summary(phone_number: str, repository) -> str | None:
@@ -418,17 +422,37 @@ async def _save_self_correction_memory(
     embed_model: str | None,
     vec_available: bool,
 ) -> None:
-    """Persist a guardrail failure as a self_correction memory. Best-effort."""
+    """Persist a guardrail failure as a self_correction memory. Best-effort.
+
+    Implements cooldown: if the same check type was already recorded in the last 2 hours,
+    skip to prevent spamming the memory store and causing watcher loops.
+    """
     try:
-        checks_str = ", ".join(failed_checks)
+        # Cooldown check: find which check types already have a recent correction
+        recent = await repository.get_recent_self_corrections(hours=2)
+        recent_check_types: set[str] = set()
+        for m in recent:
+            # Extract check names from existing correction notes
+            if "detectaron:" in m.content:
+                existing_checks_str = m.content.split("detectaron:")[1].split(".")[0]
+                recent_check_types.update(c.strip() for c in existing_checks_str.split(","))
+
+        new_checks = [c for c in failed_checks if c not in recent_check_types]
+        if not new_checks:
+            logger.info(
+                "Self-correction skipped (cooldown active for: %s)", ", ".join(failed_checks)
+            )
+            return
+
+        checks_str = ", ".join(new_checks)
         note = (
             f"[auto-corrección] Al responder '{user_text[:60]}...', "
             f"los guardrails detectaron: {checks_str}. "
             f"Recordar evitar este tipo de error."
         )
+        # Save to DB only — do NOT sync to MEMORY.md (self_correction excluded from watcher)
         mem_id = await repository.add_memory(note, category="self_correction")
-        all_memories = await repository.list_memories()
-        await memory_file.sync(all_memories)
+        logger.info("Saved self-correction memory for checks: %s", checks_str)
 
         if embed_model and vec_available and ollama_client:
             from app.embeddings.indexer import embed_memory
@@ -641,6 +665,7 @@ async def _handle_message(
                 ),
             ]
             description = await ollama_client.chat(vision_messages, model=settings.vision_model)
+            logger.debug("Vision (LLaVA) RAW OUTPUT: %r", description)
             logger.info("Vision description [%s]: %s", msg.from_number, description[:120])
 
             if in_onboarding:
@@ -720,6 +745,8 @@ async def _handle_message(
                     if settings.semantic_search_enabled and vec_available
                     else None
                 ),
+                wa_client=wa_client,
+                settings=settings,
             )
             try:
                 reply = await spec.handler(cmd_args, ctx)
@@ -799,6 +826,9 @@ async def _handle_message(
         # Kick off classify_intent in parallel with Phase A/B (LLM call, 1-3s)
         classify_task: asyncio.Task[list[str]] | None = None
         if has_tools:
+            # NOTE: history is not ready yet — classify_task will use it via closure after phase B.
+            # We start the task here with just user_text and no context; sticky fallback will
+            # be applied after Phase B when we have history and sticky_categories.
             classify_task = asyncio.create_task(classify_intent(user_text, ollama_client))
 
         # Phase A (parallel): embed query || save user message || load daily logs
@@ -898,13 +928,60 @@ async def _handle_message(
         # Capabilities summary (sync, fast)
         skills_summary = _build_capabilities_section(skill_registry, command_registry, mcp_manager)
 
-        # Phase C: await classify_task (should be mostly done by now)
+        # Phase C: await classify_task + load sticky_categories + extract user_facts
         pre_classified: list[str] | None = None
+        sticky_categories: list[str] = []
+        user_facts: dict[str, str] = {}
+
+        # Load sticky_categories from DB (fast query, typically <5ms)
+        if conv_id:
+            try:
+                sticky_categories = await repository.get_sticky_categories(conv_id)
+            except Exception:
+                logger.debug("Could not load sticky_categories", exc_info=True)
+
+        # Extract user facts using regex (no LLM, <1ms)
+        if memories:
+            try:
+                from app.context.fact_extractor import extract_facts
+
+                memory_strings = [m.content if hasattr(m, "content") else str(m) for m in memories]
+                user_facts = extract_facts(memory_strings)
+                if user_facts:
+                    logger.debug("Extracted user_facts from memories: %s", list(user_facts.keys()))
+            except Exception:
+                logger.debug("user_facts extraction failed", exc_info=True)
+
         if classify_task is not None:
             try:
-                pre_classified = await classify_task
+                # If the base classify_task returned 'none', upgrade with context + sticky fallback
+                base_result = await classify_task
+                if base_result == ["none"] and (history or sticky_categories):
+                    pre_classified = await classify_intent(
+                        user_text,
+                        ollama_client,
+                        recent_messages=history,
+                        sticky_categories=sticky_categories or None,
+                    )
+                else:
+                    pre_classified = base_result
             except Exception:
                 logger.warning("classify_intent task failed, executor will retry", exc_info=True)
+
+        # Fallback notification: if user sent a URL but Puppeteer is unavailable,
+        # inject a system note so the LLM can inform the user transparently.
+        _url_pattern = _re.compile(r"https?://(?:[-\w.]|(?:%[\da-fA-F]{2}))+")
+        _has_url_in_msg = bool(_url_pattern.search(user_text or ""))
+        _fetch_mode = mcp_manager.get_fetch_mode() if mcp_manager else "unavailable"
+        if _has_url_in_msg and _fetch_mode == "mcp-fetch":
+            logger.info("URL fetch request using mcp-fetch fallback (Puppeteer unavailable)")
+        _mcp_fetch_note: str | None = (
+            "NOTA DEL SISTEMA: Puppeteer no está disponible. "
+            "Estás usando fetch básico (sin renderizado JavaScript). "
+            "Informa brevemente al usuario de esto en tu respuesta."
+            if _has_url_in_msg and _fetch_mode == "mcp-fetch"
+            else None
+        )
 
         # Phase D: build context (sync) → main LLM call (~3-8s)
         context = _build_context(
@@ -917,6 +994,10 @@ async def _handle_message(
             history,
             projects_summary=projects_summary,
         )
+
+        # Inject mcp-fetch fallback note after context is built (append as system message)
+        if _mcp_fetch_note:
+            context.append(ChatMessage(role="system", content=_mcp_fetch_note))
 
         # Set current user context for tools that need it (e.g. scheduler, projects)
         from app.skills.tools.conversation_tools import (
@@ -941,6 +1022,9 @@ async def _handle_message(
                             mcp_manager=mcp_manager,
                             max_tools=settings.max_tools_per_call,
                             pre_classified_categories=pre_classified,
+                            user_facts=user_facts or None,
+                            recent_messages=history,
+                            sticky_categories=sticky_categories or None,
                         )
                     else:
                         reply = await ollama_client.chat(context)
@@ -954,12 +1038,32 @@ async def _handle_message(
                         mcp_manager=mcp_manager,
                         max_tools=settings.max_tools_per_call,
                         pre_classified_categories=pre_classified,
+                        user_facts=user_facts or None,
+                        recent_messages=history,
+                        sticky_categories=sticky_categories or None,
                     )
                 else:
                     reply = await ollama_client.chat(context)
         except Exception:
             logger.exception("Ollama chat failed")
             reply = "Sorry, I'm having trouble processing your message right now. Please try again later."
+
+        # Persist sticky categories for next turn
+        # If tools were used, save the categories so follow-up messages can continue in context.
+        # If no tools were used, clear them so stale categories don't bleed into unrelated turns.
+        if conv_id:
+            try:
+                tools_used = pre_classified and pre_classified not in (["none"], [])
+                if tools_used:
+                    _track_task(
+                        asyncio.create_task(
+                            repository.save_sticky_categories(conv_id, pre_classified)
+                        )
+                    )
+                else:
+                    _track_task(asyncio.create_task(repository.clear_sticky_categories(conv_id)))
+            except Exception:
+                logger.debug("Could not save sticky_categories", exc_info=True)
 
         # Guardrail pipeline (between LLM and WA delivery)
         if settings.guardrails_enabled:

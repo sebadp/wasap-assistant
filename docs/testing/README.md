@@ -7,7 +7,30 @@ Cada archivo en este directorio cubre el testing manual de una feature específi
 | Feature | Archivo |
 |---|---|
 | Testing completo del sistema | [`manual_testing_guide.md`](../../manual_testing_guide.md) *(en la raíz del proyecto)* |
-| *(guías específicas por feature se agregan aquí)* | |
+| Chat Funcional (Fase 1) | [`01-chat_funcional_testing.md`](01-chat_funcional_testing.md) |
+| Conversation Skill (Fase 1) | [`02-conversation_skill_testing.md`](02-conversation_skill_testing.md) |
+| Persistencia y Memoria (Fase 2) | [`03-persistencia_memoria_testing.md`](03-persistencia_memoria_testing.md) |
+| UX y Multimedia (Fase 3) | [`05-ux_multimedia_testing.md`](05-ux_multimedia_testing.md) |
+| Skills y Herramientas (Fase 4) | [`06-skills_herramientas_testing.md`](06-skills_herramientas_testing.md) |
+| Memoria Avanzada (Fase 5) | [`07-memoria_avanzada_testing.md`](07-memoria_avanzada_testing.md) |
+| Context Engineering (Fase 5) | [`08-context_engineering_testing.md`](08-context_engineering_testing.md) |
+| Búsqueda Semántica (Fase 6) | [`09-busqueda_semantica_testing.md`](09-busqueda_semantica_testing.md) |
+| CI/CD (Fase 7) | [`10-cicd_testing.md`](10-cicd_testing.md) |
+| Guardrails y Trazabilidad (Fase 8) | [`12-eval_guardrails_tracing_testing.md`](12-eval_guardrails_tracing_testing.md) |
+| Dataset Vivo (Fase 8) | [`13-eval_dataset_testing.md`](13-eval_dataset_testing.md) |
+| User Signals (Fase 8) | [`14-eval_user_signals_testing.md`](14-eval_user_signals_testing.md) |
+| Auto-evolución (Fase 8) | [`15-eval_auto_evolution_testing.md`](15-eval_auto_evolution_testing.md) |
+| Eval Skill (Fase 8) | [`16-eval_skill_testing.md`](16-eval_skill_testing.md) |
+| Maduración del Pipeline (Fase 8) | [`17-eval_maduracion_testing.md`](17-eval_maduracion_testing.md) |
+| Sesiones Agénticas | [`18-agentic_sessions.md`](18-agentic_sessions.md) |
+| Autonomous Agent (Shell, Loop Detection) | [`19-autonomous_agent_testing.md`](19-autonomous_agent_testing.md) |
+| Web Browsing & URL Fetching | [`22-web_browsing_testing.md`](22-web_browsing_testing.md) |
+| Observability & Tracing Profundo | [`24-observability_testing.md`](24-observability_testing.md) |
+| Agentic Security Layer | [`23-agentic_security_testing.md`](23-agentic_security_testing.md) |
+| Autonomous Agent Sprint 2 | [`20-autonomous_agent_sprint2_testing.md`](20-autonomous_agent_sprint2_testing.md) |
+| Autonomous Agent Sprint 3 | [`21-autonomous_agent_sprint3_testing.md`](21-autonomous_agent_sprint3_testing.md) |
+| Web Fetch Fix — Puppeteer-first + mcp-fetch fallback | [`25-web_fetch_fix_testing.md`](25-web_fetch_fix_testing.md) |
+| Dynamic Tool Budget & `request_more_tools` | [`27-dynamic_tool_budget_testing.md`](27-dynamic_tool_budget_testing.md) |
 
 ## Convenciones
 

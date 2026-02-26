@@ -95,8 +95,17 @@ def check_no_pii(user_text: str, reply: str) -> GuardrailResult:
     # Phones and DNIs: check for patterns that appear in reply but not user_text
     # (common in production: bot generates phone numbers)
     for pattern, name in [(_RE_PHONE, "phone"), (_RE_DNI, "dni")]:
-        reply_seqs = {re.sub(r"[\s\-]", "", m) for m in pattern.findall(reply)}
-        user_seqs = {re.sub(r"[\s\-]", "", m) for m in pattern.findall(user_text)}
+        reply_matches = set(pattern.findall(reply))
+        user_matches = set(pattern.findall(user_text))
+
+        reply_seqs = set()
+        for m in reply_matches:
+            # Ignore ISO dates (YYYY-MM-DD) which match phone regex
+            if name == "phone" and re.match(r"^\+?\d{4}-\d{2}-\d{2}$", m.strip()):
+                continue
+            reply_seqs.add(re.sub(r"[\s\-]", "", m))
+
+        user_seqs = {re.sub(r"[\s\-]", "", m) for m in user_matches}
         new_seqs = reply_seqs - user_seqs
         if new_seqs:
             leaked.append(f"{name}:{','.join(list(new_seqs)[:2])}")

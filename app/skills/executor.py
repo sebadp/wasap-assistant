@@ -2,14 +2,24 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from collections.abc import Awaitable, Callable
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 from app.formatting.compaction import compact_tool_output
 from app.llm.client import OllamaClient
 from app.models import ChatMessage
+from app.security.audit import AuditTrail
+from app.security.policy_engine import PolicyEngine
 from app.skills.models import ToolCall
 from app.skills.registry import SkillRegistry
-from app.skills.router import classify_intent, select_tools
+from app.skills.router import (
+    REQUEST_MORE_TOOLS_NAME,
+    TOOL_CATEGORIES,
+    build_request_more_tools_schema,
+    classify_intent,
+    select_tools,
+)
 from app.tracing.context import get_current_trace
 
 if TYPE_CHECKING:
@@ -21,6 +31,25 @@ MAX_TOOL_ITERATIONS = 5
 
 # Module-level cache: tools don't change at runtime after initialization
 _cached_tools_map: dict[str, dict] | None = None
+
+_policy_engine: PolicyEngine | None = None
+_audit_trail: AuditTrail | None = None
+
+
+async def get_policy_engine() -> PolicyEngine:
+    global _policy_engine
+    if _policy_engine is None:
+        loop = asyncio.get_running_loop()
+        _policy_engine = await loop.run_in_executor(None, lambda: PolicyEngine(Path("data/security_policies.yaml")))
+    return _policy_engine
+
+
+async def get_audit_trail() -> AuditTrail:
+    global _audit_trail
+    if _audit_trail is None:
+        loop = asyncio.get_running_loop()
+        _audit_trail = await loop.run_in_executor(None, lambda: AuditTrail(Path("data/audit_trail.jsonl")))
+    return _audit_trail
 
 
 def _build_tools_map(
@@ -67,6 +96,7 @@ async def _run_tool_call(
     mcp_manager: McpManager | None,
     ollama_client: OllamaClient,
     user_message: str,
+    hitl_callback: Callable[[str, dict, str], Awaitable[bool]] | None = None,
 ) -> ChatMessage:
     """Execute a single tool call and return the result as a tool message."""
     func = tc.get("function", {})
@@ -75,6 +105,53 @@ async def _run_tool_call(
 
     # Lazy-load skill instructions on first use (only for local skills)
     instructions = skill_registry.get_skill_instructions(tool_name)
+
+    policy = await get_policy_engine()
+    audit = await get_audit_trail()
+
+    loop = asyncio.get_running_loop()
+
+    decision = policy.evaluate(tool_name, arguments)
+
+    if decision.is_blocked:
+        await loop.run_in_executor(
+            None, lambda: audit.record(tool_name, arguments, "block", decision.reason, "blocked_by_policy")
+        )
+        error_msg = f"Security Policy Blocked execution: {decision.reason}"
+        logger.warning(f"Blocked tool {tool_name}: {decision.reason}")
+        return ChatMessage(role="tool", content=error_msg)
+
+    if decision.requires_flag:
+        if hitl_callback:
+            await loop.run_in_executor(
+                None, lambda: audit.record(tool_name, arguments, "flag", decision.reason, "pending_hitl_approval")
+            )
+            logger.warning(f"Tool {tool_name} flagged for HITL approval: {decision.reason}")
+            try:
+                approved = await hitl_callback(tool_name, arguments, decision.reason or "")
+                if not approved:
+                    await loop.run_in_executor(
+                        None, lambda: audit.record(
+                            tool_name, arguments, "blocked_via_hitl", decision.reason, "denied_by_user"
+                        )
+                    )
+                    return ChatMessage(
+                        role="tool", content="Security Policy BLOCK: Execution denied by user."
+                    )
+                await loop.run_in_executor(
+                    None, lambda: audit.record(
+                        tool_name, arguments, "allowed_via_hitl", decision.reason, "approved_by_user"
+                    )
+                )
+            except Exception as e:
+                return ChatMessage(role="tool", content=f"HITL error: {e}")
+        else:
+            await loop.run_in_executor(
+                None, lambda: audit.record(tool_name, arguments, "block", decision.reason, "no_hitl_available")
+            )
+            return ChatMessage(
+                role="tool", content="Security Policy BLOCK: Flagged but no HITL provided."
+            )
 
     tool_call = ToolCall(name=tool_name, arguments=arguments)
 
@@ -93,6 +170,50 @@ async def _run_tool_call(
         else:
             result = await skill_registry.execute_tool(tool_call)
 
+    # Runtime fallback: if a Puppeteer tool fails, retry with mcp-fetch (plain HTTP)
+    if (
+        not result.success
+        and tool_name.startswith("puppeteer_")
+        and mcp_manager is not None
+    ):
+        mcp_fetch_tools = {
+            name
+            for name, tool in mcp_manager.get_tools().items()
+            if tool.skill_name == "mcp::mcp-fetch"
+        }
+        if mcp_fetch_tools:
+            url = arguments.get("url") or arguments.get("name") or arguments.get("input", "")
+            if url:
+                fallback_name = next(
+                    (t for t in ("fetch_markdown", "fetch", "fetch_txt") if t in mcp_fetch_tools),
+                    None,
+                )
+                if fallback_name:
+                    logger.warning(
+                        "Puppeteer tool %s failed, retrying with mcp-fetch fallback (%s)",
+                        tool_name,
+                        fallback_name,
+                    )
+                    from app.skills.models import ToolCall as _ToolCall
+
+                    fallback_call = _ToolCall(name=fallback_name, arguments={"url": url})
+                    fallback_result = await mcp_manager.execute_tool(fallback_call)
+                    prefix = "[⚠️ Fallback a mcp-fetch — Puppeteer no respondió]\n"
+                    from app.skills.models import ToolResult as _ToolResult
+
+                    result = _ToolResult(
+                        tool_name=fallback_name,
+                        content=prefix + fallback_result.content,
+                        success=fallback_result.success,
+                    )
+
+    # Record allowed execution in audit log
+    await loop.run_in_executor(
+        None, lambda: audit.record(tool_name, arguments, "allow", decision.reason, result.content[:200])
+    )
+
+    logger.debug("Tool Execution RAW PAYLOAD send to %s: %s", tool_name, arguments)
+    logger.debug("Tool Execution RAW OUPUT from %s: %r", tool_name, result.content)
     logger.info("Tool %s -> %s", tool_name, result.content[:100])
 
     final_content = result.content
@@ -118,8 +239,25 @@ async def execute_tool_loop(
     mcp_manager: McpManager | None = None,
     max_tools: int = 8,
     pre_classified_categories: list[str] | None = None,
+    user_facts: dict[str, str] | None = None,
+    recent_messages: list[ChatMessage] | None = None,
+    sticky_categories: list[str] | None = None,
+    hitl_callback: Callable[[str, dict, str], Awaitable[bool]] | None = None,
 ) -> str:
-    """Run the tool calling loop: classify intent, select tools, execute."""
+    """Run the tool calling loop: classify intent, select tools, execute.
+
+    Args:
+        messages: Conversation history including the latest user message.
+        ollama_client: LLM client.
+        skill_registry: Registry of available tools.
+        mcp_manager: Optional MCP manager for external tools.
+        max_tools: Maximum number of tools to offer the LLM per iteration.
+        pre_classified_categories: Skip classification if already done.
+        user_facts: Structured user facts from memory (e.g. github_username). Injected
+            as a system message so the LLM has explicit access during tool calls.
+        recent_messages: Recent conversation history for contextual classification.
+        sticky_categories: Fallback categories from previous tool-using turn.
+    """
     # Always extract last user message — needed for tool output compaction
     # regardless of whether intent classification is pre-computed.
     user_message = ""
@@ -130,13 +268,18 @@ async def execute_tool_loop(
 
     # Stage 1: classify intent (use pre-computed result if available)
     all_tools_map = _get_cached_tools_map(skill_registry, mcp_manager)
-    categories = pre_classified_categories or await classify_intent(user_message, ollama_client)
+    categories = pre_classified_categories or await classify_intent(
+        user_message,
+        ollama_client,
+        recent_messages=recent_messages,
+        sticky_categories=sticky_categories,
+    )
 
     if categories == ["none"]:
         logger.info("Tool router: categories=none, plain chat")
         return await ollama_client.chat(messages)
 
-    # Stage 2: select relevant tools
+    # Stage 2: select relevant tools (budget distributed proportionally across categories)
     tools = select_tools(categories, all_tools_map, max_tools=max_tools)
     logger.info(
         "Tool router: categories=%s, selected %d tools: %s",
@@ -149,7 +292,24 @@ async def execute_tool_loop(
         logger.info("Tool router: no matching tools found, plain chat")
         return await ollama_client.chat(messages)
 
+    # Prepend the meta-tool so the LLM can request additional categories dynamically
+    meta_tool_schema = build_request_more_tools_schema(list(TOOL_CATEGORIES.keys()))
+    tools = [meta_tool_schema] + tools
+
     working_messages = list(messages)
+
+    # Inject user facts as a system message so the LLM has explicit access during tool calls.
+    # This prevents the LLM from guessing or hallucinating values like owner names in GitHub calls.
+    if user_facts:
+        from app.context.fact_extractor import format_facts_for_prompt
+
+        facts_text = format_facts_for_prompt(user_facts)
+        if facts_text:
+            working_messages.insert(
+                1 if working_messages and working_messages[0].role == "system" else 0,
+                ChatMessage(role="system", content=facts_text),
+            )
+            logger.debug("Injected user_facts into tool loop: %s", list(user_facts.keys()))
 
     for iteration in range(MAX_TOOL_ITERATIONS):
         response = await ollama_client.chat_with_tools(working_messages, tools=tools)
@@ -179,16 +339,98 @@ async def execute_tool_loop(
             )
         )
 
-        # Execute all tool calls in parallel, append results in order
-        tool_messages = await asyncio.gather(
-            *[
-                _run_tool_call(tc, skill_registry, mcp_manager, ollama_client, user_message)
-                for tc in response.tool_calls
-            ]
-        )
-        working_messages.extend(tool_messages)
+        # Separate meta-tool calls (handled inline) from regular tool calls
+        meta_indices = [
+            i
+            for i, tc in enumerate(response.tool_calls)
+            if tc.get("function", {}).get("name") == REQUEST_MORE_TOOLS_NAME
+        ]
+        regular_indices = [
+            i
+            for i, tc in enumerate(response.tool_calls)
+            if tc.get("function", {}).get("name") != REQUEST_MORE_TOOLS_NAME
+        ]
+
+        tool_result_map: dict[int, ChatMessage] = {}
+
+        # Handle meta-tool calls: expand the active tool set (no security layer needed)
+        for i in meta_indices:
+            tc = response.tool_calls[i]
+            args = tc.get("function", {}).get("arguments", {})
+            requested_cats = args.get("categories", [])
+            reason = args.get("reason", "")
+
+            new_tools = select_tools(requested_cats, all_tools_map, max_tools=max_tools)
+            existing_names = {t.get("function", {}).get("name") for t in tools}
+            added: list[str] = []
+            for tool_schema in new_tools:
+                tool_schema_name = tool_schema.get("function", {}).get("name")
+                if tool_schema_name and tool_schema_name not in existing_names:
+                    tools.append(tool_schema)
+                    existing_names.add(tool_schema_name)
+                    added.append(tool_schema_name)
+
+            logger.info(
+                "request_more_tools: cats=%s, added=%d: %s (reason: %r)",
+                requested_cats,
+                len(added),
+                added,
+                reason,
+            )
+            confirmation = (
+                f"Loaded {len(added)} new tools: {', '.join(added)}"
+                if added
+                else "No new tools added (already available or unknown category)"
+            )
+            tool_result_map[i] = ChatMessage(role="tool", content=confirmation)
+
+        # Execute regular tool calls in parallel, preserving original index for ordering
+        if regular_indices:
+            regular_results = await asyncio.gather(
+                *[
+                    _run_tool_call(
+                        response.tool_calls[i],
+                        skill_registry,
+                        mcp_manager,
+                        ollama_client,
+                        user_message,
+                        hitl_callback,
+                    )
+                    for i in regular_indices
+                ]
+            )
+            for i, msg in zip(regular_indices, regular_results, strict=True):
+                tool_result_map[i] = msg
+
+        # Append results in original call order
+        working_messages.extend(tool_result_map[i] for i in sorted(tool_result_map))
+
+        # Tool result clearing: replace old (raw) tool results with compact placeholders
+        # to prevent context bloat on iterations 3+. Keep the last 2 rounds intact.
+        _clear_old_tool_results(working_messages, keep_last_n=2)
 
     # Safety: exceeded max iterations, force a text response without tools
     logger.warning("Max tool iterations (%d) reached, forcing text response", MAX_TOOL_ITERATIONS)
     response = await ollama_client.chat_with_tools(working_messages, tools=None)
     return response.content
+
+
+def _clear_old_tool_results(messages: list[ChatMessage], keep_last_n: int = 2) -> None:
+    """Replace old tool results with compact summaries to free context window space.
+
+    Keeps the last `keep_last_n` tool messages intact (most recent are most useful).
+    This implements the Anthropic-recommended 'tool result clearing' pattern:
+    once a raw API response is processed, there's no reason to keep it verbatim.
+    """
+    tool_indices = [i for i, m in enumerate(messages) if m.role == "tool"]
+
+    if len(tool_indices) <= keep_last_n:
+        return  # Not enough tool results to warrant clearing
+
+    for idx in tool_indices[:-keep_last_n]:
+        old_content = messages[idx].content
+        first_line = old_content.split("\n")[0][:120].strip()
+        messages[idx] = ChatMessage(
+            role="tool",
+            content=f"[Previous result processed — summary: {first_line}]",
+        )

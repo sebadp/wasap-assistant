@@ -27,6 +27,8 @@ class MemoryFile:
             self._path.parent.mkdir(parents=True, exist_ok=True)
             lines = ["# Memories\n"]
             for m in memories:
+                if m.category == "self_correction":
+                    continue
                 if m.category:
                     lines.append(f"- [{m.category}] {m.content}")
                 else:

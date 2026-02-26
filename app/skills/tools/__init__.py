@@ -20,6 +20,7 @@ def register_builtin_tools(
 ) -> None:
     from app.skills.tools.calculator_tools import register as register_calculator
     from app.skills.tools.datetime_tools import register as register_datetime
+    from app.skills.tools.docs_tools import register as register_docs
     from app.skills.tools.expand_tools import register as register_expand
     from app.skills.tools.git_tools import register as register_git
     from app.skills.tools.news_tools import register as register_news
@@ -35,6 +36,7 @@ def register_builtin_tools(
     register_calculator(registry)
     register_weather(registry)
     register_search(registry)
+    register_docs(registry)
     register_notes(
         registry,
         repository,
@@ -67,4 +69,14 @@ def register_builtin_tools(
 
         register_eval(registry, repository, ollama_client=ollama_client)
 
-    register_git(registry)
+    register_git(registry, settings=settings)
+
+    if settings is not None:
+        from app.skills.tools.shell_tools import register as register_shell
+
+        register_shell(registry, settings)
+
+    if settings is not None:
+        from app.skills.tools.workspace_tools import register as register_workspace
+
+        register_workspace(registry, projects_root=getattr(settings, "projects_root", ""))

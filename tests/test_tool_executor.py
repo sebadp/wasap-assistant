@@ -154,6 +154,78 @@ async def test_tool_error_returns_error_content(ollama_client, skill_registry):
     assert result == "Sorry, there was an error"
 
 
+async def test_request_more_tools_expands_tool_set_in_loop(ollama_client, skill_registry):
+    """request_more_tools meta-call must expand the active tool set for subsequent iterations."""
+
+    async def save_note(content: str = "") -> str:
+        return "Note saved"
+
+    async def list_issues() -> str:
+        return "GitHub issues: #1, #2"
+
+    skill_registry.register_tool(
+        name="save_note",
+        description="Save a note",
+        parameters={"type": "object", "properties": {"content": {"type": "string"}}},
+        handler=save_note,
+    )
+    skill_registry.register_tool(
+        name="list_issues",
+        description="List GitHub issues",
+        parameters={"type": "object", "properties": {}},
+        handler=list_issues,
+    )
+
+    all_tools_map = {
+        "save_note": {
+            "type": "function",
+            "function": {"name": "save_note", "description": "Save note", "parameters": {}},
+        },
+        "list_issues": {
+            "type": "function",
+            "function": {"name": "list_issues", "description": "List issues", "parameters": {}},
+        },
+    }
+
+    ollama_client.chat_with_tools = AsyncMock(
+        side_effect=[
+            # Iteration 1: LLM calls request_more_tools to get github tools
+            ChatResponse(
+                content="",
+                tool_calls=[
+                    {
+                        "function": {
+                            "name": "request_more_tools",
+                            "arguments": {"categories": ["github"], "reason": "need github tools"},
+                        }
+                    }
+                ],
+            ),
+            # Iteration 2: LLM uses the newly added list_issues tool
+            ChatResponse(
+                content="",
+                tool_calls=[{"function": {"name": "list_issues", "arguments": {}}}],
+            ),
+            # Iteration 3: final text response
+            ChatResponse(content="Here are the GitHub issues"),
+        ]
+    )
+
+    messages = [ChatMessage(role="user", content="List GitHub issues")]
+    fake_categories = {"notes": ["save_note"], "github": ["list_issues"]}
+
+    with (
+        patch("app.skills.executor.classify_intent", new_callable=AsyncMock, return_value=["notes"]),
+        patch("app.skills.executor._get_cached_tools_map", return_value=all_tools_map),
+        patch("app.skills.router.TOOL_CATEGORIES", fake_categories),
+        patch("app.skills.executor.TOOL_CATEGORIES", fake_categories),
+    ):
+        result = await execute_tool_loop(messages, ollama_client, skill_registry)
+
+    assert result == "Here are the GitHub issues"
+    assert ollama_client.chat_with_tools.call_count == 3
+
+
 async def test_multiple_tool_calls_in_one_response(ollama_client, skill_registry):
     """LLM returns multiple tool calls in a single response."""
     p1, p2 = _bypass_router()

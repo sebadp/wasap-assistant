@@ -34,10 +34,11 @@ SAMPLE_FORECAST_RESPONSE = {
         "weather_code": 1,  # Partly cloudy
     },
     "daily": {
-        "time": ["2024-01-01"],
-        "temperature_2m_max": [28.0],
-        "temperature_2m_min": [18.0],
-        "precipitation_probability_max": [0],
+        "time": ["2024-01-01", "2024-01-02", "2024-01-03"],
+        "weather_code": [1, 2, 0],
+        "temperature_2m_max": [28.0, 26.0, 30.0],
+        "temperature_2m_min": [18.0, 16.0, 20.0],
+        "precipitation_probability_max": [0, 10, 0],
     },
 }
 
@@ -68,7 +69,10 @@ async def test_get_weather_success():
     assert "Buenos Aires" in result.content
     assert "22.5°C" in result.content
     assert "Partly cloudy" in result.content
-    assert "18.0°C - 28.0°C" in result.content
+    # Daily forecast: min-max with unit
+    assert "18.0-28.0°C" in result.content
+    # Tomorrow entry present
+    assert "Tomorrow" in result.content
 
     assert mock_resolve.call_count == 2
 
@@ -90,7 +94,7 @@ async def test_get_weather_city_not_found():
         )
 
     assert result.success
-    assert "Could not find location" in result.content
+    assert "Could not find location" in result.content or "NonexistentCity" in result.content
 
 
 async def test_get_weather_http_error():

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import difflib
 import logging
 import subprocess
 import sys
@@ -57,7 +58,6 @@ def register(
     ollama_client: OllamaClient | None = None,
     vec_available: bool = False,
 ) -> None:
-
     async def get_version_info() -> str:
         def _collect() -> str:
             lines = []
@@ -349,6 +349,58 @@ def register(
         logger.info("Agent write_source_file: %s (%d chars)", path, len(content))
         return await asyncio.to_thread(_write)
 
+    async def preview_patch(path: str, search: str, replace: str) -> str:
+        """Preview a targeted text replacement in an existing source file.
+
+        Finds the FIRST occurrence of `search` and replaces it with `replace` in memory.
+        Returns a unified diff showing what WOULD change. Does NOT modify the file.
+        Use this to verify changes before apply_patch.
+        """
+        target = (_PROJECT_ROOT / path).resolve()
+
+        if not _is_safe_path(target):
+            return f"Blocked: '{path}' is outside the project root or is a sensitive file."
+
+        if target.suffix.lower() in _BLOCKED_EXT:
+            return f"Blocked: Cannot patch binary or database file ({target.suffix})"
+
+        def _preview() -> str:
+            if not target.exists():
+                return f"Error: File '{path}' does not exist."
+
+            try:
+                text = target.read_text(encoding="utf-8")
+            except Exception as e:
+                return f"Error reading file: {e}"
+
+            if search not in text:
+                snippet = text[:300] + ("..." if len(text) > 300 else "")
+                return (
+                    f"Error: Search string not found in '{path}'.\n"
+                    f"Use read_source_file to check the exact current content.\n"
+                    f"File starts with:\n{snippet}"
+                )
+
+            new_text = text.replace(search, replace, 1)
+
+            original_lines = text.splitlines(keepends=True)
+            new_lines = new_text.splitlines(keepends=True)
+            diff = "".join(
+                difflib.unified_diff(original_lines, new_lines, fromfile=path, tofile=path, n=3)
+            )
+
+            if not diff.strip():
+                return "The expected replacement does not actually change the file content (search == replace)."
+
+            return (
+                f"🔍 **Preview of changes for `{path}`**:\n"
+                f"```diff\n{diff}```\n"
+                f"If you are confident in this change, call `apply_patch` with the exact same arguments."
+            )
+
+        logger.info("Agent preview_patch: %s (search=%d chars)", path, len(search))
+        return await asyncio.to_thread(_preview)
+
     async def apply_patch(path: str, search: str, replace: str) -> str:
         """Apply a targeted text replacement in a source file.
 
@@ -396,7 +448,142 @@ def register(
         logger.info("Agent apply_patch: %s (search=%d chars)", path, len(search))
         return await asyncio.to_thread(_patch)
 
+    async def get_file_outline(path: str) -> str:
+        """Return a structural outline of a source file (functions, classes, line numbers).
+
+        Uses AST for .py files; falls back to regex for other text files.
+        Does NOT read file content into context — only structure.
+        """
+        import ast
+        import re as _re
+
+        target = (_PROJECT_ROOT / path).resolve()
+
+        if not _is_safe_path(target):
+            return f"Blocked: '{path}' is outside the project root."
+        if not target.exists():
+            return f"Error: File '{path}' does not exist."
+        if not target.is_file():
+            return f"Error: '{path}' is not a file."
+
+        def _outline() -> str:
+            try:
+                text = target.read_text(encoding="utf-8", errors="replace")
+            except Exception as e:
+                return f"Error reading file: {e}"
+
+            lines = text.splitlines()
+            total_lines = len(lines)
+            items: list[tuple[int, str]] = []
+
+            if target.suffix == ".py":
+                try:
+                    tree = ast.parse(text, filename=str(target))
+                    # Iterate only top-level Module children to avoid double-listing methods
+                    for node in tree.body:
+                        if isinstance(node, ast.ClassDef):
+                            end = getattr(node, "end_lineno", node.lineno)
+                            items.append(
+                                (node.lineno, f"  class {node.name}  [L{node.lineno}-{end}]")
+                            )
+                            # Iterate direct class members only (not nested via ast.walk)
+                            for child in node.body:
+                                if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                                    cend = getattr(child, "end_lineno", child.lineno)
+                                    args = [a.arg for a in child.args.args]
+                                    items.append(
+                                        (
+                                            child.lineno,
+                                            f"    def {child.name}({', '.join(args)})  [L{child.lineno}-{cend}]",
+                                        )
+                                    )
+                        elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                            # Top-level functions only (direct children of Module)
+                            end = getattr(node, "end_lineno", node.lineno)
+                            args = [a.arg for a in node.args.args]
+                            items.append(
+                                (
+                                    node.lineno,
+                                    f"  def {node.name}({', '.join(args)})  [L{node.lineno}-{end}]",
+                                )
+                            )
+
+                    items.sort(key=lambda x: x[0])
+                    body = (
+                        "\n".join(item for _, item in items)
+                        if items
+                        else "  (no functions or classes found)"
+                    )
+                except SyntaxError:
+                    body = "  (SyntaxError, falling back to regex)\n"
+                    # Fall through to regex
+                    for i, line in enumerate(lines, 1):
+                        if _re.match(r"\s*(def |async def |class )", line):
+                            body += f"  L{i}: {line.strip()}\n"
+            else:
+                # Regex fallback for JS, TS, YAML, MD, etc.
+                patterns = [
+                    r"^(export\s+)?(async\s+)?function\s+\w+",
+                    r"^(export\s+)?class\s+\w+",
+                    r"^(const|let|var)\s+\w+\s*=\s*(async\s+)?\(",
+                    r"^#{1,3}\s+",  # Markdown headings
+                ]
+                regex = _re.compile("|".join(patterns))
+                matched: list[str] = []
+                for i, line in enumerate(lines, 1):
+                    if regex.match(line.strip()):
+                        matched.append(f"  L{i}: {line.strip()[:100]}")
+                body = "\n".join(matched) if matched else "  (no structure detected)"
+
+            result = f"{path} ({total_lines} lines)\n{body}"
+            # Cap output at 4000 chars
+            if len(result) > 4000:
+                result = result[:3950] + "\n... (output truncated)"
+            return result
+
+        return await asyncio.to_thread(_outline)
+
+    async def read_lines(path: str, start: int, end: int) -> str:
+        """Read a specific line range from a source file (1-indexed, inclusive).
+
+        Max 200 lines per call. Use get_file_outline first to find line numbers.
+        """
+        target = (_PROJECT_ROOT / path).resolve()
+
+        if not _is_safe_path(target):
+            return f"Blocked: '{path}' is outside the project root."
+        if not target.exists():
+            return f"Error: File '{path}' does not exist."
+
+        if start < 1:
+            return "Error: start line must be >= 1."
+        if end < start:
+            return "Error: end line must be >= start line."
+        if end - start > 199:
+            return f"Error: Range too large ({end - start + 1} lines). Max 200 lines per call. Split into smaller ranges."
+
+        def _read() -> str:
+            try:
+                text = target.read_text(encoding="utf-8", errors="replace")
+            except Exception as e:
+                return f"Error reading file: {e}"
+
+            all_lines = text.splitlines()
+            total = len(all_lines)
+            actual_end = min(end, total)
+
+            if start > total:
+                return f"Error: start={start} exceeds file length ({total} lines)."
+
+            selected = all_lines[start - 1 : actual_end]
+            numbered = "\n".join(f"L{start + i}: {line}" for i, line in enumerate(selected))
+            header = f"{path} — Lines {start}-{actual_end} (of {total} total):\n"
+            return header + numbered
+
+        return await asyncio.to_thread(_read)
+
     # Register all tools
+
     registry.register_tool(
         name="get_version_info",
         description="Get current version info: git commit, branch, Python version, and model settings",
@@ -558,5 +745,83 @@ def register(
             "required": ["path", "search", "replace"],
         },
         handler=apply_patch,
+        skill_name="selfcode",
+    )
+
+    registry.register_tool(
+        name="preview_patch",
+        description=(
+            "Generates a unified diff preview of replacing `search` with `replace` in `path`. "
+            "Does NOT modify the file. Returns a markdown diff so you can verify changes first."
+        ),
+        parameters={
+            "type": "object",
+            "properties": {
+                "path": {
+                    "type": "string",
+                    "description": "File path relative to project root",
+                },
+                "search": {
+                    "type": "string",
+                    "description": "Exact text to find in the file (must match exactly, including whitespace)",
+                },
+                "replace": {
+                    "type": "string",
+                    "description": "Text to replace the found string with",
+                },
+            },
+            "required": ["path", "search", "replace"],
+        },
+        handler=preview_patch,
+        skill_name="selfcode",
+    )
+
+    registry.register_tool(
+        name="get_file_outline",
+        description=(
+            "Get a structural outline of a source file: functions, classes, and line numbers. "
+            "Uses AST for Python files, regex fallback for other types. "
+            "Does NOT read full file content — use this first on large files (>200 lines), "
+            "then use read_lines to read specific sections."
+        ),
+        parameters={
+            "type": "object",
+            "properties": {
+                "path": {
+                    "type": "string",
+                    "description": "File path relative to project root, e.g. 'app/agent/loop.py'",
+                },
+            },
+            "required": ["path"],
+        },
+        handler=get_file_outline,
+        skill_name="selfcode",
+    )
+
+    registry.register_tool(
+        name="read_lines",
+        description=(
+            "Read a specific range of lines from a source file (1-indexed, inclusive). "
+            "Max 200 lines per call. Use get_file_outline first to find which lines to read."
+        ),
+        parameters={
+            "type": "object",
+            "properties": {
+                "path": {
+                    "type": "string",
+                    "description": "File path relative to project root",
+                },
+                "start": {
+                    "type": "integer",
+                    "description": "First line to read (1-indexed)",
+                },
+                "end": {
+                    "type": "integer",
+                    "description": "Last line to read (1-indexed, inclusive). Max start+199.",
+                },
+            },
+            "required": ["path", "start", "end"],
+        },
+        handler=read_lines,
         skill_name="selfcode",
     )

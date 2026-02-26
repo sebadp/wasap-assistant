@@ -5,17 +5,33 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+from langfuse import Langfuse
+
+from app.config import Settings
+
 logger = logging.getLogger(__name__)
 
 
 class TraceRecorder:
-    """Persists trace data to SQLite via the shared Repository.
+    """Persists trace data to SQLite via the shared Repository, and optionally to Langfuse.
 
     All methods are best-effort: exceptions are caught and logged, never propagated.
     """
 
     def __init__(self, repository) -> None:
         self._repo = repository
+        settings = Settings()  # type: ignore[call-arg]
+        self.langfuse: Langfuse | None = None
+        if settings.langfuse_public_key and settings.langfuse_secret_key:
+            try:
+                self.langfuse = Langfuse(
+                    public_key=settings.langfuse_public_key,
+                    secret_key=settings.langfuse_secret_key,
+                    host=settings.langfuse_host,
+                )
+                logger.info("Langfuse tracing enabled")
+            except Exception:
+                logger.warning("Failed to initialize Langfuse client", exc_info=True)
 
     async def start_trace(
         self,
@@ -26,6 +42,14 @@ class TraceRecorder:
     ) -> None:
         try:
             await self._repo.save_trace(trace_id, phone_number, input_text, message_type)
+            if self.langfuse:
+                self.langfuse.trace(
+                    id=trace_id,
+                    name="interaction",
+                    user_id=phone_number,
+                    input=input_text,
+                    metadata={"message_type": message_type},
+                )
         except Exception:
             logger.debug("TraceRecorder.start_trace failed", exc_info=True)
 
@@ -38,6 +62,15 @@ class TraceRecorder:
     ) -> None:
         try:
             await self._repo.finish_trace(trace_id, status, output_text, wa_message_id)
+            if self.langfuse:
+                # Langfuse traces don't have a direct "end" state modification like spans,
+                # but we can update the trace with the final output and tags
+                self.langfuse.trace(
+                    id=trace_id,
+                    output=output_text,
+                    tags=[status],
+                )
+                self.langfuse.flush()
         except Exception:
             logger.debug("TraceRecorder.finish_trace failed", exc_info=True)
 
@@ -51,6 +84,21 @@ class TraceRecorder:
     ) -> None:
         try:
             await self._repo.save_trace_span(span_id, trace_id, name, kind, parent_id)
+            if self.langfuse:
+                if kind == "generation":
+                    self.langfuse.generation(
+                        id=span_id,
+                        trace_id=trace_id,
+                        parent_observation_id=parent_id,
+                        name=name,
+                    )
+                else:
+                    self.langfuse.span(
+                        id=span_id,
+                        trace_id=trace_id,
+                        parent_observation_id=parent_id,
+                        name=name,
+                    )
         except Exception:
             logger.debug("TraceRecorder.start_span failed", exc_info=True)
 
@@ -72,6 +120,40 @@ class TraceRecorder:
                 output_data,
                 metadata,
             )
+            if self.langfuse:
+                level = "ERROR" if status == "failed" else "DEFAULT"
+                md = dict(metadata) if metadata else {}
+
+                # Extract OTel GenAI Semantic Conventions if present
+                usage: dict[str, int] = {}
+                in_tokens = md.pop("gen_ai.usage.input_tokens", None)
+                out_tokens = md.pop("gen_ai.usage.output_tokens", None)
+                if in_tokens is not None:
+                    usage["input"] = in_tokens
+                if out_tokens is not None:
+                    usage["output"] = out_tokens
+                model = md.pop("gen_ai.request.model", None)
+
+                # Check what type of observation this was by trying to update context on it
+                # The python SDK requires us to call the right method
+                if usage or model:
+                    self.langfuse.generation(
+                        id=span_id,
+                        output=output_data,
+                        input=input_data,
+                        level=level,
+                        metadata=md,
+                        model=model,
+                        usage=usage,
+                    )
+                else:
+                    self.langfuse.span(
+                        id=span_id,
+                        output=output_data,
+                        input=input_data,
+                        level=level,
+                        metadata=md,
+                    )
         except Exception:
             logger.debug("TraceRecorder.finish_span failed", exc_info=True)
 
@@ -86,6 +168,14 @@ class TraceRecorder:
     ) -> None:
         try:
             await self._repo.save_trace_score(trace_id, name, value, source, comment, span_id)
+            if self.langfuse:
+                self.langfuse.score(
+                    trace_id=trace_id,
+                    observation_id=span_id,
+                    name=name,
+                    value=value,
+                    comment=comment,
+                )
         except Exception:
             logger.debug("TraceRecorder.add_score failed", exc_info=True)
 

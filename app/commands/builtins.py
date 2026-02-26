@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 from datetime import UTC, datetime
 
@@ -8,6 +9,9 @@ from app.commands.registry import CommandRegistry, CommandSpec
 from app.models import ChatMessage
 
 logger = logging.getLogger(__name__)
+
+# Keep references to background agent tasks to prevent GC mid-execution
+_bg_agent_tasks: set[asyncio.Task] = set()
 
 
 async def cmd_cancel(args: str, context: CommandContext) -> str:
@@ -23,24 +27,111 @@ async def cmd_cancel(args: str, context: CommandContext) -> str:
     return "La sesión ya terminó o no se pudo cancelar."
 
 
-async def cmd_agent_status(args: str, context: CommandContext) -> str:
-    """Show the status of the current agent session."""
-    from app.agent.loop import get_active_session
+async def cmd_agent(args: str, context: CommandContext) -> str:
+    """Show the status of the current agent session, or start a new one if args provided."""
+    import asyncio
+
+    from app.agent.loop import create_session, get_active_session, run_agent_session
 
     session = get_active_session(context.phone_number)
-    if not session:
-        return "No hay ninguna sesión agéntica activa."
-    plan_preview = ""
-    if session.task_plan:
-        lines = session.task_plan.split("\n")[:8]
-        plan_preview = "\n".join(lines)
-        plan_preview = f"\n\n*Plan actual:*\n{plan_preview}"
-    return (
-        f"🤖 *Sesión agéntica activa*\n"
-        f"Estado: {session.status.value}\n"
-        f"Objetivo: {session.objective[:120]}"
-        f"{plan_preview}"
+
+    # If no args, just show status
+    if not args.strip():
+        if not session:
+            return (
+                "No hay ninguna sesión agéntica activa. Usa `/agent <objetivo>` para iniciar una."
+            )
+        plan_preview = ""
+        if session.task_plan:
+            lines = session.task_plan.split("\n")[:8]
+            plan_preview = "\n".join(lines)
+            plan_preview = f"\n\n*Plan actual:*\n{plan_preview}"
+        return (
+            f"🤖 *Sesión agéntica activa*\n"
+            f"Estado: {session.status.value}\n"
+            f"Objetivo: {session.objective[:120]}"
+            f"{plan_preview}"
+        )
+
+    # Start a new session
+    if session:
+        return "Ya hay una sesión activa. Usa /cancel antes de iniciar una nueva o /agent para ver su estado."
+
+    objective = args.strip()
+    new_session = create_session(context.phone_number, objective)
+
+    # Run the agent loop in the background — save reference to prevent GC mid-execution
+    task = asyncio.create_task(
+        run_agent_session(
+            session=new_session,
+            ollama_client=context.ollama_client,
+            skill_registry=context.skill_registry,
+            wa_client=context.wa_client,
+            mcp_manager=context.mcp_manager,
+        )
     )
+    _bg_agent_tasks.add(task)
+    task.add_done_callback(_bg_agent_tasks.discard)
+
+    return (
+        f"🚀 *Sesión agéntica iniciada*\n_Objetivo:_ {objective}\n\nTe iré informando mi progreso."
+    )
+
+
+async def cmd_agent_resume(args: str, context: CommandContext) -> str:
+    """Resume the most recent agent session from disk."""
+    import asyncio
+
+    from app.agent.loop import AgentSession, get_active_session, run_agent_session
+    from app.agent.persistence import get_latest_session_id, load_session_history
+
+    session = get_active_session(context.phone_number)
+    if session:
+        return "Ya hay una sesión activa en memoria. Usa /agent para ver su estado."
+
+    session_id = get_latest_session_id(context.phone_number)
+    if not session_id:
+        return "No encontré ninguna sesión reciente en disco para retomar."
+
+    history = load_session_history(context.phone_number, session_id)
+    if not history:
+        return f"Encontré la sesión {session_id} pero no tiene historial guardado."
+
+    # Reconstruct state from the last saved round
+    last_round = history[-1]
+
+    # We don't have the original objective saved in the JSONL directly,
+    # but we can extract it or use a default. Ideally, the resume logic
+    # just picks up the task plan.
+    reconstructed_session = AgentSession(
+        session_id=session_id,
+        phone_number=context.phone_number,
+        objective="[Retomado] " + (last_round.get("reply", "")[:50] + "..."),
+        max_iterations=15,
+    )
+    reconstructed_session.task_plan = last_round.get("task_plan")
+    reconstructed_session.iteration = last_round.get("iteration", 0)
+
+    # Since we can't easily reconstruct `messages: list[ChatMessage]` with exact fidelity
+    # just from the summary dict without importing internal models here,
+    # the agent loop will rely on its task plan injection to reorient itself.
+
+    asyncio.create_task(
+        run_agent_session(
+            session=reconstructed_session,
+            ollama_client=context.ollama_client,
+            skill_registry=context.skill_registry,
+            wa_client=context.wa_client,
+            mcp_manager=context.mcp_manager,
+        )
+    )
+
+    plan_preview = (
+        reconstructed_session.task_plan.split("\n")[0]
+        if reconstructed_session.task_plan
+        else "Sin plan previo."
+    )
+    return f"♻️ *Sesión agéntica {session_id[:8]} retomada*\n_Ronda {reconstructed_session.iteration}_\n_Plan:_ {plan_preview}"
 
 
 async def cmd_remember(args: str, context: CommandContext) -> str:
@@ -285,7 +376,10 @@ async def cmd_feedback(args: str, context: CommandContext) -> str:
         except (ValueError, Exception):
             pass  # keep default 0.5
 
-    await context.repository.save_trace_score(
+    from app.tracing.recorder import TraceRecorder
+
+    recorder = TraceRecorder(context.repository)
+    await recorder.add_score(
         trace_id=trace_id,
         name="human_feedback",
         value=sentiment_value,
@@ -308,7 +402,10 @@ async def cmd_rate(args: str, context: CommandContext) -> str:
     if not trace_id:
         return "No encontré una interacción reciente para evaluar."
 
-    await context.repository.save_trace_score(
+    from app.tracing.recorder import TraceRecorder
+
+    recorder = TraceRecorder(context.repository)
+    await recorder.add_score(
         trace_id=trace_id,
         name="human_rating",
         value=score / 5.0,
@@ -513,8 +610,16 @@ def register_builtins(registry: CommandRegistry) -> None:
     registry.register(
         CommandSpec(
             name="agent",
-            description="Ver el estado de la sesión agéntica actual",
-            usage="/agent",
-            handler=cmd_agent_status,
+            description="Iniciar nueva sesión agéntica o ver estado actual",
+            usage="/agent [objetivo]",
+            handler=cmd_agent,
+        )
+    )
+    registry.register(
+        CommandSpec(
+            name="agent-resume",
+            description="Retomar la última sesión agéntica si el bot se reinició",
+            usage="/agent-resume",
+            handler=cmd_agent_resume,
         )
     )
