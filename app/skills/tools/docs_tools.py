@@ -13,7 +13,9 @@ _SAFE_ID_RE = re.compile(r"^[\w\-]+$")
 def _validate_feature_id(feature_id: str, base_dir: Path) -> str | None:
     """Return error message if feature_id is unsafe, else None."""
     if not _SAFE_ID_RE.match(feature_id):
-        return f"Invalid feature_id '{feature_id}': only alphanumerics, hyphens, underscores allowed."
+        return (
+            f"Invalid feature_id '{feature_id}': only alphanumerics, hyphens, underscores allowed."
+        )
     # Verify the resolved path stays within the expected directory
     feature_path = (base_dir / f"{feature_id}.md").resolve()
     if not str(feature_path).startswith(str(base_dir.resolve())):

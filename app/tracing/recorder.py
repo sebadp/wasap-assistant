@@ -16,15 +16,27 @@ class TraceRecorder:
     """Persists trace data to SQLite via the shared Repository, and optionally to Langfuse.
 
     All methods are best-effort: exceptions are caught and logged, never propagated.
+
+    Use `TraceRecorder.create(repository)` to build the singleton instance at app startup.
+    The constructor accepts a pre-initialized Langfuse client (or None) so the singleton
+    can be reused across requests without creating a new background-flush thread each time.
     """
 
-    def __init__(self, repository) -> None:
+    def __init__(self, repository, langfuse: Langfuse | None = None) -> None:
         self._repo = repository
+        self.langfuse = langfuse
+
+    @classmethod
+    def create(cls, repository) -> TraceRecorder:
+        """Factory: read Settings, initialize Langfuse once, return a TraceRecorder.
+
+        Call this during app startup and store the result in app.state.trace_recorder.
+        """
         settings = Settings()  # type: ignore[call-arg]
-        self.langfuse: Langfuse | None = None
+        langfuse: Langfuse | None = None
         if settings.langfuse_public_key and settings.langfuse_secret_key:
             try:
-                self.langfuse = Langfuse(
+                langfuse = Langfuse(
                     public_key=settings.langfuse_public_key,
                     secret_key=settings.langfuse_secret_key,
                     host=settings.langfuse_host,
@@ -32,6 +44,7 @@ class TraceRecorder:
                 logger.info("Langfuse tracing enabled")
             except Exception:
                 logger.warning("Failed to initialize Langfuse client", exc_info=True)
+        return cls(repository, langfuse)
 
     async def start_trace(
         self,

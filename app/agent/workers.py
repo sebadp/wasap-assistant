@@ -105,6 +105,7 @@ async def execute_worker(
     mcp_manager: McpManager | None = None,
     max_tools: int = 8,
     hitl_callback: Callable[[str, dict, str], Awaitable[bool]] | None = None,
+    parent_span_id: str | None = None,
 ) -> str:
     """Execute a single TaskStep using the inner tool loop.
 
@@ -118,9 +119,7 @@ async def execute_worker(
     ]
 
     # Determine categories for this worker type
-    categories = WORKER_TOOL_SETS.get(
-        task.worker_type, WORKER_TOOL_SETS.get("general", [])
-    )
+    categories = WORKER_TOOL_SETS.get(task.worker_type, WORKER_TOOL_SETS.get("general", []))
 
     result = await execute_tool_loop(
         messages=messages,
@@ -130,6 +129,7 @@ async def execute_worker(
         max_tools=max_tools,
         pre_classified_categories=list(categories),
         hitl_callback=hitl_callback,
+        parent_span_id=parent_span_id,
     )
 
     logger.info(

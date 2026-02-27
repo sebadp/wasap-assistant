@@ -15,6 +15,10 @@ logger = logging.getLogger(__name__)
 class ChatResponse:
     content: str
     tool_calls: list[dict] | None = None
+    input_tokens: int | None = None
+    output_tokens: int | None = None
+    model: str | None = None
+    total_duration_ms: float | None = None
 
 
 class OllamaClient:
@@ -79,6 +83,12 @@ class OllamaClient:
         content = msg.get("content", "")
         tool_calls = msg.get("tool_calls")
 
+        # Extract generation metrics from Ollama response
+        input_tokens: int | None = data.get("prompt_eval_count")
+        output_tokens: int | None = data.get("eval_count")
+        total_dur = data.get("total_duration")
+        total_duration_ms: float | None = total_dur / 1_000_000 if total_dur is not None else None
+
         if content:
             logger.debug("LLM raw response: %s", content[:500])
             # Strip deepseek/qwen reasoning blocks: <think>...</think>
@@ -88,7 +98,14 @@ class OllamaClient:
             content = content.split("<think>")[0].strip()
 
         logger.debug("LLM processed response: %s", content[:500] if content else "(tool_calls)")
-        return ChatResponse(content=content, tool_calls=tool_calls)
+        return ChatResponse(
+            content=content,
+            tool_calls=tool_calls,
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+            model=use_model,
+            total_duration_ms=total_duration_ms,
+        )
 
     async def chat(self, messages: list[ChatMessage], model: str | None = None) -> str:
         response = await self.chat_with_tools(messages, tools=None, model=model)

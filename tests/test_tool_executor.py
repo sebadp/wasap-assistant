@@ -215,7 +215,9 @@ async def test_request_more_tools_expands_tool_set_in_loop(ollama_client, skill_
     fake_categories = {"notes": ["save_note"], "github": ["list_issues"]}
 
     with (
-        patch("app.skills.executor.classify_intent", new_callable=AsyncMock, return_value=["notes"]),
+        patch(
+            "app.skills.executor.classify_intent", new_callable=AsyncMock, return_value=["notes"]
+        ),
         patch("app.skills.executor._get_cached_tools_map", return_value=all_tools_map),
         patch("app.skills.router.TOOL_CATEGORIES", fake_categories),
         patch("app.skills.executor.TOOL_CATEGORIES", fake_categories),

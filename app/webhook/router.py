@@ -27,6 +27,7 @@ from app.dependencies import (
     get_repository,
     get_settings,
     get_skill_registry,
+    get_trace_recorder,
     get_transcriber,
     get_vec_available,
     get_whatsapp_client,
@@ -44,7 +45,6 @@ from app.skills.executor import execute_tool_loop
 from app.skills.registry import SkillRegistry
 from app.skills.router import classify_intent
 from app.tracing.context import TraceContext
-from app.tracing.recorder import TraceRecorder
 from app.webhook.parser import extract_messages, extract_reactions
 from app.webhook.security import validate_signature
 from app.whatsapp.client import WhatsAppClient
@@ -126,6 +126,7 @@ async def incoming_webhook(
     skill_registry = get_skill_registry(request)
     mcp_manager = get_mcp_manager(request)
     vec_available = get_vec_available(request)
+    trace_recorder = get_trace_recorder(request)
 
     for msg in messages:
         logger.info(
@@ -158,6 +159,7 @@ async def incoming_webhook(
             skill_registry=skill_registry,
             mcp_manager=mcp_manager,
             vec_available=vec_available,
+            trace_recorder=trace_recorder,
         )
 
     return Response(status_code=200)
@@ -177,6 +179,7 @@ async def process_message(
     skill_registry: SkillRegistry,
     mcp_manager: McpManager | None = None,
     vec_available: bool = False,
+    trace_recorder=None,
 ) -> None:
     # Parallelize initial WhatsApp calls (mark-read + typing indicator)
     try:
@@ -217,6 +220,7 @@ async def process_message(
             skill_registry,
             mcp_manager=mcp_manager,
             vec_available=vec_available,
+            trace_recorder=trace_recorder,
         )
     finally:
         # Remove typing indicator
@@ -526,11 +530,25 @@ async def _handle_guardrail_failure(
         lang_result = next(r for r in report.results if r.check_name == "language_match")
         detected_code = lang_result.details  # 2-letter ISO code of user's language
         _LANG_NAMES = {
-            "es": "Spanish", "en": "English", "fr": "French", "de": "German",
-            "it": "Italian", "pt": "Portuguese", "ru": "Russian", "zh-cn": "Chinese",
-            "zh-tw": "Chinese", "ja": "Japanese", "ko": "Korean", "ar": "Arabic",
-            "nl": "Dutch", "pl": "Polish", "sv": "Swedish", "tr": "Turkish",
-            "uk": "Ukrainian", "ca": "Catalan", "gl": "Galician",
+            "es": "Spanish",
+            "en": "English",
+            "fr": "French",
+            "de": "German",
+            "it": "Italian",
+            "pt": "Portuguese",
+            "ru": "Russian",
+            "zh-cn": "Chinese",
+            "zh-tw": "Chinese",
+            "ja": "Japanese",
+            "ko": "Korean",
+            "ar": "Arabic",
+            "nl": "Dutch",
+            "pl": "Polish",
+            "sv": "Swedish",
+            "tr": "Turkish",
+            "uk": "Ukrainian",
+            "ca": "Catalan",
+            "gl": "Galician",
         }
         lang_name = _LANG_NAMES.get(detected_code)
         if lang_name:
@@ -646,6 +664,7 @@ async def _handle_message(
     skill_registry: SkillRegistry,
     mcp_manager: McpManager | None = None,
     vec_available: bool = False,
+    trace_recorder=None,
 ) -> None:
     # Handle audio: transcribe to text
     if msg.type == "audio" and msg.media_id:
@@ -763,6 +782,7 @@ async def _handle_message(
                 ),
                 wa_client=wa_client,
                 settings=settings,
+                trace_recorder=trace_recorder,
             )
             try:
                 reply = await spec.handler(cmd_args, ctx)
@@ -824,12 +844,17 @@ async def _handle_message(
     # Determine message type for tracing
     _msg_type = "audio" if msg.type == "audio" else "text"
 
+    recorder = trace_recorder
+
     # Determine if tracing is enabled (sample rate check)
     import random
 
-    _trace_enabled = settings.tracing_enabled and random.random() < settings.tracing_sample_rate
+    _trace_enabled = (
+        settings.tracing_enabled
+        and recorder is not None
+        and random.random() < settings.tracing_sample_rate
+    )
 
-    recorder = TraceRecorder(repository)
     trace_ctx: TraceContext | None = None
 
     async def _run_normal_flow(trace_ctx: TraceContext | None) -> None:
@@ -1028,9 +1053,9 @@ async def _handle_message(
 
         try:
             if trace_ctx:
-                async with trace_ctx.span("llm_generation", kind="generation") as span:
-                    span.set_input({"has_tools": has_tools, "categories": pre_classified})
-                    if has_tools:
+                if has_tools:
+                    async with trace_ctx.span("tool_loop", kind="span") as loop_span:
+                        loop_span.set_input({"categories": pre_classified})
                         reply = await execute_tool_loop(
                             context,
                             ollama_client,
@@ -1041,10 +1066,22 @@ async def _handle_message(
                             user_facts=user_facts or None,
                             recent_messages=history,
                             sticky_categories=sticky_categories or None,
+                            parent_span_id=loop_span.span_id,
                         )
-                    else:
-                        reply = await ollama_client.chat(context)
-                    span.set_output({"reply_preview": reply[:100]})
+                        loop_span.set_output({"reply_preview": reply[:100]})
+                else:
+                    async with trace_ctx.span("llm:chat", kind="generation") as gen_span:
+                        gen_span.set_input({"message_count": len(context)})
+                        response = await ollama_client.chat_with_tools(context, tools=None)
+                        gen_span.set_metadata(
+                            {
+                                "gen_ai.usage.input_tokens": response.input_tokens,
+                                "gen_ai.usage.output_tokens": response.output_tokens,
+                                "gen_ai.request.model": response.model,
+                            }
+                        )
+                        reply = response.content
+                        gen_span.set_output({"reply_preview": reply[:100]})
             else:
                 if has_tools:
                     reply = await execute_tool_loop(

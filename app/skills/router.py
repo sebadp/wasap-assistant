@@ -149,6 +149,7 @@ def register_dynamic_category(category: str, tool_names: list[str]) -> None:
     TOOL_CATEGORIES[category] = merged
     logger.info("Dynamic category registered: %s (%d tools)", category, len(merged))
 
+
 async def classify_intent(
     user_message: str,
     ollama_client: OllamaClient,

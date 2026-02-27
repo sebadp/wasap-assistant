@@ -72,3 +72,8 @@ def get_mcp_manager(request: Request) -> McpManager | None:
 def get_vec_available(request: Request) -> bool:
     """Return whether sqlite-vec is available."""
     return getattr(request.app.state, "vec_available", False)
+
+
+def get_trace_recorder(request: Request):
+    """Return the TraceRecorder singleton, or None if tracing is disabled."""
+    return getattr(request.app.state, "trace_recorder", None)

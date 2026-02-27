@@ -70,7 +70,12 @@ def register(registry: SkillRegistry) -> None:
                 # Try full name first; if not found, retry with just the city (before any comma)
                 async def _geocode(name_query: str) -> dict:
                     logger.info(f"Geocoding city: {name_query}")
-                    geo_params = {"name": name_query, "count": 1, "language": "en", "format": "json"}
+                    geo_params = {
+                        "name": name_query,
+                        "count": 1,
+                        "language": "en",
+                        "format": "json",
+                    }
                     geo_resp = await _resolve_and_fetch(client, OPENMETEO_GEOCODING_URL, geo_params)
                     geo_resp.raise_for_status()
                     result = geo_resp.json()
@@ -181,6 +186,7 @@ def _format_weather_response(name: str, country: str, data: dict[str, Any]) -> s
         if dates:
             lines.append(f"  {len(dates)}-Day Forecast:")
             for i, date in enumerate(dates):
+
                 def _get(key: str, default: Any = "?", _i: int = i) -> Any:
                     vals = daily.get(key, [])
                     return vals[_i] if _i < len(vals) else default
@@ -204,7 +210,11 @@ def _format_weather_response(name: str, country: str, data: dict[str, Any]) -> s
                 # Build compact info string
                 parts = [f"{d_desc}, {min_t}-{max_t}{temp_unit}"]
                 if precip_prob and precip_prob != "?" and int(precip_prob) > 0:
-                    mm_str = f" {precip_mm}mm" if precip_mm and precip_mm != "?" and float(precip_mm) > 0 else ""
+                    mm_str = (
+                        f" {precip_mm}mm"
+                        if precip_mm and precip_mm != "?" and float(precip_mm) > 0
+                        else ""
+                    )
                     parts.append(f"rain:{precip_prob}%{mm_str}")
                 if wind_max and wind_max != "?":
                     parts.append(f"wind:{wind_max}{wind_unit}")

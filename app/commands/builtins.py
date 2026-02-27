@@ -68,6 +68,7 @@ async def cmd_agent(args: str, context: CommandContext) -> str:
             skill_registry=context.skill_registry,
             wa_client=context.wa_client,
             mcp_manager=context.mcp_manager,
+            recorder=context.trace_recorder,
         )
     )
     _bg_agent_tasks.add(task)
@@ -123,6 +124,7 @@ async def cmd_agent_resume(args: str, context: CommandContext) -> str:
             skill_registry=context.skill_registry,
             wa_client=context.wa_client,
             mcp_manager=context.mcp_manager,
+            recorder=context.trace_recorder,
         )
     )
 
@@ -518,6 +520,7 @@ async def cmd_dev_review(args: str, context: CommandContext) -> str:
             wa_client=context.wa_client,
             mcp_manager=context.mcp_manager,
             use_planner=True,
+            recorder=context.trace_recorder,
         )
     )
     _bg_agent_tasks.add(task)

@@ -136,6 +136,7 @@ async def compact_tool_output(
     """
     if max_length is None:
         from app.config import Settings
+
         max_length = Settings().compaction_threshold  # type: ignore[call-arg]
 
     if len(text) <= max_length:

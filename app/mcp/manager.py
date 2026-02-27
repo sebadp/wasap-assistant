@@ -332,9 +332,7 @@ class McpManager:
 
         # mcp-fetch tools (fallback, plain HTTP)
         mcp_fetch_tools = [
-            name
-            for name, tool in self._tools.items()
-            if tool.skill_name == "mcp::mcp-fetch"
+            name for name, tool in self._tools.items() if tool.skill_name == "mcp::mcp-fetch"
         ]
 
         if puppeteer_tools:

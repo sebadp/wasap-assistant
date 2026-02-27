@@ -26,6 +26,7 @@ from app.agent.planner import create_plan, replan, synthesize
 from app.agent.workers import execute_worker
 from app.models import ChatMessage
 from app.skills.executor import _clear_old_tool_results, execute_tool_loop
+from app.tracing.context import TraceContext, get_current_trace
 
 if TYPE_CHECKING:
     from app.llm.client import OllamaClient
@@ -352,7 +353,14 @@ async def _run_planner_session(
     """
     # --- Phase 1: UNDERSTAND — Create plan ---
     logger.info("Agent session %s: Phase 1 — UNDERSTAND (creating plan)", session.session_id)
-    plan = await create_plan(session.objective, ollama_client)
+    trace = get_current_trace()
+    if trace:
+        async with trace.span("planner:create_plan", kind="generation") as span:
+            span.set_input({"objective": session.objective[:200]})
+            plan = await create_plan(session.objective, ollama_client)
+            span.set_output({"tasks": len(plan.tasks), "plan_preview": plan.to_markdown()[:500]})
+    else:
+        plan = await create_plan(session.objective, ollama_client)
     session.plan = plan
     session.task_plan = plan.to_markdown()
 
@@ -382,22 +390,52 @@ async def _run_planner_session(
                 task.description[:80],
             )
 
-            try:
-                result = await execute_worker(
-                    task=task,
-                    objective=plan.objective,
-                    ollama_client=ollama_client,
-                    skill_registry=session_registry,
-                    mcp_manager=mcp_manager,
-                    max_tools=_TOOLS_PER_ROUND,
-                    hitl_callback=hitl_callback,
-                )
-                task.status = "done"
-                task.result = result
-            except Exception as e:
-                logger.exception("Worker task #%d failed", task.id)
-                task.status = "failed"
-                task.result = f"Error: {e}"
+            trace = get_current_trace()
+            if trace:
+                async with trace.span(f"worker:task_{task.id}", kind="span") as worker_span:
+                    worker_span.set_input(
+                        {
+                            "description": task.description,
+                            "worker_type": task.worker_type,
+                        }
+                    )
+                    try:
+                        result = await execute_worker(
+                            task=task,
+                            objective=plan.objective,
+                            ollama_client=ollama_client,
+                            skill_registry=session_registry,
+                            mcp_manager=mcp_manager,
+                            max_tools=_TOOLS_PER_ROUND,
+                            hitl_callback=hitl_callback,
+                            parent_span_id=worker_span.span_id,
+                        )
+                        task.status = "done"
+                        task.result = result
+                        worker_span.set_output({"result": result[:500], "status": task.status})
+                    except Exception as e:
+                        logger.exception("Worker task #%d failed", task.id)
+                        task.status = "failed"
+                        task.result = f"Error: {e}"
+                        worker_span._status = "failed"
+                        worker_span.set_output({"error": str(e), "status": task.status})
+            else:
+                try:
+                    result = await execute_worker(
+                        task=task,
+                        objective=plan.objective,
+                        ollama_client=ollama_client,
+                        skill_registry=session_registry,
+                        mcp_manager=mcp_manager,
+                        max_tools=_TOOLS_PER_ROUND,
+                        hitl_callback=hitl_callback,
+                    )
+                    task.status = "done"
+                    task.result = result
+                except Exception as e:
+                    logger.exception("Worker task #%d failed", task.id)
+                    task.status = "failed"
+                    task.result = f"Error: {e}"
 
             session.task_plan = plan.to_markdown()
 
@@ -431,8 +469,27 @@ async def _run_planner_session(
             break
 
         # --- Phase 3: SYNTHESIZE / REPLAN ---
-        logger.info("Agent session %s: Phase 3 — SYNTHESIZE (reviewing results)", session.session_id)
-        new_plan = await replan(plan, ollama_client)
+        logger.info(
+            "Agent session %s: Phase 3 — SYNTHESIZE (reviewing results)", session.session_id
+        )
+        trace = get_current_trace()
+        if trace:
+            async with trace.span("planner:replan", kind="generation") as span:
+                span.set_input(
+                    {
+                        "replans": plan.replans,
+                        "tasks_done": sum(1 for t in plan.tasks if t.status == "done"),
+                    }
+                )
+                new_plan = await replan(plan, ollama_client)
+                span.set_output(
+                    {
+                        "action": "replan" if new_plan else "done_or_continue",
+                        "new_tasks": len(new_plan.tasks) if new_plan else 0,
+                    }
+                )
+        else:
+            new_plan = await replan(plan, ollama_client)
         if new_plan is None:
             # Planner says done or continue (but no more pending tasks)
             break
@@ -449,7 +506,19 @@ async def _run_planner_session(
             pass
 
     # --- Final synthesis ---
-    reply = await synthesize(plan, ollama_client)
+    trace = get_current_trace()
+    if trace:
+        async with trace.span("planner:synthesize", kind="generation") as span:
+            span.set_input(
+                {
+                    "tasks_done": sum(1 for t in plan.tasks if t.status == "done"),
+                    "tasks_failed": sum(1 for t in plan.tasks if t.status == "failed"),
+                }
+            )
+            reply = await synthesize(plan, ollama_client)
+            span.set_output({"reply_preview": reply[:300]})
+    else:
+        reply = await synthesize(plan, ollama_client)
     return reply
 
 
@@ -481,14 +550,29 @@ async def _run_reactive_session(
             _inject_task_plan(messages, session.task_plan)
 
         # Run one round of tool execution
-        reply = await execute_tool_loop(
-            messages=messages,
-            ollama_client=ollama_client,
-            skill_registry=session_registry,
-            mcp_manager=mcp_manager,
-            max_tools=_TOOLS_PER_ROUND,
-            hitl_callback=hitl_callback,
-        )
+        trace = get_current_trace()
+        if trace:
+            async with trace.span(f"reactive:round_{iteration + 1}", kind="span") as round_span:
+                round_span.set_input({"iteration": iteration + 1})
+                reply = await execute_tool_loop(
+                    messages=messages,
+                    ollama_client=ollama_client,
+                    skill_registry=session_registry,
+                    mcp_manager=mcp_manager,
+                    max_tools=_TOOLS_PER_ROUND,
+                    hitl_callback=hitl_callback,
+                    parent_span_id=round_span.span_id,
+                )
+                round_span.set_output({"reply_preview": reply[:200]})
+        else:
+            reply = await execute_tool_loop(
+                messages=messages,
+                ollama_client=ollama_client,
+                skill_registry=session_registry,
+                mcp_manager=mcp_manager,
+                max_tools=_TOOLS_PER_ROUND,
+                hitl_callback=hitl_callback,
+            )
 
         messages.append(ChatMessage(role="assistant", content=reply))
 
@@ -530,8 +614,7 @@ async def _run_reactive_session(
                 "task_plan": session.task_plan,
                 "reply": reply,
                 "messages": [
-                    m.model_dump() if hasattr(m, "model_dump") else m.dict()
-                    for m in messages[-4:]
+                    m.model_dump() if hasattr(m, "model_dump") else m.dict() for m in messages[-4:]
                 ],
             }
             append_to_session(session.phone_number, session.session_id, round_data)
@@ -550,6 +633,7 @@ async def run_agent_session(
     wa_client: WhatsAppClient,
     mcp_manager: McpManager | None = None,
     use_planner: bool = True,
+    recorder=None,
 ) -> None:
     """Run a full agentic session in the background.
 
@@ -572,6 +656,43 @@ async def run_agent_session(
         session.objective[:80],
     )
 
+    if recorder is not None:
+        async with TraceContext(
+            phone_number=session.phone_number,
+            input_text=session.objective,
+            recorder=recorder,
+            message_type="agent",
+        ):
+            # TraceContext sets contextvars — inner code uses get_current_trace() to add spans.
+            # session_id is embedded in the spans via planner/worker span names.
+            await _run_agent_body(
+                session=session,
+                ollama_client=ollama_client,
+                skill_registry=skill_registry,
+                wa_client=wa_client,
+                mcp_manager=mcp_manager,
+                use_planner=use_planner,
+            )
+    else:
+        await _run_agent_body(
+            session=session,
+            ollama_client=ollama_client,
+            skill_registry=skill_registry,
+            wa_client=wa_client,
+            mcp_manager=mcp_manager,
+            use_planner=use_planner,
+        )
+
+
+async def _run_agent_body(
+    session: AgentSession,
+    ollama_client: OllamaClient,
+    skill_registry: SkillRegistry,
+    wa_client: WhatsAppClient,
+    mcp_manager: McpManager | None,
+    use_planner: bool,
+) -> None:
+    """Inner implementation of run_agent_session. Run inside a TraceContext if tracing enabled."""
     try:
         # Build a session-scoped registry with HITL + task-memory tools.
         session_registry = _register_session_tools(session, skill_registry, wa_client)

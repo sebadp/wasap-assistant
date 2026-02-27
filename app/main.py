@@ -70,6 +70,15 @@ async def lifespan(app: FastAPI):
         model=settings.ollama_model,
     )
     app.state.repository = repository
+
+    # TraceRecorder singleton: one Langfuse client for the lifetime of the app
+    if settings.tracing_enabled:
+        from app.tracing.recorder import TraceRecorder
+
+        app.state.trace_recorder = TraceRecorder.create(repository)
+    else:
+        app.state.trace_recorder = None
+
     app.state.memory_file = memory_file
     app.state.daily_log = daily_log
     app.state.command_registry = command_registry
@@ -261,6 +270,10 @@ async def lifespan(app: FastAPI):
         memory_watcher.stop()
     scheduler.shutdown()
     await mcp_manager.cleanup()
+    # Flush Langfuse before exit so buffered spans are not lost
+    trace_recorder = getattr(app.state, "trace_recorder", None)
+    if trace_recorder is not None and trace_recorder.langfuse is not None:
+        trace_recorder.langfuse.flush()
     await db_conn.close()
     await http_client.aclose()
 

@@ -101,7 +101,9 @@ async def test_get_note_not_found(repository):
 async def test_list_notes_truncates_but_get_note_shows_full(repository):
     """list_notes truncates at 80 chars; get_note returns the full content."""
     reg = await _make_registry(repository)
-    full_content = "Pelicula 1: descripcion larga. Pelicula 2: otra descripcion muy larga que excede."
+    full_content = (
+        "Pelicula 1: descripcion larga. Pelicula 2: otra descripcion muy larga que excede."
+    )
     note_id = await repository.save_note("Pelis", full_content)
 
     list_result = await reg.execute_tool(ToolCall(name="list_notes", arguments={}))

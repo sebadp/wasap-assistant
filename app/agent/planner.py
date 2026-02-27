@@ -101,9 +101,7 @@ def _parse_plan_json(raw: str, objective: str) -> AgentPlan:
     if text.startswith("```"):
         # Remove markdown code fences
         lines = text.split("\n")
-        text = "\n".join(
-            line for line in lines if not line.strip().startswith("```")
-        ).strip()
+        text = "\n".join(line for line in lines if not line.strip().startswith("```")).strip()
 
     try:
         data = json.loads(text)
@@ -219,9 +217,13 @@ async def replan(
     for t in plan.tasks:
         if t.status == "done":
             result_preview = (t.result or "")[:200]
-            completed_lines.append(f"#{t.id} [{t.worker_type}] {t.description}\n  Result: {result_preview}")
+            completed_lines.append(
+                f"#{t.id} [{t.worker_type}] {t.description}\n  Result: {result_preview}"
+            )
         elif t.status == "failed":
-            completed_lines.append(f"#{t.id} [{t.worker_type}] {t.description}\n  Result: FAILED - {t.result or 'unknown error'}")
+            completed_lines.append(
+                f"#{t.id} [{t.worker_type}] {t.description}\n  Result: FAILED - {t.result or 'unknown error'}"
+            )
         else:
             remaining_lines.append(f"#{t.id} [{t.worker_type}] {t.description}")
 

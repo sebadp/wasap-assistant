@@ -406,7 +406,11 @@ class TestManageProcess:
             ToolCall(name="manage_process", arguments={"action": "kill", "process_id": pid})
         )
         assert result.success
-        assert "terminated" in result.content.lower() or "killed" in result.content.lower() or pid in result.content
+        assert (
+            "terminated" in result.content.lower()
+            or "killed" in result.content.lower()
+            or pid in result.content
+        )
         fake_proc.terminate.assert_called_once()
 
     async def test_manage_process_kill_already_completed(self):
@@ -460,4 +464,8 @@ class TestManageProcess:
             )
         )
         assert result.success
-        assert "unknown action" in result.content.lower() or "unknown" in result.content.lower() or "use:" in result.content.lower()
+        assert (
+            "unknown action" in result.content.lower()
+            or "unknown" in result.content.lower()
+            or "use:" in result.content.lower()
+        )

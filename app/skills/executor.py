@@ -40,7 +40,9 @@ async def get_policy_engine() -> PolicyEngine:
     global _policy_engine
     if _policy_engine is None:
         loop = asyncio.get_running_loop()
-        _policy_engine = await loop.run_in_executor(None, lambda: PolicyEngine(Path("data/security_policies.yaml")))
+        _policy_engine = await loop.run_in_executor(
+            None, lambda: PolicyEngine(Path("data/security_policies.yaml"))
+        )
     return _policy_engine
 
 
@@ -48,7 +50,9 @@ async def get_audit_trail() -> AuditTrail:
     global _audit_trail
     if _audit_trail is None:
         loop = asyncio.get_running_loop()
-        _audit_trail = await loop.run_in_executor(None, lambda: AuditTrail(Path("data/audit_trail.jsonl")))
+        _audit_trail = await loop.run_in_executor(
+            None, lambda: AuditTrail(Path("data/audit_trail.jsonl"))
+        )
     return _audit_trail
 
 
@@ -97,6 +101,7 @@ async def _run_tool_call(
     ollama_client: OllamaClient,
     user_message: str,
     hitl_callback: Callable[[str, dict, str], Awaitable[bool]] | None = None,
+    parent_span_id: str | None = None,
 ) -> ChatMessage:
     """Execute a single tool call and return the result as a tool message."""
     func = tc.get("function", {})
@@ -115,7 +120,10 @@ async def _run_tool_call(
 
     if decision.is_blocked:
         await loop.run_in_executor(
-            None, lambda: audit.record(tool_name, arguments, "block", decision.reason, "blocked_by_policy")
+            None,
+            lambda: audit.record(
+                tool_name, arguments, "block", decision.reason, "blocked_by_policy"
+            ),
         )
         error_msg = f"Security Policy Blocked execution: {decision.reason}"
         logger.warning(f"Blocked tool {tool_name}: {decision.reason}")
@@ -124,30 +132,46 @@ async def _run_tool_call(
     if decision.requires_flag:
         if hitl_callback:
             await loop.run_in_executor(
-                None, lambda: audit.record(tool_name, arguments, "flag", decision.reason, "pending_hitl_approval")
+                None,
+                lambda: audit.record(
+                    tool_name, arguments, "flag", decision.reason, "pending_hitl_approval"
+                ),
             )
             logger.warning(f"Tool {tool_name} flagged for HITL approval: {decision.reason}")
             try:
                 approved = await hitl_callback(tool_name, arguments, decision.reason or "")
                 if not approved:
                     await loop.run_in_executor(
-                        None, lambda: audit.record(
-                            tool_name, arguments, "blocked_via_hitl", decision.reason, "denied_by_user"
-                        )
+                        None,
+                        lambda: audit.record(
+                            tool_name,
+                            arguments,
+                            "blocked_via_hitl",
+                            decision.reason,
+                            "denied_by_user",
+                        ),
                     )
                     return ChatMessage(
                         role="tool", content="Security Policy BLOCK: Execution denied by user."
                     )
                 await loop.run_in_executor(
-                    None, lambda: audit.record(
-                        tool_name, arguments, "allowed_via_hitl", decision.reason, "approved_by_user"
-                    )
+                    None,
+                    lambda: audit.record(
+                        tool_name,
+                        arguments,
+                        "allowed_via_hitl",
+                        decision.reason,
+                        "approved_by_user",
+                    ),
                 )
             except Exception as e:
                 return ChatMessage(role="tool", content=f"HITL error: {e}")
         else:
             await loop.run_in_executor(
-                None, lambda: audit.record(tool_name, arguments, "block", decision.reason, "no_hitl_available")
+                None,
+                lambda: audit.record(
+                    tool_name, arguments, "block", decision.reason, "no_hitl_available"
+                ),
             )
             return ChatMessage(
                 role="tool", content="Security Policy BLOCK: Flagged but no HITL provided."
@@ -157,13 +181,13 @@ async def _run_tool_call(
 
     trace = get_current_trace()
     if trace:
-        async with trace.span(f"tool:{tool_name}", kind="tool") as span:
+        async with trace.span(f"tool:{tool_name}", kind="tool", parent_id=parent_span_id) as span:
             span.set_input({"tool": tool_name, "arguments": arguments})
             if mcp_manager and mcp_manager.has_tool(tool_name):
                 result = await mcp_manager.execute_tool(tool_call)
             else:
                 result = await skill_registry.execute_tool(tool_call)
-            span.set_output({"content": result.content[:200]})
+            span.set_output({"content": result.content[:1000]})
     else:
         if mcp_manager and mcp_manager.has_tool(tool_name):
             result = await mcp_manager.execute_tool(tool_call)
@@ -171,11 +195,7 @@ async def _run_tool_call(
             result = await skill_registry.execute_tool(tool_call)
 
     # Runtime fallback: if a Puppeteer tool fails, retry with mcp-fetch (plain HTTP)
-    if (
-        not result.success
-        and tool_name.startswith("puppeteer_")
-        and mcp_manager is not None
-    ):
+    if not result.success and tool_name.startswith("puppeteer_") and mcp_manager is not None:
         mcp_fetch_tools = {
             name
             for name, tool in mcp_manager.get_tools().items()
@@ -209,7 +229,8 @@ async def _run_tool_call(
 
     # Record allowed execution in audit log
     await loop.run_in_executor(
-        None, lambda: audit.record(tool_name, arguments, "allow", decision.reason, result.content[:200])
+        None,
+        lambda: audit.record(tool_name, arguments, "allow", decision.reason, result.content[:200]),
     )
 
     logger.debug("Tool Execution RAW PAYLOAD send to %s: %s", tool_name, arguments)
@@ -243,6 +264,7 @@ async def execute_tool_loop(
     recent_messages: list[ChatMessage] | None = None,
     sticky_categories: list[str] | None = None,
     hitl_callback: Callable[[str, dict, str], Awaitable[bool]] | None = None,
+    parent_span_id: str | None = None,
 ) -> str:
     """Run the tool calling loop: classify intent, select tools, execute.
 
@@ -312,7 +334,32 @@ async def execute_tool_loop(
             logger.debug("Injected user_facts into tool loop: %s", list(user_facts.keys()))
 
     for iteration in range(MAX_TOOL_ITERATIONS):
-        response = await ollama_client.chat_with_tools(working_messages, tools=tools)
+        trace = get_current_trace()
+        iteration_span_id: str | None = None
+        if trace:
+            async with trace.span(
+                f"llm:iteration_{iteration + 1}", kind="generation", parent_id=parent_span_id
+            ) as gen_span:
+                gen_span.set_input(
+                    {"message_count": len(working_messages), "tool_count": len(tools)}
+                )
+                response = await ollama_client.chat_with_tools(working_messages, tools=tools)
+                gen_span.set_metadata(
+                    {
+                        "gen_ai.usage.input_tokens": response.input_tokens,
+                        "gen_ai.usage.output_tokens": response.output_tokens,
+                        "gen_ai.request.model": response.model,
+                    }
+                )
+                gen_span.set_output(
+                    {
+                        "content": response.content[:500],
+                        "tool_calls_count": len(response.tool_calls or []),
+                    }
+                )
+                iteration_span_id = gen_span.span_id
+        else:
+            response = await ollama_client.chat_with_tools(working_messages, tools=tools)
 
         if not response.tool_calls:
             logger.info(
@@ -395,6 +442,7 @@ async def execute_tool_loop(
                         ollama_client,
                         user_message,
                         hitl_callback,
+                        parent_span_id=iteration_span_id,
                     )
                     for i in regular_indices
                 ]

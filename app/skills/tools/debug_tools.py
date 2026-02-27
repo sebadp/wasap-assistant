@@ -58,8 +58,7 @@ def register(
                 score_info = f" | scores: min={min_s:.2f} avg={avg_s:.2f}{flag}"
             timestamp = (t["started_at"] or "")[:16]
             lines.append(
-                f"- `{trace_id}` [{timestamp}] {status}{score_info}\n"
-                f"  Input: {input_preview}"
+                f"- `{trace_id}` [{timestamp}] {status}{score_info}\n  Input: {input_preview}"
             )
 
         return "\n".join(lines)
@@ -150,8 +149,7 @@ def register(
             lines.append(f"\n**Spans ({len(trace['spans'])}):**")
             for s in trace["spans"][:10]:  # Cap at 10
                 lines.append(
-                    f"  - {s['name']} [{s['kind']}] {s['status']} "
-                    f"({s.get('latency_ms', '?')}ms)"
+                    f"  - {s['name']} [{s['kind']}] {s['status']} ({s.get('latency_ms', '?')}ms)"
                 )
 
         return "\n".join(lines)

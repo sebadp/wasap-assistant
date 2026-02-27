@@ -32,6 +32,7 @@ Cada archivo en este directorio cubre el testing manual de una feature específi
 | Web Fetch Fix — Puppeteer-first + mcp-fetch fallback | [`25-web_fetch_fix_testing.md`](25-web_fetch_fix_testing.md) |
 | Dynamic Tool Budget & `request_more_tools` | [`27-dynamic_tool_budget_testing.md`](27-dynamic_tool_budget_testing.md) |
 | Planner-Orchestrator | [`28-planner_orchestrator_testing.md`](28-planner_orchestrator_testing.md) |
+| Observabilidad de Agentes (singleton, spans, tokens) | [`29-observability_testing.md`](29-observability_testing.md) |
 
 ## Convenciones
 

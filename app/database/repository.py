@@ -1427,9 +1427,7 @@ class Repository:
             for r in rows
         ]
 
-    async def get_conversation_transcript(
-        self, phone_number: str, limit: int = 20
-    ) -> list[dict]:
+    async def get_conversation_transcript(self, phone_number: str, limit: int = 20) -> list[dict]:
         """Reconstruct a readable conversation transcript from messages table."""
         conv_id = await self.get_conversation_id(phone_number)
         if conv_id is None:
