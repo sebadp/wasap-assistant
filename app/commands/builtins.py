@@ -486,16 +486,26 @@ async def cmd_dev_review(args: str, context: CommandContext) -> str:
     if session:
         return "Ya hay una sesión activa. Usa /cancel antes de iniciar una nueva."
 
-    phone_target = args.strip()
-    if not phone_target:
+    # Args may be a phone number (for admins reviewing other users) or free-text instructions.
+    # If it looks like a phone number, use it as the target; otherwise use the caller's number
+    # and treat the args as additional focus instructions.
+    args_stripped = args.strip()
+    extra_focus = ""
+    if args_stripped and (args_stripped.startswith("+") or args_stripped.lstrip("+").isdigit()):
+        phone_target = args_stripped
+    else:
         phone_target = context.phone_number
+        if args_stripped:
+            extra_focus = f" Focus especially on: {args_stripped}."
 
     objective = (
-        f"Analyze the recent interactions of user {phone_target}. "
+        f"Analyze the recent interactions of user with phone number {phone_target}. "
+        f"Use exactly this phone number when calling review_interactions or get_conversation_transcript. "
         f"1. Read their conversation transcript to understand what happened. "
         f"2. Review their traces to find anomalies (low scores, errors, hallucinations). "
         f"3. For any problematic trace, deep-dive into tool calls and context. "
         f"4. Write a debug report with findings and suggested fixes."
+        f"{extra_focus}"
     )
 
     new_session = create_session(context.phone_number, objective)

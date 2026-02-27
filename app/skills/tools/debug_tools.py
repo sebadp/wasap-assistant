@@ -229,7 +229,7 @@ def register(
             "properties": {
                 "phone_number": {
                     "type": "string",
-                    "description": "The user's phone number (e.g. +5491234567890)",
+                    "description": "The target user's phone number as provided in your objective. Do NOT invent or guess this value.",
                 },
                 "limit": {
                     "type": "integer",
@@ -323,7 +323,7 @@ def register(
             "properties": {
                 "phone_number": {
                     "type": "string",
-                    "description": "The user's phone number",
+                    "description": "The target user's phone number as provided in your objective. Do NOT invent or guess this value.",
                 },
                 "limit": {
                     "type": "integer",

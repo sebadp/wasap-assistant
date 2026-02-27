@@ -647,7 +647,7 @@ async def run_agent_session(
             plan_status = f"_Plan: {done} pasos completados, {pending} pendientes._\n\n"
             final_message = plan_status + reply
 
-        from app.formatting.markdown_to_wa import markdown_to_whatsapp
+        from app.formatting.whatsapp import markdown_to_whatsapp
 
         await wa_client.send_message(
             session.phone_number,
