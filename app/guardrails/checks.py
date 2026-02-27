@@ -23,6 +23,10 @@ _RE_PHONE = re.compile(r"\b\+?[\d\s\-]{10,15}\b")
 # Regex para detectar raw tool JSON leakage
 _RE_RAW_TOOL = re.compile(r'\{"tool_call"', re.IGNORECASE)
 
+# Regex para detectar texto que no es lenguaje natural (URLs, UUIDs, código)
+_RE_URL = re.compile(r"^https?://\S+$")
+_RE_NON_NATURAL = re.compile(r"^[\w:/\-_.~%?=&#+@]+$")  # sin espacios → no es prosa
+
 
 def check_not_empty(reply: str) -> GuardrailResult:
     start = time.monotonic()
@@ -39,15 +43,29 @@ def check_not_empty(reply: str) -> GuardrailResult:
 def check_language_match(user_text: str, reply: str) -> GuardrailResult:
     """Check that reply is in the same language as user_text.
     Only applies when both texts are >= 30 chars (langdetect is unreliable on short texts).
+    Skips if user_text has no whitespace (URL, UUID, code) — not natural language.
     """
     start = time.monotonic()
+    stripped_user = user_text.strip()
+
     # Skip if either text is too short
-    if len(user_text.strip()) < 30 or len(reply.strip()) < 30:
+    if len(stripped_user) < 30 or len(reply.strip()) < 30:
         latency_ms = (time.monotonic() - start) * 1000
         return GuardrailResult(
             passed=True,
             check_name="language_match",
             details="skipped (text too short for reliable detection)",
+            latency_ms=latency_ms,
+        )
+
+    # Skip if user_text is non-natural (URL, UUID, code with no spaces)
+    words = stripped_user.split()
+    if len(words) <= 2 and _RE_NON_NATURAL.match(words[0]):
+        latency_ms = (time.monotonic() - start) * 1000
+        return GuardrailResult(
+            passed=True,
+            check_name="language_match",
+            details="skipped (non-natural-language input: URL/UUID/code)",
             latency_ms=latency_ms,
         )
 

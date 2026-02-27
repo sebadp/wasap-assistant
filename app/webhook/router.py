@@ -524,11 +524,27 @@ async def _handle_guardrail_failure(
     # Language mismatch: re-prompt with explicit language instruction
     elif "language_match" in failed_names:
         lang_result = next(r for r in report.results if r.check_name == "language_match")
-        expected_lang = lang_result.details
-        hint_msg = ChatMessage(
-            role="user",
-            content=f"IMPORTANT: Respond in {expected_lang}. Repeat your previous answer in that language.",
-        )
+        detected_code = lang_result.details  # 2-letter ISO code of user's language
+        _LANG_NAMES = {
+            "es": "Spanish", "en": "English", "fr": "French", "de": "German",
+            "it": "Italian", "pt": "Portuguese", "ru": "Russian", "zh-cn": "Chinese",
+            "zh-tw": "Chinese", "ja": "Japanese", "ko": "Korean", "ar": "Arabic",
+            "nl": "Dutch", "pl": "Polish", "sv": "Swedish", "tr": "Turkish",
+            "uk": "Ukrainian", "ca": "Catalan", "gl": "Galician",
+        }
+        lang_name = _LANG_NAMES.get(detected_code)
+        if lang_name:
+            hint_content = (
+                f"IMPORTANT: Your previous reply was in the wrong language. "
+                f"Respond in {lang_name} only. Repeat your answer in {lang_name}."
+            )
+        else:
+            # Unknown code — use generic instruction to avoid sending garbage code to LLM
+            hint_content = (
+                "IMPORTANT: Your previous reply was in the wrong language. "
+                "Look at the conversation history and respond in the same language the user is writing in."
+            )
+        hint_msg = ChatMessage(role="user", content=hint_content)
         try:
             retry = await ollama_client.chat(context + [hint_msg])
             if retry.strip():

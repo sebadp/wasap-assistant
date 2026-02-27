@@ -120,6 +120,13 @@ class TestCheckLanguageMatch:
         result = check_language_match(user, reply)
         assert result.passed is True
 
+    def test_skips_for_url_input(self):
+        url = "https://acrobat.adobe.com/id/urn:aaid:sc:US:bd1137eb-32a1-498f-b5ad-c1aaeb244814"
+        reply = "La URL que proporcionaste parece ser un identificador único para un documento en Adobe."
+        result = check_language_match(url, reply)
+        assert result.passed is True
+        assert "non-natural" in result.details
+
     def test_check_name(self):
         result = check_language_match("short", "also short")
         assert result.check_name == "language_match"
