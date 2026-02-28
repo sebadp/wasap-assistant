@@ -88,6 +88,7 @@ class Settings(BaseSettings):
     guardrails_language_check: bool = True
     guardrails_pii_check: bool = True
     guardrails_llm_checks: bool = False  # Activar en Iteración 6
+    guardrails_llm_timeout: float = 3.0  # segundos; 0.5 era demasiado bajo para qwen3:8b local
 
     # Tracing (Fase 2)
     tracing_enabled: bool = True

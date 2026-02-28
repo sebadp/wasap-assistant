@@ -186,8 +186,9 @@ def register(
     async def run_quick_eval(category: str = "all") -> str:
         """Run a quick evaluation against the dataset for a category.
 
+        Uses LLM-as-judge with a binary yes/no prompt to assess whether the model's
+        response correctly answers the question, compared against expected_output.
         Uses ollama_client.chat() directly (no tool loop) to avoid recursion.
-        Compares raw LLM response against expected_output for correction entries.
         """
         if not ollama_client:
             return "Cannot run eval: Ollama client not available."
@@ -211,38 +212,43 @@ def register(
             if not entry.get("expected_output"):
                 continue
             try:
+                # Step 1: generate the model's actual response
                 resp = await ollama_client.chat(
-                    [
-                        ChatMessage(role="user", content=entry["input_text"]),
-                    ]
+                    [ChatMessage(role="user", content=entry["input_text"])]
                 )
-                actual = resp.strip() if isinstance(resp, str) else resp
+                actual = str(resp).strip() if resp else ""
                 expected = entry["expected_output"]
-                # Simple overlap metric: shared words / total words
-                actual_words = set(str(actual).lower().split())
-                expected_words = set(expected.lower().split())
-                overlap = len(actual_words & expected_words) / max(len(expected_words), 1)
-                results.append(
-                    {
-                        "entry_id": entry["id"],
-                        "overlap": round(overlap, 2),
-                    }
+
+                # Step 2: LLM-as-judge — binary yes/no, think=False for determinism
+                judge_prompt = (
+                    f"Question: {entry['input_text'][:300]}\n"
+                    f"Expected answer: {expected[:300]}\n"
+                    f"Actual answer: {actual[:300]}\n\n"
+                    "Does the actual answer correctly and completely answer the question? "
+                    "Reply ONLY 'yes' or 'no'."
                 )
+                judge_resp = await ollama_client.chat(
+                    [ChatMessage(role="user", content=judge_prompt)],
+                    think=False,
+                )
+                passed = str(judge_resp).strip().lower().startswith("yes")
+                results.append({"entry_id": entry["id"], "passed": passed})
             except Exception:
                 logger.exception("run_quick_eval inference failed for entry %s", entry["id"])
 
         if not results:
             return "No correction entries with expected_output found. Try add_to_dataset() first."
 
-        avg_overlap = sum(r["overlap"] for r in results) / len(results)
+        correct = sum(1 for r in results if r["passed"])
         lines = [
             f"*Quick eval results* ({len(results)} entries, category={category})",
-            f"Avg word overlap vs expected: {avg_overlap:.0%}",
+            f"Correct: {correct}/{len(results)} ({correct / len(results):.0%})",
             "",
             "*Per entry:*",
         ]
         for r in results:
-            lines.append(f"- entry #{r['entry_id']}: overlap={r['overlap']:.0%}")
+            icon = "✅" if r["passed"] else "❌"
+            lines.append(f"- entry #{r['entry_id']}: {icon}")
         return "\n".join(lines)
 
     async def get_dashboard_stats(days: int = 30) -> str:

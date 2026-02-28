@@ -20,8 +20,13 @@ async def maybe_curate_to_dataset(
     input_text: str,
     output_text: str | None,
     repository: object,
+    failed_check_names: list[str] | None = None,
 ) -> None:
-    """Auto-curate a completed trace to the eval dataset. Best-effort — never raises."""
+    """Auto-curate a completed trace to the eval dataset. Best-effort — never raises.
+
+    failed_check_names: list of guardrail check names that failed (e.g. ["language_match"]).
+    Used to populate guardrail:<name> tags on failure entries so the dataset is filterable.
+    """
     try:
         scores = await repository.get_trace_scores(trace_id)  # type: ignore[attr-defined]
         if not scores:
@@ -37,13 +42,19 @@ async def maybe_curate_to_dataset(
 
         # Failure takes priority — detecting problems is most valuable
         if any_system_failure or has_negative_user:
+            failure_tags = (
+                [f"guardrail:{name}" for name in failed_check_names]
+                if failed_check_names
+                else None
+            )
             await repository.add_dataset_entry(  # type: ignore[attr-defined]
                 trace_id=trace_id,
                 entry_type="failure",
                 input_text=input_text,
                 output_text=output_text,
+                tags=failure_tags,
             )
-            logger.debug("Curated trace %s as failure", trace_id)
+            logger.debug("Curated trace %s as failure (tags=%s)", trace_id, failure_tags)
             return
 
         # Golden confirmed: system OK + user confirmed quality

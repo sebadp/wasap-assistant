@@ -33,6 +33,7 @@ Cada archivo en este directorio cubre el testing manual de una feature específi
 | Dynamic Tool Budget & `request_more_tools` | [`27-dynamic_tool_budget_testing.md`](27-dynamic_tool_budget_testing.md) |
 | Planner-Orchestrator | [`28-planner_orchestrator_testing.md`](28-planner_orchestrator_testing.md) |
 | Observabilidad de Agentes (singleton, spans, tokens) | [`29-observability_testing.md`](29-observability_testing.md) |
+| Eval Stack Hardening (remediation bilingüe, LLM-as-judge, benchmark offline) | [`30-eval_hardening_testing.md`](30-eval_hardening_testing.md) |
 
 ## Convenciones
 

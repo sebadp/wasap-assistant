@@ -506,10 +506,12 @@ async def _handle_guardrail_failure(
     context: list[ChatMessage],
     ollama_client: OllamaClient,
     original_reply: str,
+    trace_ctx=None,
 ) -> str:
     """Attempt one remediation for guardrail failure. Returns fixed reply or original.
 
     Single-shot: no recursion, no re-check after remediation.
+    trace_ctx: optional TraceContext — if present, wraps the remediation LLM call in a span.
     """
     from app.guardrails.checks import redact_pii
 
@@ -525,46 +527,57 @@ async def _handle_guardrail_failure(
         except Exception:
             current_reply = "Disculpa, no pude generar una respuesta."
 
-    # Language mismatch: re-prompt with explicit language instruction
+    # Language mismatch: re-prompt with bilingual explicit instruction
     elif "language_match" in failed_names:
         lang_result = next(r for r in report.results if r.check_name == "language_match")
         detected_code = lang_result.details  # 2-letter ISO code of user's language
         _LANG_NAMES = {
-            "es": "Spanish",
+            "es": "español",
             "en": "English",
-            "fr": "French",
-            "de": "German",
-            "it": "Italian",
-            "pt": "Portuguese",
-            "ru": "Russian",
-            "zh-cn": "Chinese",
-            "zh-tw": "Chinese",
-            "ja": "Japanese",
-            "ko": "Korean",
-            "ar": "Arabic",
-            "nl": "Dutch",
-            "pl": "Polish",
-            "sv": "Swedish",
-            "tr": "Turkish",
-            "uk": "Ukrainian",
-            "ca": "Catalan",
-            "gl": "Galician",
+            "fr": "français",
+            "de": "Deutsch",
+            "it": "italiano",
+            "pt": "português",
+            "ru": "русский",
+            "zh-cn": "中文",
+            "zh-tw": "中文",
+            "ja": "日本語",
+            "ko": "한국어",
+            "ar": "العربية",
+            "nl": "Nederlands",
+            "pl": "polski",
+            "sv": "svenska",
+            "tr": "Türkçe",
+            "uk": "українська",
+            "ca": "català",
+            "gl": "galego",
         }
         lang_name = _LANG_NAMES.get(detected_code)
         if lang_name:
+            # Bilingual instruction: target language first, then English fallback
+            # This ensures the LLM understands even if it biases toward English
             hint_content = (
-                f"IMPORTANT: Your previous reply was in the wrong language. "
-                f"Respond in {lang_name} only. Repeat your answer in {lang_name}."
+                f"IMPORTANTE: El usuario escribió en {lang_name}. "
+                f"Reescribe la respuesta SOLO en {lang_name}, sin cambiar el contenido.\n"
+                f"IMPORTANT: The user wrote in {lang_name}. "
+                f"Rewrite the response ONLY in {lang_name}, do not change the content."
             )
         else:
-            # Unknown code — use generic instruction to avoid sending garbage code to LLM
+            # Unknown language code — bilingual generic fallback
             hint_content = (
+                "IMPORTANTE: Tu respuesta anterior estaba en el idioma equivocado. "
+                "Mira el historial y responde en el mismo idioma que usa el usuario.\n"
                 "IMPORTANT: Your previous reply was in the wrong language. "
-                "Look at the conversation history and respond in the same language the user is writing in."
+                "Look at the conversation history and respond in the user's language."
             )
         hint_msg = ChatMessage(role="user", content=hint_content)
         try:
-            retry = await ollama_client.chat(context + [hint_msg])
+            if trace_ctx:
+                async with trace_ctx.span("guardrails:remediation", kind="generation") as span:
+                    span.set_metadata({"check": "language_match", "lang_code": detected_code})
+                    retry = await ollama_client.chat(context + [hint_msg])
+            else:
+                retry = await ollama_client.chat(context + [hint_msg])
             if retry.strip():
                 current_reply = retry
         except Exception:
@@ -1118,6 +1131,9 @@ async def _handle_message(
             except Exception:
                 logger.debug("Could not save sticky_categories", exc_info=True)
 
+        # Failed guardrail check names — populated below, used for dataset curation tags
+        failed_checks_for_curation: list[str] = []
+
         # Guardrail pipeline (between LLM and WA delivery)
         if settings.guardrails_enabled:
             from app.guardrails.pipeline import run_guardrails
@@ -1138,6 +1154,9 @@ async def _handle_message(
                         {
                             "passed": guardrail_report.passed,
                             "latency_ms": guardrail_report.total_latency_ms,
+                            "failed_checks": [
+                                r.check_name for r in guardrail_report.results if not r.passed
+                            ],
                         }
                     )
             else:
@@ -1155,6 +1174,7 @@ async def _handle_message(
                     context,
                     ollama_client,
                     reply,
+                    trace_ctx=trace_ctx,
                 )
 
             # Record guardrail results as trace scores
@@ -1169,6 +1189,7 @@ async def _handle_message(
             # Self-correction memory: persist guardrail failures so the LLM learns
             if not guardrail_report.passed:
                 failed_checks = [r.check_name for r in guardrail_report.results if not r.passed]
+                failed_checks_for_curation = failed_checks  # propagate to dataset curation
                 _track_task(
                     asyncio.create_task(
                         _save_self_correction_memory(
@@ -1232,6 +1253,7 @@ async def _handle_message(
                         input_text=user_text,
                         output_text=reply,
                         repository=repository,
+                        failed_check_names=failed_checks_for_curation or None,
                     )
                 )
             )

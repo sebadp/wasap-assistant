@@ -17,6 +17,7 @@ Documentos técnicos que bajan una intención de producto a cambios concretos en
 | Dynamic Tool Budget & `request_more_tools` | [`27-dynamic_tool_budget_prd.md`](27-dynamic_tool_budget_prd.md) / [`27-dynamic_tool_budget_prp.md`](27-dynamic_tool_budget_prp.md) | ✅ Completado |
 | Planner-Orchestrator | [`28-planner_orchestrator_prd.md`](28-planner_orchestrator_prd.md) / [`28-planner_orchestrator_prp.md`](28-planner_orchestrator_prp.md) | 🚧 En progreso |
 | Observabilidad de Agentes | [`29-observability_prd.md`](29-observability_prd.md) / [`29-observability_prp.md`](29-observability_prp.md) | ✅ Completado |
+| Eval Stack Hardening | [`30-eval_hardening_prd.md`](30-eval_hardening_prd.md) / [`30-eval_hardening_prp.md`](30-eval_hardening_prp.md) | 📋 Pendiente |
 
 ## Convenciones
 

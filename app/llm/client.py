@@ -107,8 +107,13 @@ class OllamaClient:
             total_duration_ms=total_duration_ms,
         )
 
-    async def chat(self, messages: list[ChatMessage], model: str | None = None) -> str:
-        response = await self.chat_with_tools(messages, tools=None, model=model)
+    async def chat(
+        self,
+        messages: list[ChatMessage],
+        model: str | None = None,
+        think: bool | None = None,
+    ) -> str:
+        response = await self.chat_with_tools(messages, tools=None, model=model, think=think)
         return response.content
 
     async def embed(
