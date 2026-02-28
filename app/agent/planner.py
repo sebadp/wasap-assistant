@@ -15,6 +15,7 @@ from typing import TYPE_CHECKING
 
 from app.agent.models import AgentPlan, TaskStep
 from app.models import ChatMessage
+from app.tracing.context import get_current_trace
 
 if TYPE_CHECKING:
     from app.llm.client import OllamaClient
@@ -185,8 +186,25 @@ async def create_plan(
     ]
 
     try:
-        response = await ollama_client.chat_with_tools(messages, tools=None, think=False)
-        plan = _parse_plan_json(response.content, objective)
+        trace = get_current_trace()
+        if trace:
+            async with trace.span("llm:planner_create", kind="generation") as _span:
+                _span.set_input({"objective": objective[:200]})
+                response = await ollama_client.chat_with_tools(messages, tools=None, think=False)
+                _span.set_metadata(
+                    {
+                        "gen_ai.usage.input_tokens": response.input_tokens,
+                        "gen_ai.usage.output_tokens": response.output_tokens,
+                        "gen_ai.request.model": response.model,
+                    }
+                )
+                plan = _parse_plan_json(response.content, objective)
+                _span.set_output(
+                    {"tasks": len(plan.tasks), "context_summary": plan.context_summary[:200]}
+                )
+        else:
+            response = await ollama_client.chat_with_tools(messages, tools=None, think=False)
+            plan = _parse_plan_json(response.content, objective)
         logger.info(
             "Planner created plan: %d tasks, context=%s",
             len(plan.tasks),
@@ -238,7 +256,26 @@ async def replan(
     ]
 
     try:
-        response = await ollama_client.chat_with_tools(messages, tools=None, think=False)
+        trace = get_current_trace()
+        if trace:
+            async with trace.span("llm:planner_replan", kind="generation") as _span:
+                _span.set_input(
+                    {
+                        "replans": plan.replans,
+                        "tasks_done": sum(1 for t in plan.tasks if t.status == "done"),
+                    }
+                )
+                response = await ollama_client.chat_with_tools(messages, tools=None, think=False)
+                _span.set_metadata(
+                    {
+                        "gen_ai.usage.input_tokens": response.input_tokens,
+                        "gen_ai.usage.output_tokens": response.output_tokens,
+                        "gen_ai.request.model": response.model,
+                    }
+                )
+                _span.set_output({"raw_preview": response.content[:200]})
+        else:
+            response = await ollama_client.chat_with_tools(messages, tools=None, think=False)
         text = response.content.strip()
 
         # Parse the JSON response
@@ -300,7 +337,24 @@ async def synthesize(
     ]
 
     try:
-        response = await ollama_client.chat_with_tools(messages, tools=None, think=False)
+        trace = get_current_trace()
+        if trace:
+            async with trace.span("llm:planner_synthesize", kind="generation") as _span:
+                tasks_done = sum(1 for t in plan.tasks if t.status == "done")
+                _span.set_input(
+                    {"tasks_done": tasks_done, "tasks_total": len(plan.tasks)}
+                )
+                response = await ollama_client.chat_with_tools(messages, tools=None, think=False)
+                _span.set_metadata(
+                    {
+                        "gen_ai.usage.input_tokens": response.input_tokens,
+                        "gen_ai.usage.output_tokens": response.output_tokens,
+                        "gen_ai.request.model": response.model,
+                    }
+                )
+                _span.set_output({"reply_preview": response.content[:300]})
+        else:
+            response = await ollama_client.chat_with_tools(messages, tools=None, think=False)
         return response.content
     except Exception:
         logger.exception("Synthesis failed, returning raw results")

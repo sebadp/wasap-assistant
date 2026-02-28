@@ -14,6 +14,7 @@ import logging
 
 from app.llm.client import OllamaClient
 from app.models import ChatMessage
+from app.tracing.context import get_current_trace
 
 logger = logging.getLogger(__name__)
 
@@ -185,7 +186,14 @@ async def compact_tool_output(
             ChatMessage(role="user", content=prompt),
         ]
 
-        summary = await ollama_client.chat(messages, model=None)
+        trace = get_current_trace()
+        if trace:
+            async with trace.span("llm:compact_output", kind="generation") as _span:
+                _span.set_input({"tool_name": tool_name, "original_len": len(text)})
+                summary = await ollama_client.chat(messages, model=None)
+                _span.set_output({"compacted_len": len(summary) if summary else 0})
+        else:
+            summary = await ollama_client.chat(messages, model=None)
 
         if not summary or summary.isspace():
             raise ValueError("Empty summary from LLM")

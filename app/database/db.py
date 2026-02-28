@@ -151,7 +151,7 @@ CREATE TABLE IF NOT EXISTS traces (
     output_text   TEXT,
     wa_message_id TEXT,
     message_type  TEXT NOT NULL DEFAULT 'text'
-                  CHECK (message_type IN ('text', 'audio', 'image')),
+                  CHECK (message_type IN ('text', 'audio', 'image', 'agent')),
     status        TEXT NOT NULL DEFAULT 'started'
                   CHECK (status IN ('started', 'completed', 'failed')),
     started_at    TEXT NOT NULL DEFAULT (datetime('now')),
@@ -194,6 +194,39 @@ CREATE TABLE IF NOT EXISTS trace_scores (
 );
 CREATE INDEX IF NOT EXISTS idx_scores_trace ON trace_scores(trace_id);
 CREATE INDEX IF NOT EXISTS idx_scores_name ON trace_scores(name, value);
+"""
+
+# Migration: add 'agent' to message_type CHECK constraint.
+# Run when an existing DB has the old constraint without 'agent'.
+# Uses PRAGMA foreign_keys=OFF so the DROP TABLE doesn't cascade-fail on
+# trace_spans / trace_scores FK references.
+_TRACES_MIGRATION = """
+PRAGMA foreign_keys = OFF;
+
+CREATE TABLE traces_v2 (
+    id            TEXT PRIMARY KEY,
+    phone_number  TEXT NOT NULL,
+    input_text    TEXT NOT NULL,
+    output_text   TEXT,
+    wa_message_id TEXT,
+    message_type  TEXT NOT NULL DEFAULT 'text'
+                  CHECK (message_type IN ('text', 'audio', 'image', 'agent')),
+    status        TEXT NOT NULL DEFAULT 'started'
+                  CHECK (status IN ('started', 'completed', 'failed')),
+    started_at    TEXT NOT NULL DEFAULT (datetime('now')),
+    completed_at  TEXT,
+    metadata      TEXT NOT NULL DEFAULT '{}'
+);
+
+INSERT INTO traces_v2 SELECT * FROM traces;
+DROP TABLE traces;
+ALTER TABLE traces_v2 RENAME TO traces;
+
+CREATE INDEX IF NOT EXISTS idx_traces_phone ON traces(phone_number, started_at);
+CREATE INDEX IF NOT EXISTS idx_traces_status ON traces(status);
+CREATE INDEX IF NOT EXISTS idx_traces_wa_msg ON traces(wa_message_id);
+
+PRAGMA foreign_keys = ON;
 """
 
 DATASET_SCHEMA = """
@@ -263,6 +296,17 @@ async def init_db(db_path: str, embedding_dims: int = 768) -> tuple[aiosqlite.Co
     await conn.execute("PRAGMA foreign_keys=ON")
     await conn.executescript(SCHEMA)
     await conn.executescript(TRACING_SCHEMA)
+
+    # Migrate existing `traces` table if it was created without 'agent' message_type
+    cursor = await conn.execute(
+        "SELECT sql FROM sqlite_master WHERE name='traces' AND type='table'"
+    )
+    row = await cursor.fetchone()
+    if row and "'agent'" not in row[0]:
+        logger.info("Migrating traces table: adding 'agent' to message_type CHECK constraint")
+        await conn.executescript(_TRACES_MIGRATION)
+        await conn.commit()
+
     await conn.executescript(DATASET_SCHEMA)
     await conn.executescript(PROMPT_SCHEMA)
     await conn.commit()

@@ -36,12 +36,20 @@ class TraceRecorder:
         langfuse: Langfuse | None = None
         if settings.langfuse_public_key and settings.langfuse_secret_key:
             try:
-                langfuse = Langfuse(
-                    public_key=settings.langfuse_public_key,
-                    secret_key=settings.langfuse_secret_key,
-                    host=settings.langfuse_host,
-                )
-                logger.info("Langfuse tracing enabled")
+                # Validate API compatibility — Langfuse v3 removed trace()/span()/generation()
+                if not hasattr(Langfuse, "trace"):
+                    logger.warning(
+                        "Langfuse SDK is incompatible (v3+ detected). "
+                        "Pin langfuse<3.0.0 in requirements.txt. "
+                        "Cloud upload disabled; SQLite tracing still active."
+                    )
+                else:
+                    langfuse = Langfuse(
+                        public_key=settings.langfuse_public_key,
+                        secret_key=settings.langfuse_secret_key,
+                        host=settings.langfuse_host,
+                    )
+                    logger.info("Langfuse tracing enabled")
             except Exception:
                 logger.warning("Failed to initialize Langfuse client", exc_info=True)
         return cls(repository, langfuse)
@@ -64,7 +72,7 @@ class TraceRecorder:
                     metadata={"message_type": message_type},
                 )
         except Exception:
-            logger.debug("TraceRecorder.start_trace failed", exc_info=True)
+            logger.warning("TraceRecorder.start_trace failed", exc_info=True)
 
     async def finish_trace(
         self,
@@ -85,7 +93,7 @@ class TraceRecorder:
                 )
                 self.langfuse.flush()
         except Exception:
-            logger.debug("TraceRecorder.finish_trace failed", exc_info=True)
+            logger.warning("TraceRecorder.finish_trace failed", exc_info=True)
 
     async def start_span(
         self,
@@ -113,7 +121,7 @@ class TraceRecorder:
                         name=name,
                     )
         except Exception:
-            logger.debug("TraceRecorder.start_span failed", exc_info=True)
+            logger.warning("TraceRecorder.start_span failed", exc_info=True)
 
     async def finish_span(
         self,
@@ -168,7 +176,7 @@ class TraceRecorder:
                         metadata=md,
                     )
         except Exception:
-            logger.debug("TraceRecorder.finish_span failed", exc_info=True)
+            logger.warning("TraceRecorder.finish_span failed", exc_info=True)
 
     async def add_score(
         self,
@@ -190,7 +198,7 @@ class TraceRecorder:
                     comment=comment,
                 )
         except Exception:
-            logger.debug("TraceRecorder.add_score failed", exc_info=True)
+            logger.warning("TraceRecorder.add_score failed", exc_info=True)
 
     async def set_trace_output(self, trace_id: str, output_text: str) -> None:
         # Output is set when finishing the trace; this is a no-op that can be

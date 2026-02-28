@@ -355,7 +355,7 @@ async def _run_planner_session(
     logger.info("Agent session %s: Phase 1 — UNDERSTAND (creating plan)", session.session_id)
     trace = get_current_trace()
     if trace:
-        async with trace.span("planner:create_plan", kind="generation") as span:
+        async with trace.span("planner:create_plan", kind="span") as span:
             span.set_input({"objective": session.objective[:200]})
             plan = await create_plan(session.objective, ollama_client)
             span.set_output({"tasks": len(plan.tasks), "plan_preview": plan.to_markdown()[:500]})
@@ -474,7 +474,7 @@ async def _run_planner_session(
         )
         trace = get_current_trace()
         if trace:
-            async with trace.span("planner:replan", kind="generation") as span:
+            async with trace.span("planner:replan", kind="span") as span:
                 span.set_input(
                     {
                         "replans": plan.replans,
@@ -508,7 +508,7 @@ async def _run_planner_session(
     # --- Final synthesis ---
     trace = get_current_trace()
     if trace:
-        async with trace.span("planner:synthesize", kind="generation") as span:
+        async with trace.span("planner:synthesize", kind="span") as span:
             span.set_input(
                 {
                     "tasks_done": sum(1 for t in plan.tasks if t.status == "done"),

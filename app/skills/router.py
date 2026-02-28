@@ -8,6 +8,7 @@ if TYPE_CHECKING:
     from app.llm.client import OllamaClient
 
 from app.models import ChatMessage
+from app.tracing.context import get_current_trace
 
 logger = logging.getLogger(__name__)
 
@@ -197,8 +198,23 @@ async def classify_intent(
 
     try:
         logger.debug("Intent Classifier FULL PROMPT:\n%s", prompt)
-        response = await ollama_client.chat_with_tools(messages, tools=None, think=False)
-        raw = response.content.strip().lower()
+        trace = get_current_trace()
+        if trace:
+            async with trace.span("llm:classify_intent", kind="generation") as _cls_span:
+                _cls_span.set_input({"user_message": user_message[:200]})
+                response = await ollama_client.chat_with_tools(messages, tools=None, think=False)
+                _cls_span.set_metadata(
+                    {
+                        "gen_ai.usage.input_tokens": response.input_tokens,
+                        "gen_ai.usage.output_tokens": response.output_tokens,
+                        "gen_ai.request.model": response.model,
+                    }
+                )
+                raw = response.content.strip().lower()
+                _cls_span.set_output({"raw": raw})
+        else:
+            response = await ollama_client.chat_with_tools(messages, tools=None, think=False)
+            raw = response.content.strip().lower()
         logger.debug("Intent Classifier RAW OUTPUT: %r", raw)
 
         if raw == "none":
