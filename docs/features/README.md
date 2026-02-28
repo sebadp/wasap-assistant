@@ -41,6 +41,7 @@ Cada archivo en este directorio documenta una feature implementada: qué hace, c
 | Planner-Orchestrator | [`28-planner_orchestrator.md`](28-planner_orchestrator.md) | Agent Mode |
 | Observabilidad de Agentes (singleton, spans, tokens) | [`29-observability.md`](29-observability.md) | Agent Mode |
 | Eval Stack Hardening (remediation bilingüe, LLM-as-judge, benchmark offline) | [`30-eval_hardening.md`](30-eval_hardening.md) | Eval |
+| Context Engineering v2 (token budget, XML consolidation, history windowing, capabilities filtering, memory threshold, scratchpad) | [`31-context_engineering_v2.md`](31-context_engineering_v2.md) | Context |
 
 ## Cómo crear un nuevo walkthrough
 

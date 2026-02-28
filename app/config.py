@@ -37,6 +37,7 @@ class Settings(BaseSettings):
     database_path: str = "data/wasap.db"
     summary_threshold: int = 40
     compaction_threshold: int = 20000
+    history_verbatim_count: int = 8  # Last N messages verbatim; older ones replaced by summary
 
     # ngrok (only used in docker-compose, not by the app itself)
     ngrok_authtoken: str = ""
@@ -78,6 +79,7 @@ class Settings(BaseSettings):
     semantic_search_enabled: bool = True
     semantic_search_top_k: int = 10
     memory_file_watch_enabled: bool = True
+    memory_similarity_threshold: float = 1.0  # L2 distance threshold; 1.0 = accept all (tune with real data)
 
     # User profiles & onboarding (Phase 8)
     onboarding_enabled: bool = True

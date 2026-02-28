@@ -77,3 +77,4 @@ class AgentSession:
     context_messages: list = field(default_factory=list)
     task_plan: str | None = None  # task.md content (actualizado por el agente durante la sesión)
     plan: AgentPlan | None = None  # Structured plan (planner-orchestrator)
+    scratchpad: str = ""  # Persistent notes between reactive rounds (injected as system message)

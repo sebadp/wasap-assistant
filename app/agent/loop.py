@@ -75,6 +75,11 @@ RULES:
 - For large files (>200 lines): use get_file_outline first, then read_lines for specific sections.
   Do NOT use read_source_file on files >200 lines — use the outline+read_lines pattern.
 - When ALL steps are done, write a concise summary of what was accomplished.
+
+SCRATCHPAD: You can use <scratchpad>...</scratchpad> tags in your replies to persist notes between \
+rounds. Content inside scratchpad tags will be saved and re-injected in the next round. Use this \
+for: key findings, file paths discovered, decisions made, test results, partial progress. \
+The scratchpad content is NOT shown to the user — it is only visible to you in the next round.
 """
 
 _PLAN_REMINDER = """\
@@ -150,6 +155,41 @@ def _register_session_tools(
     )
 
     return session_registry
+
+
+def _inject_scratchpad(messages: list[ChatMessage], scratchpad: str) -> None:
+    """Insert scratchpad as a system message after the main system prompt.
+
+    Replaces an existing scratchpad injection if present (avoids accumulation).
+    """
+    scratchpad_msg = ChatMessage(
+        role="system",
+        content=f"<scratchpad_context>\n{scratchpad}\n</scratchpad_context>",
+    )
+    for i, msg in enumerate(messages):
+        if msg.role == "system" and "<scratchpad_context>" in msg.content:
+            messages[i] = scratchpad_msg
+            return
+    # Insert after the main system prompt
+    insert_pos = 1 if messages and messages[0].role == "system" else 0
+    messages.insert(insert_pos, scratchpad_msg)
+
+
+def _extract_scratchpad(reply: str) -> tuple[str, str]:
+    """Extract <scratchpad>...</scratchpad> content from the agent reply.
+
+    Returns:
+        (scratchpad_content, clean_reply) — scratchpad tags removed from the reply.
+    """
+    import re
+
+    pattern = re.compile(r"<scratchpad>(.*?)</scratchpad>", re.DOTALL)
+    match = pattern.search(reply)
+    if not match:
+        return "", reply
+    scratchpad_content = match.group(1).strip()
+    clean_reply = pattern.sub("", reply).strip()
+    return scratchpad_content, clean_reply
 
 
 def _inject_task_plan(messages: list[ChatMessage], task_plan: str) -> None:
@@ -549,6 +589,18 @@ async def _run_reactive_session(
         if session.task_plan:
             _inject_task_plan(messages, session.task_plan)
 
+        # Inject scratchpad as system message (if non-empty from a previous round)
+        if session.scratchpad:
+            _inject_scratchpad(messages, session.scratchpad)
+
+        # Token budget tracking (best-effort, no latency impact)
+        try:
+            from app.context.token_estimator import log_context_budget
+
+            log_context_budget(messages, extra={"agent_round": iteration + 1})
+        except Exception:
+            pass
+
         # Run one round of tool execution
         trace = get_current_trace()
         if trace:
@@ -573,6 +625,17 @@ async def _run_reactive_session(
                 max_tools=_TOOLS_PER_ROUND,
                 hitl_callback=hitl_callback,
             )
+
+        # Extract and persist scratchpad before appending the clean reply
+        new_scratchpad, clean_reply = _extract_scratchpad(reply)
+        if new_scratchpad:
+            session.scratchpad = new_scratchpad
+            logger.debug(
+                "Agent session %s: scratchpad updated (%d chars)",
+                session.session_id,
+                len(new_scratchpad),
+            )
+        reply = clean_reply
 
         messages.append(ChatMessage(role="assistant", content=reply))
 

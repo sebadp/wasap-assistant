@@ -27,7 +27,8 @@ Antes de modificar un módulo, identificar su dominio. Las reglas de un dominio 
 
 | Dominio | Archivos clave | No tocar sin leer |
 |---|---|---|
-| Pipeline principal de mensajes | `app/webhook/router.py` | Fases A/B/C/D paralelas, `_build_context()`, `_run_normal_flow()` |
+| Pipeline principal de mensajes | `app/webhook/router.py` | Phase A+B via `ConversationContext.build()`, `_build_context()` con ContextBuilder, `_run_normal_flow()` |
+| Context building | `app/context/` | `token_estimator.py` (chars/4), `context_builder.py` (XML tags), `conversation_context.py` (parallel build) |
 | Tool calling loop | `app/skills/executor.py` | Cache `_cached_tools_map`, `_run_tool_call()` |
 | Skills registry | `app/skills/registry.py`, `skills/*/SKILL.md` | Frontmatter parsing con regex (sin PyYAML) |
 | MCP servers | `app/mcp/` | `_server_stacks` (por servidor), hot-reload |

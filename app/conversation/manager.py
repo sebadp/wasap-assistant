@@ -35,6 +35,30 @@ class ConversationManager:
         conv_id = await self._get_conv_id(phone_number)
         return await self._repo.get_recent_messages(conv_id, self._max_messages)
 
+    async def get_windowed_history(
+        self,
+        phone_number: str,
+        verbatim_count: int = 8,
+    ) -> tuple[list[ChatMessage], str | None]:
+        """Return recent messages verbatim + summary of older ones.
+
+        Returns:
+            (recent_messages, summary_of_older)
+            - recent_messages: last `verbatim_count` messages verbatim
+            - summary_of_older: existing DB summary if history > verbatim_count, else None
+
+        Zero-latency: uses DB summary already computed by maybe_summarize, no new LLM call.
+        """
+        conv_id = await self._get_conv_id(phone_number)
+        history = await self._repo.get_recent_messages(conv_id, self._max_messages)
+
+        if len(history) <= verbatim_count:
+            return history, None
+
+        # Return only the last N verbatim; the DB summary covers the rest
+        summary = await self._repo.get_latest_summary(conv_id)
+        return history[-verbatim_count:], summary
+
     async def get_context(
         self,
         phone_number: str,

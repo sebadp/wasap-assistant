@@ -34,6 +34,7 @@ Cada archivo en este directorio cubre el testing manual de una feature específi
 | Planner-Orchestrator | [`28-planner_orchestrator_testing.md`](28-planner_orchestrator_testing.md) |
 | Observabilidad de Agentes (singleton, spans, tokens) | [`29-observability_testing.md`](29-observability_testing.md) |
 | Eval Stack Hardening (remediation bilingüe, LLM-as-judge, benchmark offline) | [`30-eval_hardening_testing.md`](30-eval_hardening_testing.md) |
+| Context Engineering v2 (token budget, XML, windowing, capabilities filter, memory threshold, scratchpad) | [`31-context_engineering_v2_testing.md`](31-context_engineering_v2_testing.md) |
 
 ## Convenciones
 

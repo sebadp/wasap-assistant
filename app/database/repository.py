@@ -327,6 +327,24 @@ class Repository:
         rows = await cursor.fetchall()
         return [r[0] for r in rows]
 
+    async def search_similar_memories_with_distance(
+        self, embedding: list[float], top_k: int = 10
+    ) -> list[tuple[str, float]]:
+        """Return (content, distance) pairs sorted by distance (ascending = most similar first).
+
+        Uses L2 distance from sqlite-vec. Lower distance = more similar.
+        """
+        blob = self._serialize_vector(embedding)
+        cursor = await self._conn.execute(
+            "SELECT m.content, v.distance FROM vec_memories v "
+            "JOIN memories m ON m.id = v.memory_id "
+            "WHERE m.active = 1 AND v.embedding MATCH ? AND k = ? "
+            "ORDER BY distance",
+            (blob, top_k),
+        )
+        rows = await cursor.fetchall()
+        return [(r[0], float(r[1])) for r in rows]
+
     async def get_unembedded_memories(self) -> list[tuple[int, str]]:
         cursor = await self._conn.execute(
             "SELECT m.id, m.content FROM memories m "
