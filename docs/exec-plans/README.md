@@ -19,6 +19,7 @@ Documentos técnicos que bajan una intención de producto a cambios concretos en
 | Observabilidad de Agentes | [`29-observability_prd.md`](29-observability_prd.md) / [`29-observability_prp.md`](29-observability_prp.md) | ✅ Completado |
 | Eval Stack Hardening | [`30-eval_hardening_prd.md`](30-eval_hardening_prd.md) / [`30-eval_hardening_prp.md`](30-eval_hardening_prp.md) | 📋 Pendiente |
 | Context Engineering v2 | [`31-context_engineering_v2_prd.md`](31-context_engineering_v2_prd.md) / [`31-context_engineering_v2_prp.md`](31-context_engineering_v2_prp.md) | ✅ Completado |
+| Prompt Engineering & Versioning | [`32-prompt_engineering_prd.md`](32-prompt_engineering_prd.md) / [`32-prompt_engineering_prp.md`](32-prompt_engineering_prp.md) | ✅ Completado |
 
 ## Convenciones
 

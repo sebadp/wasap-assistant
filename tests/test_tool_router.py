@@ -206,6 +206,26 @@ def test_build_request_more_tools_schema_lists_categories():
     assert "weather" in desc
 
 
+async def test_classify_prompt_includes_few_shot_examples():
+    """The classifier prompt must include few-shot examples for common categories."""
+    from app.skills.router import _CLASSIFIER_PROMPT_TEMPLATE, TOOL_CATEGORIES
+
+    # Render template with minimal context
+    categories_str = ", ".join(TOOL_CATEGORIES.keys())
+    prompt = _CLASSIFIER_PROMPT_TEMPLATE.format(
+        categories=categories_str,
+        user_message="test",
+        recent_context="",
+    )
+
+    # Verify the few-shot examples are in the rendered prompt
+    assert "15% of 230" in prompt
+    assert "math" in prompt
+    assert "time" in prompt
+    assert "tell me a joke" in prompt
+    assert "none" in prompt
+
+
 def test_build_request_more_tools_schema_has_required_categories_param():
     """Schema must have 'categories' as a required array parameter and correct tool name."""
     schema = build_request_more_tools_schema(["github"])

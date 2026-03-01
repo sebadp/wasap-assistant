@@ -1,4 +1,3 @@
-# PRD: Observabilidad de Agentes y Mejora de Trazabilidad
 
 ## 1. Objetivo y Contexto
 

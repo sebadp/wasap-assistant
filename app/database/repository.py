@@ -1153,6 +1153,41 @@ class Repository:
             for r in rows
         ]
 
+    async def seed_default_prompts(self, defaults: dict[str, str]) -> int:
+        """Insert v1 for any prompt_name not yet in prompt_versions. Returns count seeded.
+
+        Safe to call on every startup — idempotent (skips names that already have a v1).
+        """
+        seeded = 0
+        for name, content in defaults.items():
+            existing = await self.get_active_prompt_version(name)
+            if existing is None:
+                await self.save_prompt_version(name, version=1, content=content, created_by="system")
+                await self.activate_prompt_version(name, version=1)
+                seeded += 1
+        if seeded:
+            import logging as _logging
+            _logging.getLogger(__name__).info("Seeded %d default prompt(s) into DB", seeded)
+        return seeded
+
+    async def list_all_active_prompts(self) -> list[dict]:
+        """Return all active prompt versions across all prompt names."""
+        cursor = await self._conn.execute(
+            "SELECT prompt_name, version, created_by, approved_at, created_at "
+            "FROM prompt_versions WHERE is_active = 1 ORDER BY prompt_name",
+        )
+        rows = await cursor.fetchall()
+        return [
+            {
+                "prompt_name": r[0],
+                "version": r[1],
+                "created_by": r[2],
+                "approved_at": r[3],
+                "created_at": r[4],
+            }
+            for r in rows
+        ]
+
     # --- Misc helpers ---
 
     async def get_latest_memory(self) -> Any:

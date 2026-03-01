@@ -103,6 +103,9 @@ class Settings(BaseSettings):
     # Evaluation (Fase 3+)
     eval_auto_curate: bool = True
 
+    # Prompt versioning (Exec Plan 32)
+    prompt_versioning_enabled: bool = True  # Seed & track prompt versions in DB
+
     # Agent Mode
     agent_write_enabled: bool = False  # Habilita write tools (seguridad: OFF por defecto)
     agent_max_iterations: int = 15  # Límite de iteraciones por sesión agéntica

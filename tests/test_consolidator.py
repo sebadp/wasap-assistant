@@ -101,6 +101,23 @@ async def test_consolidate_handles_invalid_json(repository, tmp_path):
     assert result == 0
 
 
+async def test_consolidate_uses_think_false(repository, tmp_path):
+    """consolidate_memories must pass think=False to suppress chain-of-thought on JSON prompt."""
+    memory_file = MemoryFile(path=str(tmp_path / "MEMORY.md"))
+
+    for i in range(10):
+        await repository.add_memory(f"Unique fact {i}")
+
+    ollama = AsyncMock()
+    ollama.chat = AsyncMock(return_value=json.dumps({"remove_ids": []}))
+
+    await consolidate_memories(repository, ollama, memory_file, min_memories=8)
+
+    ollama.chat.assert_called_once()
+    _, kwargs = ollama.chat.call_args
+    assert kwargs.get("think") is False
+
+
 async def test_consolidate_handles_code_fenced_json(repository, tmp_path):
     memory_file = MemoryFile(path=str(tmp_path / "MEMORY.md"))
 

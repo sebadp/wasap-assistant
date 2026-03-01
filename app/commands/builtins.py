@@ -6,6 +6,7 @@ from datetime import UTC, datetime
 
 from app.commands.context import CommandContext
 from app.commands.registry import CommandRegistry, CommandSpec
+from app.eval.prompt_manager import activate_with_eval
 from app.models import ChatMessage
 
 logger = logging.getLogger(__name__)
@@ -418,7 +419,7 @@ async def cmd_rate(args: str, context: CommandContext) -> str:
 
 
 async def cmd_approve_prompt(args: str, context: CommandContext) -> str:
-    """Activate a proposed prompt version."""
+    """Activate a proposed prompt version, optionally running eval first."""
     parts = args.strip().split()
     if len(parts) != 2:
         return "Uso: /approve-prompt <nombre> <versión>\nEjemplo: /approve-prompt system_prompt 3"
@@ -435,13 +436,114 @@ async def cmd_approve_prompt(args: str, context: CommandContext) -> str:
     if row["is_active"]:
         return "Esa versión ya está activa."
 
+    # Run eval if tracing is enabled and we have an ollama client
+    eval_summary = ""
+    if context.ollama_client:
+        try:
+            eval_result = await activate_with_eval(
+                prompt_name=prompt_name,
+                version=version,
+                repository=context.repository,
+                ollama_client=context.ollama_client,
+            )
+            if "error" not in eval_result:
+                score = eval_result["score"]
+                passed = eval_result["passed"]
+                details = eval_result["details"]
+                n = eval_result["entries_evaluated"]
+                if n == 0:
+                    eval_summary = "\n_Eval: sin dataset entries para evaluar._"
+                else:
+                    icon = "✅" if passed else "⚠️"
+                    eval_summary = f"\n{icon} *Eval score:* {score:.0%} — {details}"
+                    if not passed:
+                        eval_summary += "\n_Score bajo threshold. Activando de todas formas (advisory)._"
+        except Exception:
+            logger.exception("activate_with_eval failed in /approve-prompt")
+            eval_summary = "\n_Eval: no se pudo correr (activando de todas formas)._"
+
     await context.repository.activate_prompt_version(prompt_name, version)
 
     from app.eval.prompt_manager import invalidate_prompt_cache
 
     invalidate_prompt_cache(prompt_name)
 
-    return f"Prompt '{prompt_name}' v{version} activado. Los próximos mensajes usarán la nueva versión."
+    return (
+        f"Prompt '{prompt_name}' v{version} activado.{eval_summary}\n"
+        "Los próximos mensajes usarán la nueva versión."
+    )
+
+
+async def cmd_prompts(args: str, context: CommandContext) -> str:
+    """List registered prompts or show a specific prompt's content and history.
+
+    Usage:
+        /prompts                    → list all prompts with active version
+        /prompts <name>             → show active content + version history
+        /prompts <name> <version>   → show content of a specific version
+    """
+    parts = args.strip().split()
+
+    if not parts:
+        # List all prompts
+        rows = await context.repository.list_all_active_prompts()
+        if not rows:
+            return "No hay prompts registrados en la base de datos todavía."
+        lines = ["*Prompts registrados:*"]
+        for r in rows:
+            created = r["approved_at"] or r["created_at"] or ""
+            created = created[:10] if created else "—"
+            lines.append(f"- `{r['prompt_name']}` v{r['version']} — {r['created_by']} ({created})")
+        lines.append(
+            "\n_Usa `/prompts <nombre>` para ver el contenido y el historial de versiones._"
+        )
+        return "\n".join(lines)
+
+    prompt_name = parts[0]
+
+    if len(parts) >= 2:
+        # Show specific version
+        try:
+            version = int(parts[1])
+        except ValueError:
+            return "La versión debe ser un número.\nUso: /prompts <nombre> <versión>"
+        row = await context.repository.get_prompt_version(prompt_name, version)
+        if not row:
+            return f"No encontré la versión {version} del prompt '{prompt_name}'."
+        active_marker = " ✅ *activo*" if row["is_active"] else ""
+        header = f"*{prompt_name}* v{version}{active_marker} (por {row['created_by']})"
+        content_preview = row["content"][:800]
+        if len(row["content"]) > 800:
+            content_preview += f"\n…[{len(row['content'])} chars total]"
+        return f"{header}\n\n```\n{content_preview}\n```"
+
+    # Show active content + version history for prompt_name
+    active = await context.repository.get_active_prompt_version(prompt_name)
+    if not active:
+        return (
+            f"No encontré el prompt '{prompt_name}' en la base de datos.\n"
+            "Usa `/prompts` para ver los prompts disponibles."
+        )
+
+    content_preview = active["content"][:600]
+    if len(active["content"]) > 600:
+        content_preview += f"\n…[{len(active['content'])} chars total]"
+
+    versions = await context.repository.list_prompt_versions(prompt_name)
+    history_lines = []
+    for v in versions:
+        active_marker = " ✅" if v["is_active"] else ""
+        date = (v["approved_at"] or v["created_at"] or "")[:10]
+        history_lines.append(f"  v{v['version']}{active_marker} — {v['created_by']} ({date})")
+
+    history = "\n".join(history_lines) if history_lines else "  (sin historial)"
+    return (
+        f"*{prompt_name}* v{active['version']} ✅\n\n"
+        f"```\n{content_preview}\n```\n\n"
+        f"*Historial:*\n{history}\n\n"
+        "_Usa `/prompts {name} <versión>` para ver otra versión, "
+        "o `/approve-prompt {name} <versión>` para activarla._"
+    ).replace("{name}", prompt_name)
 
 
 async def cmd_help(args: str, context: CommandContext) -> str:
@@ -638,6 +740,14 @@ def register_builtins(registry: CommandRegistry) -> None:
             description="Activar una versión de prompt propuesta por el agente",
             usage="/approve-prompt <nombre> <versión>",
             handler=cmd_approve_prompt,
+        )
+    )
+    registry.register(
+        CommandSpec(
+            name="prompts",
+            description="Listar prompts registrados o ver contenido e historial de versiones",
+            usage="/prompts [nombre] [versión]",
+            handler=cmd_prompts,
         )
     )
     registry.register(

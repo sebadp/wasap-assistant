@@ -130,6 +130,13 @@ _CLASSIFIER_PROMPT_TEMPLATE = (
     "Classify this message into tool categories. "
     'Reply with ONLY category names separated by commas, or "none".\n'
     "Categories: {categories}, none\n\n"
+    "Examples:\n"
+    '"what time is it" → time\n'
+    '"15% of 230" → math\n'
+    '"remember that I like coffee" → notes\n'
+    '"search for restaurants nearby" → search\n'
+    '"show my projects" → projects\n'
+    '"tell me a joke" → none\n\n'
     "{recent_context}"
     "Message to classify: {user_message}"
 )
@@ -156,6 +163,7 @@ async def classify_intent(
     ollama_client: OllamaClient,
     recent_messages: list[ChatMessage] | None = None,
     sticky_categories: list[str] | None = None,
+    repository: object | None = None,
 ) -> list[str]:
     """Classify the user message into tool categories with optional conversational context.
 
@@ -168,6 +176,18 @@ async def classify_intent(
             fallback when the classifier returns 'none' for short follow-ups.
     """
     categories_str = ", ".join(TOOL_CATEGORIES.keys())
+
+    # Fetch active prompt template (from DB/registry if versioning enabled, else hardcoded)
+    if repository is not None:
+        try:
+            from app.eval.prompt_manager import get_active_prompt
+
+            classifier_template = await get_active_prompt("classifier", repository)
+        except Exception:
+            logger.warning("Failed to fetch classifier prompt from DB, using hardcoded")
+            classifier_template = _CLASSIFIER_PROMPT_TEMPLATE
+    else:
+        classifier_template = _CLASSIFIER_PROMPT_TEMPLATE
 
     # Fast-path for URLs: if the message contains a URL, ensure 'fetch' is an option
     # so the agent has the web browsing tools available.
@@ -189,7 +209,7 @@ async def classify_intent(
                 "Recent conversation (for context only):\n" + "\n".join(context_lines) + "\n\n"
             )
 
-    prompt = _CLASSIFIER_PROMPT_TEMPLATE.format(
+    prompt = classifier_template.format(
         categories=categories_str,
         user_message=user_message,
         recent_context=recent_context,

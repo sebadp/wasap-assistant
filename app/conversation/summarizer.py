@@ -67,13 +67,20 @@ async def flush_to_memory(
     else:
         memories_text = "(none)"
 
-    prompt = FLUSH_PROMPT.format(
+    try:
+        from app.eval.prompt_manager import get_active_prompt
+
+        flush_template = await get_active_prompt("flush_to_memory", repository, FLUSH_PROMPT)
+    except Exception:
+        flush_template = FLUSH_PROMPT
+
+    prompt = flush_template.format(
         existing_memories=memories_text,
         conversation=conversation_text,
     )
 
     messages = [ChatMessage(role="user", content=prompt)]
-    response = await ollama_client.chat(messages)
+    response = await ollama_client.chat(messages, think=False)
 
     # Parse JSON response
     try:
@@ -173,7 +180,14 @@ async def maybe_summarize(
             except Exception:
                 logger.exception("Memory flush failed for conversation %d", conversation_id)
 
-        prompt_parts = [SUMMARIZE_PROMPT]
+        try:
+            from app.eval.prompt_manager import get_active_prompt
+
+            summarize_prompt = await get_active_prompt("summarizer", repository, SUMMARIZE_PROMPT)
+        except Exception:
+            summarize_prompt = SUMMARIZE_PROMPT
+
+        prompt_parts = [summarize_prompt]
         if previous_summary:
             prompt_parts.append(f"\nPrevious summary:\n{previous_summary}")
         prompt_parts.append("\nConversation to summarize:")
@@ -182,7 +196,7 @@ async def maybe_summarize(
 
         summary_prompt = "\n".join(prompt_parts)
         messages = [ChatMessage(role="user", content=summary_prompt)]
-        summary = await ollama_client.chat(messages)
+        summary = await ollama_client.chat(messages, think=False)
 
         await repository.save_summary(conversation_id, summary, count)
         await repository.delete_old_messages(conversation_id, max_messages)

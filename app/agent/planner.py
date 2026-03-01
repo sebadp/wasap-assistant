@@ -164,6 +164,7 @@ async def create_plan(
     objective: str,
     ollama_client: OllamaClient,
     context_info: str = "",
+    repository: object | None = None,
 ) -> AgentPlan:
     """Phase 1 — UNDERSTAND: create a structured plan for the objective.
 
@@ -176,7 +177,14 @@ async def create_plan(
     if context_info:
         context_block = f"AVAILABLE CONTEXT:\n{context_info}\n"
 
-    system_content = _PLANNER_SYSTEM_PROMPT.format(
+    try:
+        from app.eval.prompt_manager import get_active_prompt
+
+        planner_template = await get_active_prompt("planner_create", repository, _PLANNER_SYSTEM_PROMPT) if repository else _PLANNER_SYSTEM_PROMPT
+    except Exception:
+        planner_template = _PLANNER_SYSTEM_PROMPT
+
+    system_content = planner_template.format(
         objective=objective,
         context_block=context_block,
     )
@@ -219,6 +227,7 @@ async def create_plan(
 async def replan(
     plan: AgentPlan,
     ollama_client: OllamaClient,
+    repository: object | None = None,
 ) -> AgentPlan | None:
     """Phase 3 — SYNTHESIZE/REPLAN: review results and decide next steps.
 
@@ -245,7 +254,14 @@ async def replan(
         else:
             remaining_lines.append(f"#{t.id} [{t.worker_type}] {t.description}")
 
-    system_content = _REPLAN_SYSTEM_PROMPT.format(
+    try:
+        from app.eval.prompt_manager import get_active_prompt
+
+        replan_template = await get_active_prompt("planner_replan", repository, _REPLAN_SYSTEM_PROMPT) if repository else _REPLAN_SYSTEM_PROMPT
+    except Exception:
+        replan_template = _REPLAN_SYSTEM_PROMPT
+
+    system_content = replan_template.format(
         objective=plan.objective,
         completed_steps="\n".join(completed_lines) or "(none yet)",
         remaining_steps="\n".join(remaining_lines) or "(all done)",
@@ -318,6 +334,7 @@ async def replan(
 async def synthesize(
     plan: AgentPlan,
     ollama_client: OllamaClient,
+    repository: object | None = None,
 ) -> str:
     """Generate a final summary from all step results."""
     result_lines = []
@@ -326,7 +343,14 @@ async def synthesize(
         result_preview = (t.result or "(no output)")[:300]
         result_lines.append(f"#{t.id} [{status_icon}] {t.description}\n{result_preview}")
 
-    system_content = _SYNTHESIZE_SYSTEM_PROMPT.format(
+    try:
+        from app.eval.prompt_manager import get_active_prompt
+
+        synth_template = await get_active_prompt("planner_synthesize", repository, _SYNTHESIZE_SYSTEM_PROMPT) if repository else _SYNTHESIZE_SYSTEM_PROMPT
+    except Exception:
+        synth_template = _SYNTHESIZE_SYSTEM_PROMPT
+
+    system_content = synth_template.format(
         objective=plan.objective,
         context_summary=plan.context_summary,
         all_results="\n\n".join(result_lines),

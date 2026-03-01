@@ -176,6 +176,39 @@ async def test_language_remediation_no_span_without_trace_ctx():
 # ---------------------------------------------------------------------------
 
 
+# ---------------------------------------------------------------------------
+# Phase 1 (exec plan 32): think=False in LLM guardrail checks
+# ---------------------------------------------------------------------------
+
+
+async def test_check_tool_coherence_uses_think_false():
+    """check_tool_coherence must pass think=False to suppress chain-of-thought."""
+    from app.guardrails.checks import check_tool_coherence
+
+    ollama_mock = AsyncMock()
+    ollama_mock.chat = AsyncMock(return_value="yes")
+
+    await check_tool_coherence("What time is it?", "It is 3pm.", ollama_mock)
+
+    ollama_mock.chat.assert_called_once()
+    _, kwargs = ollama_mock.chat.call_args
+    assert kwargs.get("think") is False
+
+
+async def test_check_hallucination_uses_think_false():
+    """check_hallucination must pass think=False to suppress chain-of-thought."""
+    from app.guardrails.checks import check_hallucination
+
+    ollama_mock = AsyncMock()
+    ollama_mock.chat = AsyncMock(return_value="no")
+
+    await check_hallucination("What time is it?", "It is 3pm.", ollama_mock)
+
+    ollama_mock.chat.assert_called_once()
+    _, kwargs = ollama_mock.chat.call_args
+    assert kwargs.get("think") is False
+
+
 async def test_guardrails_llm_timeout_from_settings():
     """run_guardrails must pass guardrails_llm_timeout from settings to _run_async_check."""
     settings = MagicMock()

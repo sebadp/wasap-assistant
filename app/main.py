@@ -71,6 +71,12 @@ async def lifespan(app: FastAPI):
     )
     app.state.repository = repository
 
+    # Prompt registry: seed default prompts into DB at startup (idempotent)
+    if settings.prompt_versioning_enabled:
+        from app.eval.prompt_registry import PROMPT_DEFAULTS
+
+        await repository.seed_default_prompts(PROMPT_DEFAULTS)
+
     # TraceRecorder singleton: one Langfuse client for the lifetime of the app
     if settings.tracing_enabled:
         from app.tracing.recorder import TraceRecorder

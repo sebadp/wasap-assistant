@@ -188,7 +188,7 @@ async def check_tool_coherence(user_text: str, reply: str, ollama_client) -> Gua
             "Does the assistant reply coherently address the user's question? "
             "Reply ONLY with 'yes' or 'no'."
         )
-        response = await ollama_client.chat([ChatMessage(role="user", content=prompt)])
+        response = await ollama_client.chat([ChatMessage(role="user", content=prompt)], think=False)
         answer = response.strip().lower()
         passed = answer.startswith("yes")
         latency_ms = (time.monotonic() - start) * 1000
@@ -224,7 +224,7 @@ async def check_hallucination(user_text: str, reply: str, ollama_client) -> Guar
             "(e.g., invented numbers, names, or dates not grounded in the question)? "
             "Reply ONLY with 'yes' or 'no'."
         )
-        response = await ollama_client.chat([ChatMessage(role="user", content=prompt)])
+        response = await ollama_client.chat([ChatMessage(role="user", content=prompt)], think=False)
         answer = response.strip().lower()
         passed = answer.startswith("no")  # "yes" = hallucination detected = fail
         latency_ms = (time.monotonic() - start) * 1000

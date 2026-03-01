@@ -42,6 +42,7 @@ Cada archivo en este directorio documenta una feature implementada: qué hace, c
 | Observabilidad de Agentes (singleton, spans, tokens) | [`29-observability.md`](29-observability.md) | Agent Mode |
 | Eval Stack Hardening (remediation bilingüe, LLM-as-judge, benchmark offline) | [`30-eval_hardening.md`](30-eval_hardening.md) | Eval |
 | Context Engineering v2 (token budget, XML consolidation, history windowing, capabilities filtering, memory threshold, scratchpad) | [`31-context_engineering_v2.md`](31-context_engineering_v2.md) | Context |
+| Prompt Engineering & Versioning (think=False, few-shot, prompt registry, eval-coupled versioning, /prompts command) | [`32-prompt_engineering.md`](32-prompt_engineering.md) | Eval |
 
 ## Cómo crear un nuevo walkthrough
 

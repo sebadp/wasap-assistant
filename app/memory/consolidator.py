@@ -48,9 +48,16 @@ async def consolidate_memories(
     if len(memories) < min_memories:
         return 0
 
-    prompt = CONSOLIDATE_PROMPT.format(memories=_format_memories(memories))
+    try:
+        from app.eval.prompt_manager import get_active_prompt
+
+        consolidate_template = await get_active_prompt("consolidator", repository, CONSOLIDATE_PROMPT)
+    except Exception:
+        consolidate_template = CONSOLIDATE_PROMPT
+
+    prompt = consolidate_template.format(memories=_format_memories(memories))
     messages = [ChatMessage(role="user", content=prompt)]
-    response = await ollama_client.chat(messages)
+    response = await ollama_client.chat(messages, think=False)
 
     # Parse JSON response
     try:

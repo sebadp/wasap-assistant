@@ -229,6 +229,24 @@ async def test_maybe_summarize_flush_disabled(repository, tmp_path):
     ollama.chat.assert_called_once()
 
 
+async def test_flush_to_memory_uses_think_false(repository, tmp_path):
+    """flush_to_memory must pass think=False to suppress chain-of-thought on JSON prompt."""
+    import json
+
+    daily_log = DailyLog(memory_dir=str(tmp_path / "memory"))
+    memory_file = MemoryFile(path=str(tmp_path / "MEMORY.md"))
+
+    ollama = AsyncMock()
+    ollama.chat = AsyncMock(return_value=json.dumps({"facts": ["test fact"], "events": []}))
+
+    old_messages = [ChatMessage(role="user", content="hello")]
+    await flush_to_memory(old_messages, repository, ollama, daily_log, memory_file)
+
+    ollama.chat.assert_called_once()
+    _, kwargs = ollama.chat.call_args
+    assert kwargs.get("think") is False
+
+
 async def test_maybe_summarize_flush_error_does_not_block_summarize(repository, tmp_path):
     daily_log = DailyLog(memory_dir=str(tmp_path / "memory"))
     memory_file = MemoryFile(path=str(tmp_path / "MEMORY.md"))

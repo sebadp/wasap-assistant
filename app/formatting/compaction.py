@@ -169,8 +169,7 @@ async def compact_tool_output(
         "CRITICAL RULES:\n"
         "1. PRESERVE EXACT names, IDs, URLs — NEVER substitute with [placeholder].\n"
         "2. Discard metadata not useful for answering the request.\n"
-        "3. Output must be readable by another AI or a human.\n"
-        "4. Add a note that a full result is available on request.\n\n"
+        "3. Output must be readable by another AI or a human.\n\n"
         f"--- PAYLOAD ---\n{text[:15000]}\n--- END ---"
     )
 
@@ -190,10 +189,10 @@ async def compact_tool_output(
         if trace:
             async with trace.span("llm:compact_output", kind="generation") as _span:
                 _span.set_input({"tool_name": tool_name, "original_len": len(text)})
-                summary = await ollama_client.chat(messages, model=None)
+                summary = await ollama_client.chat(messages, model=None, think=False)
                 _span.set_output({"compacted_len": len(summary) if summary else 0})
         else:
-            summary = await ollama_client.chat(messages, model=None)
+            summary = await ollama_client.chat(messages, model=None, think=False)
 
         if not summary or summary.isspace():
             raise ValueError("Empty summary from LLM")
