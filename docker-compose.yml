@@ -2,13 +2,12 @@ services:
   wasap:
     build: .
     env_file: .env
-    environment:
-      - "SYSTEM_PROMPT=You are a helpful personal assistant on WhatsApp. Answer in the same language the user writes in. You have access to tools to find information (search, weather, etc.). If a tool returns information, USE IT to answer the user request immediately. Do not ask for confirmation if you already have the results."
     volumes:
       - ./data:/app/data
       - ./app:/app/app
       - ./skills:/app/skills
       - whisper_cache:/home/appuser/.cache/huggingface
+      - npm_cache:/home/appuser/.npm
     depends_on:
       - ollama
     network_mode: host
@@ -33,6 +32,40 @@ services:
       - wasap
     restart: unless-stopped
 
+  langfuse-server:
+    image: langfuse/langfuse:2
+    depends_on:
+      langfuse-db:
+        condition: service_healthy
+    ports:
+      - "3000:3000"
+    environment:
+      - DATABASE_URL=postgresql://postgres:postgres@langfuse-db:5432/postgres
+      - NEXTAUTH_SECRET=mysecret
+      - SALT=mysalt
+      - NEXTAUTH_URL=http://localhost:3000
+      - TELEMETRY_ENABLED=false
+    restart: always
+
+  langfuse-db:
+    image: postgres:15
+    restart: always
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_DB=postgres
+    ports:
+      - "5433:5432"
+    volumes:
+      - langfuse_db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U postgres" ]
+      interval: 3s
+      timeout: 3s
+      retries: 5
+
 volumes:
   ollama_data:
   whisper_cache:
+  npm_cache:
+  langfuse_db_data:

@@ -28,7 +28,6 @@ def register(
     embed_model: str | None = None,
     vec_available: bool = False,
 ) -> None:
-
     async def _resolve_project(name: str) -> tuple[int, str] | str:
         """Resolve project name to (id, name). Returns error string if not found."""
         phone = _current_user_phone.get()

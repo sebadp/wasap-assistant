@@ -17,7 +17,6 @@ def set_current_user(phone_number: str) -> None:
 
 
 def register(registry: SkillRegistry, repository: "Repository") -> None:
-
     async def get_recent_messages(limit: int = 10, offset: int = 0) -> str:
         # Clamp parameters to prevent unbounded queries
         limit = max(1, min(limit, 50))

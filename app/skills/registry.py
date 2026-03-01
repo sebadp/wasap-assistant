@@ -109,6 +109,9 @@ class SkillRegistry:
     def has_tools(self) -> bool:
         return len(self._tools) > 0
 
+    def get_tool(self, name: str) -> ToolDefinition | None:
+        return self._tools.get(name)
+
     def get_skill(self, name: str) -> SkillMetadata | None:
         return self._skills.get(name)
 

@@ -23,6 +23,10 @@ _RE_PHONE = re.compile(r"\b\+?[\d\s\-]{10,15}\b")
 # Regex para detectar raw tool JSON leakage
 _RE_RAW_TOOL = re.compile(r'\{"tool_call"', re.IGNORECASE)
 
+# Regex para detectar texto que no es lenguaje natural (URLs, UUIDs, código)
+_RE_URL = re.compile(r"^https?://\S+$")
+_RE_NON_NATURAL = re.compile(r"^[\w:/\-_.~%?=&#+@]+$")  # sin espacios → no es prosa
+
 
 def check_not_empty(reply: str) -> GuardrailResult:
     start = time.monotonic()
@@ -39,15 +43,29 @@ def check_not_empty(reply: str) -> GuardrailResult:
 def check_language_match(user_text: str, reply: str) -> GuardrailResult:
     """Check that reply is in the same language as user_text.
     Only applies when both texts are >= 30 chars (langdetect is unreliable on short texts).
+    Skips if user_text has no whitespace (URL, UUID, code) — not natural language.
     """
     start = time.monotonic()
+    stripped_user = user_text.strip()
+
     # Skip if either text is too short
-    if len(user_text.strip()) < 30 or len(reply.strip()) < 30:
+    if len(stripped_user) < 30 or len(reply.strip()) < 30:
         latency_ms = (time.monotonic() - start) * 1000
         return GuardrailResult(
             passed=True,
             check_name="language_match",
             details="skipped (text too short for reliable detection)",
+            latency_ms=latency_ms,
+        )
+
+    # Skip if user_text is non-natural (URL, UUID, code with no spaces)
+    words = stripped_user.split()
+    if len(words) <= 2 and _RE_NON_NATURAL.match(words[0]):
+        latency_ms = (time.monotonic() - start) * 1000
+        return GuardrailResult(
+            passed=True,
+            check_name="language_match",
+            details="skipped (non-natural-language input: URL/UUID/code)",
             latency_ms=latency_ms,
         )
 
@@ -95,8 +113,17 @@ def check_no_pii(user_text: str, reply: str) -> GuardrailResult:
     # Phones and DNIs: check for patterns that appear in reply but not user_text
     # (common in production: bot generates phone numbers)
     for pattern, name in [(_RE_PHONE, "phone"), (_RE_DNI, "dni")]:
-        reply_seqs = {re.sub(r"[\s\-]", "", m) for m in pattern.findall(reply)}
-        user_seqs = {re.sub(r"[\s\-]", "", m) for m in pattern.findall(user_text)}
+        reply_matches = set(pattern.findall(reply))
+        user_matches = set(pattern.findall(user_text))
+
+        reply_seqs = set()
+        for m in reply_matches:
+            # Ignore ISO dates (YYYY-MM-DD) which match phone regex
+            if name == "phone" and re.match(r"^\+?\d{4}-\d{2}-\d{2}$", m.strip()):
+                continue
+            reply_seqs.add(re.sub(r"[\s\-]", "", m))
+
+        user_seqs = {re.sub(r"[\s\-]", "", m) for m in user_matches}
         new_seqs = reply_seqs - user_seqs
         if new_seqs:
             leaked.append(f"{name}:{','.join(list(new_seqs)[:2])}")
@@ -161,7 +188,7 @@ async def check_tool_coherence(user_text: str, reply: str, ollama_client) -> Gua
             "Does the assistant reply coherently address the user's question? "
             "Reply ONLY with 'yes' or 'no'."
         )
-        response = await ollama_client.chat([ChatMessage(role="user", content=prompt)])
+        response = await ollama_client.chat([ChatMessage(role="user", content=prompt)], think=False)
         answer = response.strip().lower()
         passed = answer.startswith("yes")
         latency_ms = (time.monotonic() - start) * 1000
@@ -197,7 +224,7 @@ async def check_hallucination(user_text: str, reply: str, ollama_client) -> Guar
             "(e.g., invented numbers, names, or dates not grounded in the question)? "
             "Reply ONLY with 'yes' or 'no'."
         )
-        response = await ollama_client.chat([ChatMessage(role="user", content=prompt)])
+        response = await ollama_client.chat([ChatMessage(role="user", content=prompt)], think=False)
         answer = response.strip().lower()
         passed = answer.startswith("no")  # "yes" = hallucination detected = fail
         latency_ms = (time.monotonic() - start) * 1000

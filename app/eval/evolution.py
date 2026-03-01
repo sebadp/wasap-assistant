@@ -65,7 +65,7 @@ async def propose_prompt_change(
     )
 
     try:
-        new_content = await ollama_client.chat([system_msg, user_msg])
+        new_content = await ollama_client.chat([system_msg, user_msg], think=False)
         if hasattr(new_content, "content"):
             new_content = new_content.content
         new_content = str(new_content).strip()

@@ -23,7 +23,9 @@ class Transcriber:
             f.write(audio_bytes)
             f.flush()
             segments, _info = self._model.transcribe(f.name)
-            return " ".join(seg.text.strip() for seg in segments)
+            result = " ".join(seg.text.strip() for seg in segments)
+            logger.debug("Audio (Whisper) RAW INTERPRETATION: %r", result)
+            return result
 
     async def transcribe_async(self, audio_bytes: bytes) -> str:
         """Transcribe audio bytes to text without blocking the event loop."""

@@ -1,395 +1,219 @@
-# Guía de Testing Manual
+# Guía de Testing Manual — WasAP
 
-## Requisitos previos
-
-- Container corriendo: `docker compose up --build -d`
-- Ollama con `qwen3:8b`, `llava:7b` y `nomic-embed-text` disponibles
-- WhatsApp configurado (token, phone number ID, verify token, app secret en `.env`)
-- Número de teléfono en `ALLOWED_PHONE_NUMBERS`
-- Para MCP: `data/mcp_servers.json` con servers habilitados (`"enabled": true`)
-
-### Verificar arranque
-
-```bash
-docker compose logs -f wasap | head -50
-```
-
-Buscar en los logs:
-- `sqlite-vec loaded successfully (dims=768)` — sqlite-vec activo
-- `Backfilled N memory embeddings` — embeddings creados al startup
-- `Memory watcher started for data/MEMORY.md` — watcher bidireccional activo
-- `Skills loaded: N skill(s)` — skills de `skills/` cargados
-- `Registered tool: <name>` — tools builtin registrados
-- `MCP initialized: N server(s), M tool(s)` — MCP conectado
-- `Scheduler started` — APScheduler activo
+> **Propósito**: Validación pre-release de todas las features implementadas.
+> **Última actualización**: 2026-02-25
+> **Rama probada**: `feat/autonomy`
 
 ---
 
-## 1. Calculator
+## Pre-flight: arranque del sistema
 
-**Objetivo**: Evaluar expresiones matemáticas de forma segura (AST, sin `eval()`).
+```bash
+docker compose up --build -d
+docker compose logs -f wasap | head -80
+```
 
-| Mensaje | Respuesta esperada |
+Confirmar estas líneas antes de testear cualquier feature:
+
+| Línea en logs | Qué confirma |
+|---|---|
+| `sqlite-vec loaded successfully (dims=768)` | Búsqueda semántica disponible |
+| `Backfilled N memory embeddings` | Embeddings sincronizados al boot |
+| `Memory watcher started for data/MEMORY.md` | Sync bidireccional activo |
+| `Skills loaded: N skill(s)` | Skills de `skills/` cargados |
+| `MCP initialized: N server(s), M tool(s)` | MCP conectado |
+| `Scheduler started` | APScheduler activo |
+| `Restored N cron jobs from database` | Cron jobs persistidos re-registrados |
+| `Model warmup complete` | qwen3:8b y nomic-embed-text calientes |
+
+**Verificar tests automatizados:**
+```bash
+make check   # lint + typecheck + 441 tests
+```
+
+---
+
+## 1. Chat básico (sin tools)
+
+| Mensaje | Esperado |
+|---|---|
+| `Hola, cómo estás?` | Respuesta conversacional, sin tool calls |
+| `Contame un chiste` | Respuesta directa (no llama ningún tool) |
+| `Cuál es la capital de Francia?` | "París" — sin tool calls |
+
+**Verificar en logs:**
+```bash
+grep "Tool router: categories=none\|plain chat" data/wasap.log | tail -5
+```
+
+---
+
+## 2. Tipos de mensaje multimedia
+
+| Tipo | Cómo probar | Esperado |
+|---|---|---|
+| **Audio** | Enviar nota de voz | Transcripción via faster-whisper → respuesta al contenido |
+| **Imagen** | Enviar foto | Descripción visual via llava:7b → respuesta contextual |
+| **Imagen + caption** | Foto con texto | Vision + caption como contexto conjunto |
+| **Reply** | Responder a un mensaje del bot | Texto citado inyectado como contexto |
+| **Reacción 👍** | Reaccionar con pulgar arriba a una respuesta | Trace score positivo guardado silenciosamente |
+| **Reacción 👎** | Reaccionar con pulgar abajo | Trace score negativo guardado silenciosamente |
+
+> Las imágenes van directo a llava:7b — **no pasan por el tool calling loop**.
+
+---
+
+## 3. Comandos slash
+
+| Comando | Esperado |
+|---|---|
+| `/help` | Lista de todos los comandos disponibles |
+| `/remember Mi cumpleaños es el 15 de marzo` | `✅ Memorized: ...` — guardado en SQLite + MEMORY.md |
+| `/memories` | Lista de memorias activas con ID |
+| `/forget 1` | Memoria desactivada en DB y eliminada de MEMORY.md |
+| `/clear` | Limpia historial, guarda snapshot en `data/memory/snapshots/`, daily log actualizado |
+| `/review-skill` | Lista de skills activos + servidores MCP |
+| `/review-skill weather` | Detalle del skill: tools, estado, instrucciones |
+| `/feedback Excelente respuesta` | Señal positiva guardada como trace score |
+| `/rate 5` | Score 1.0 guardado en la traza actual |
+| `/rate 1` | Score 0.0 guardado en la traza actual |
+
+**Verificar `/remember` en DB:**
+```bash
+sqlite3 data/wasap.db "SELECT content, category FROM memories ORDER BY id DESC LIMIT 3;"
+```
+
+**Verificar snapshot después de `/clear`:**
+```bash
+ls data/memory/snapshots/
+```
+
+---
+
+## 4. Herramientas builtin
+
+### 4a. Calculadora
+
+| Mensaje | Esperado |
 |---|---|
 | `Cuánto es 15 * 7 + 3?` | 108 |
 | `Raíz cuadrada de 144` | 12 |
 | `sin(pi/2)` | 1.0 |
-| `log(100)` | ~4.605 (ln natural) |
 | `2 ** 10` | 1024 |
+| `Cuánto es import("os")?` | Rechazo sin ejecutar código |
 
-**Verificar error handling:**
-- `Cuánto es import("os")` → debe rechazarlo sin ejecutar código
+### 4b. Fecha y hora
 
----
-
-## 2. DateTime
-
-**Objetivo**: Obtener fecha/hora actual y convertir entre zonas horarias.
-
-| Mensaje | Respuesta esperada |
+| Mensaje | Esperado |
 |---|---|
-| `Qué hora es?` | Hora actual (UTC o local según system prompt) |
+| `Qué hora es?` | Hora actual con timezone |
 | `Qué hora es en Tokio?` | Hora en Asia/Tokyo |
-| `Si acá son las 14:30, qué hora es en Londres?` | Conversión de timezone |
+| `Si acá son las 14:30, qué hora es en Londres?` | Conversión correcta |
 
-**Verificar:**
-- Formato legible: `YYYY-MM-DD HH:MM:SS TZ`
-- Timezone inválido → mensaje de error (no crash)
+### 4c. Clima
 
----
-
-## 3. Weather
-
-**Objetivo**: Clima actual y pronóstico via OpenMeteo (gratis, sin API key).
-
-| Mensaje | Respuesta esperada |
+| Mensaje | Esperado |
 |---|---|
-| `Cómo está el clima en Buenos Aires?` | Temp, humedad, viento, descripción WMO, pronóstico |
-| `Clima en El Soberbio, Misiones` | Idem, con localidad específica |
-| `Weather in New York` | Funciona en inglés también |
+| `Clima en Buenos Aires` | Temp, humedad, viento, pronóstico via OpenMeteo |
+| `Weather in New York` | Funciona en inglés |
+| `Ciudad que no existe, XYZ` | Error descriptivo (no crash) |
 
-**Verificar formato:**
-```
-Weather in Buenos Aires, Argentina:
-  Partly cloudy, 25°C
-  Humidity: 60%
-  Wind: 15 km/h
-  Today: 18°C - 28°C
-  Precipitation chance: 20%
-```
+### 4d. Búsqueda web
 
-**Códigos WMO cubiertos:**
-- 0: Clear sky
-- 1-3: Partly cloudy
-- 45, 48: Foggy
-- 51, 53, 55: Drizzle
-- 56, 57: Freezing drizzle
-- 61, 63, 65: Rain
-- 66, 67: Freezing rain
-- 71, 73, 75: Snowfall
-- 77: Snow grains
-- 80-82: Rain showers
-- 85, 86: Snow showers
-- 95, 96, 99: Thunderstorm
-
----
-
-## 4. Web Search
-
-**Objetivo**: Búsqueda web via DuckDuckGo (`DDGS().text()`).
-
-| Mensaje | Respuesta esperada |
+| Mensaje | Esperado |
 |---|---|
-| `Buscá recetas de empanadas` | Hasta 5 resultados con título, link, snippet |
-| `Qué pasó hoy en el mundo?` | Resultados recientes (debería usar time_range) |
-| `Search for Python 3.13 release notes` | Resultados en inglés |
+| `Buscá noticias sobre IA` | Hasta 5 resultados con título, URL, snippet |
+| `Search for Python 3.13 features` | Resultados en inglés |
 
-**Verificar:**
-- Formato: `1. [Título](URL): snippet`
-- Máximo 5 resultados
-- `time_range` opcional: `d` (día), `w` (semana), `m` (mes), `y` (año)
-- Si falla DuckDuckGo → `"Error performing search: ..."`
+### 4e. Notas (CRUD)
 
----
-
-## 5. News
-
-**Objetivo**: Búsqueda de noticias via `DDGS().news()` con preferencias guardadas.
-
-### 5a. Preferencias
-
-| Mensaje | Respuesta esperada |
-|---|---|
-| `Me gusta leer Página 12` | Debe llamar `add_news_preference(source="Página 12", preference="like")` |
-| `No me gusta Clarín` | Debe llamar `add_news_preference(source="Clarín", preference="dislike")` |
-
-**Verificar:** `Memorized: You like Página 12.` (guardado en SQLite con category `news_pref`)
-
-### 5b. Búsqueda de noticias
-
-| Mensaje | Respuesta esperada |
-|---|---|
-| `Noticias sobre inteligencia artificial` | Resultados con fuente y fecha |
-| `Qué pasó esta semana en Argentina?` | Debería usar `time_range="w"` |
-| `Últimas noticias de tecnología` | Resultados recientes |
-
-**Verificar formato:**
-```
-1. [Título](URL) — Fuente, 2026-02-15: Resumen del artículo
-
-2. [Otro título](URL) — OtraFuente, 2026-02-14: Otro resumen
-```
-
----
-
-## 6. Notes
-
-**Objetivo**: CRUD de notas personales en SQLite.
-
-| Paso | Mensaje | Respuesta esperada |
+| Paso | Mensaje | Esperado |
 |---|---|---|
-| Crear | `Guardá una nota: Compras - Leche, pan, huevos` | `Note saved (ID: 1): "Compras"` |
-| Listar | `Mostrá mis notas` | Lista con ID, título, preview (80 chars) |
-| Buscar | `Buscá notas sobre compras` | Nota encontrada |
-| Borrar | `Borrá la nota 1` | `Note 1 deleted.` |
-| Borrar inexistente | `Borrá la nota 999` | `Note 999 not found.` |
+| Crear | `Guardá una nota: Reunión lunes - Hablar con Juan` | `Note saved (ID: N)` |
+| Listar | `Mostrá mis notas` | Lista con ID, título, preview |
+| Buscar | `Buscá notas sobre reunión` | Nota encontrada (semántico + keyword) |
+| Borrar | `Borrá la nota N` | `Note N deleted.` |
 
----
+### 4f. Recordatorios one-shot
 
-## 7. Scheduler
-
-**Objetivo**: Programar recordatorios via APScheduler, entrega por WhatsApp.
-
-| Mensaje | Respuesta esperada |
+| Mensaje | Esperado |
 |---|---|
-| `Recordame revisar los logs en 2 minutos` | Confirmación con ID y hora programada |
-| `Qué recordatorios tengo?` | Lista de jobs activos con ID y hora |
-
-**Verificar entrega:**
-1. Esperar el tiempo programado
-2. Debe llegar mensaje WhatsApp: `⏰ *Reminder*: revisar los logs`
-
-**Verificar error handling:**
-- Fecha en el pasado → mensaje de error
-- Formato inválido → el LLM debería manejar la conversión a ISO 8601
+| `Recordame revisar los logs en 2 minutos` | Confirmación con hora, ID del job |
+| (esperar 2 min) | Llega WA: `⏰ Reminder: revisar los logs` |
+| `Qué recordatorios tengo?` | Lista de jobs activos |
 
 ---
 
-## 8. Tool Calling Loop
+## 5. Cron jobs (recurrentes)
 
-**Objetivo**: Verificar que el loop de herramientas funciona correctamente.
-
-### 8a. Single tool call
-> `Cuánto es 2 + 2?`
-- Esperar: 1 iteración, respuesta directa
-
-### 8b. Multi-step (encadenado)
-> `Qué hora es en Buenos Aires y cómo está el clima ahí?`
-- Esperar: LLM llama `get_current_datetime` + `get_weather` (puede ser en 1 o 2 iteraciones)
-
-### 8c. Límite de iteraciones
-- El loop tiene máximo **5 iteraciones** (`MAX_TOOL_ITERATIONS`)
-- Si se excede, fuerza respuesta de texto sin tools
-
-### 8d. Think mode
-- **Con tools**: `think: True` deshabilitado (incompatibilidad qwen3)
-- **Sin tools**: `think: True` habilitado (razonamiento visible en logs)
-
----
-
-## 9. MCP — Fetch Server
-
-**Objetivo**: Leer contenido web via `mcp-fetch-server`.
-
-| Mensaje | Respuesta esperada |
+| Mensaje | Esperado |
 |---|---|
-| `Lee el contenido de https://example.com` | Resumen del contenido ("Example Domain...") |
-| `Qué dice esta página? https://httpbin.org/get` | JSON de httpbin parseado |
+| `/agent Recordame cada lunes a las 9am que revise los PRs pendientes` | Agente llama `create_cron("0 9 * * 1", "Revisar PRs...", "UTC")` + confirmación con ID |
+| `Listame mis recordatorios recurrentes` | Tabla: ID, cron expr, mensaje |
+| `Eliminá el recordatorio cron N` | `Cron job N deleted.` |
+
+**Verificar persistencia después de restart:**
+```bash
+docker compose restart wasap
+# Esperar boot
+grep "Restored.*cron jobs" data/wasap.log
+```
+
+**Verificar en DB:**
+```bash
+sqlite3 data/wasap.db "SELECT id, cron_expr, message, active FROM user_cron_jobs;"
+```
+
+---
+
+## 6. Sistema de memoria
+
+### 6a. Sync bidireccional MEMORY.md ↔ SQLite
+
+**DB → archivo (via /remember):**
+1. `/remember Soy ingeniero de software`
+2. Verificar que aparece en `data/MEMORY.md`
+
+**Archivo → DB (edición manual):**
+1. Editar `data/MEMORY.md`, agregar: `- [hobby] Toca la guitarra`
+2. Esperar ~1s
+3. Verificar: `sqlite3 data/wasap.db "SELECT content, category FROM memories WHERE content LIKE '%guitarra%';"`
 
 **Verificar en logs:**
-- `Executing MCP tool: fetch` o `get_markdown`
-- Timeout: 30s por tool call
+```bash
+grep "Synced from file\|Skipping sync" data/wasap.log | tail -5
+```
 
----
+### 6b. Búsqueda semántica de memorias
 
-## 10. MCP — Filesystem Server
+1. Guardar memorias diversas via `/remember`:
+   - `Trabajo como ingeniero de software`
+   - `Tengo un perro llamado Max`
+   - `Mi color favorito es el azul`
+2. Preguntar `Tengo mascotas?` → Debe mencionar a Max
+3. Preguntar `A qué me dedico?` → Debe mencionar ingeniería
 
-**Objetivo**: Leer/escribir archivos en `/app/data` (dentro del container).
+### 6c. Pre-compaction flush (>40 mensajes)
 
-| Mensaje | Respuesta esperada |
-|---|---|
-| `Lista los archivos en /home/appuser/data` | `mcp_servers.json`, `MEMORY.md`, etc. |
-| `Leé el archivo mcp_servers.json` | Contenido del JSON de configuración |
+1. Enviar 40+ mensajes con hechos memorables mezclados
+2. Verificar que el summarizer se activa y extrae hechos a MEMORY.md automáticamente
+3. `ls data/memory/*.md` → debe aparecer el daily log del día
 
-**Verificar:**
-- Solo accede a paths permitidos (el dir mapeado en Docker)
-- Error si intenta acceder fuera del path configurado
-
----
-
-## 11. MCP — Memory Server
-
-**Objetivo**: Knowledge graph persistente via `@modelcontextprotocol/server-memory`.
-
-| Paso | Mensaje | Respuesta esperada |
-|---|---|---|
-| Guardar | `Guardá en tu memoria que el proyecto WasAP usa Python 3.11` | Confirmación de entidad creada |
-| Recuperar | `Qué sabés sobre WasAP según tu memoria?` | Info almacenada previamente |
-
-> **Nota**: Los tools de Memory son de bajo nivel (`create_entity`, `add_relation`, etc.). El LLM puede necesitar guía explícita.
-
----
-
-## 12. MCP — GitHub Server
-
-**Requisito**: `GITHUB_PERSONAL_ACCESS_TOKEN` en `.env` con scope `repo`.
-
-| Mensaje | Respuesta esperada |
-|---|---|
-| `Lista mis repositorios de GitHub` | Lista de repos |
-| `Hay issues abiertos en el repo wasap?` | Issues listados (o "no hay") |
-
----
-
-## 13. Colisiones de nombres (Skills vs MCP)
-
-Si un tool MCP tiene el mismo nombre que un tool builtin:
-- Se loguea un **warning**: `Tool name collision: <name>`
-- El tool MCP **sobrescribe** al builtin
-- Verificar en logs al arranque
-
----
-
-## 14. Tipos de mensaje
-
-| Tipo | Cómo probar | Comportamiento |
-|---|---|---|
-| **Texto** | Enviar mensaje normal | Flow completo (commands → tools → LLM) |
-| **Audio** | Enviar nota de voz | Transcribe (faster-whisper) → procesa como texto |
-| **Imagen** | Enviar foto | Vision (llava:7b) → descripción → respuesta (**sin tools**) |
-| **Imagen + caption** | Enviar foto con texto | Vision + caption como contexto |
-| **Reply** | Responder a un mensaje del bot | Inyecta texto citado como contexto |
-
-> **Importante**: Mensajes de imagen **no pasan por el tool calling loop** — van directo a llava:7b para descripción visual, luego qwen3:8b para respuesta.
-
----
-
-## 15. Comandos (bypasean skills)
-
-Los comandos `/` se procesan **antes** de llegar al LLM.
-
-| Comando | Resultado |
-|---|---|
-| `/help` | Lista de comandos disponibles |
-| `/remember Mi cumple es el 15 de marzo` | Guardado en SQLite + MEMORY.md |
-| `/memories` | Lista de memorias guardadas |
-| `/forget 1` | Borra memoria por ID |
-| `/clear` | Limpia historial + guarda snapshot de sesión |
-
----
-
-## 16. Memoria Avanzada (Fase 5)
-
-### 16a. Daily Logs — Bootstrap Loading
-
-Los daily logs se cargan automáticamente en el contexto del LLM. Para verificar:
-
-1. Enviar muchos mensajes hasta que el summarizer se active (>40 mensajes)
-2. Verificar en `data/memory/` que aparece un archivo `YYYY-MM-DD.md`
-3. El archivo debería contener eventos extraídos de la conversación
-
-### 16b. Pre-Compaction Flush
-
-**Objetivo**: Antes de borrar mensajes viejos, el LLM extrae hechos y eventos.
-
-1. Enviar >40 mensajes incluyendo hechos memorables (ej: "Mi color favorito es el azul", "Vivo en Córdoba")
-2. Esperar que se active el summarizer
-3. Verificar:
-   - `data/MEMORY.md` contiene los hechos extraídos automáticamente
-   - `data/memory/YYYY-MM-DD.md` contiene eventos del día
-   - `sqlite3 data/wasap.db "SELECT * FROM memories;"` muestra las memorias auto-extraídas
-
-### 16c. Session Snapshots
-
-**Objetivo**: `/clear` guarda un snapshot antes de borrar.
+### 6d. Session snapshots
 
 1. Tener una conversación de varios mensajes
 2. Enviar `/clear`
-3. Verificar:
-   - `data/memory/snapshots/` contiene un archivo `.md` con slug descriptivo
-   - El archivo contiene los últimos mensajes (user/assistant)
-   - El daily log tiene una entrada "Session cleared: ..."
+3. `ls data/memory/snapshots/` → debe aparecer un `.md` con slug descriptivo
 
-### 16d. Memory Consolidation
-
-**Objetivo**: Memorias duplicadas se consolidan automáticamente.
-
-1. Usar `/remember` para guardar datos similares:
-   - `/remember Mi color favorito es azul`
-   - `/remember Me gusta el color azul`
-   - (agregar al menos 8 memorias en total)
-2. Enviar suficientes mensajes para activar el summarizer
-3. Verificar que memorias duplicadas fueron removidas de `data/MEMORY.md`
-
----
-
-## 17. Rate Limiting
-
-- Default: 10 mensajes por 60 segundos (por número de teléfono)
-- Enviar >10 mensajes rápido → algunos ignorados silenciosamente
-- Verificar en logs: `Rate limit exceeded for <phone_number>`
-
----
-
-## 18. Búsqueda Semántica de Memorias (Fase 6)
-
-**Objetivo**: Verificar que solo memorias relevantes se inyectan en el contexto del LLM.
-
-### 18a. Setup
+### 6e. Verificar embeddings
 
 ```bash
-# Verificar que nomic-embed-text está disponible
-docker compose exec ollama ollama list | grep nomic
-
-# Si no:
-docker compose exec ollama ollama pull nomic-embed-text
-```
-
-### 18b. Prueba de relevancia
-
-1. Guardar varias memorias diversas:
-   ```
-   /remember Mi color favorito es el azul
-   /remember Trabajo como ingeniero de software
-   /remember Tengo un perro llamado Max
-   /remember Mi cumpleaños es el 15 de marzo
-   /remember Prefiero café sin azúcar
-   ```
-
-2. Preguntar algo específico:
-   - `Tengo mascotas?` → Debe mencionar a Max (la memoria del perro es relevante)
-   - `A qué me dedico?` → Debe mencionar ingeniería de software
-
-3. **Verificar en logs** (con `LOG_LEVEL=DEBUG`):
-   - `Semantic memory search` — indica que se usó búsqueda semántica
-   - Si falla → `falling back to all memories` — fallback automático
-
-### 18c. Fallback sin embeddings
-
-1. Setear `SEMANTIC_SEARCH_ENABLED=false` en `.env`
-2. Reiniciar: `docker compose restart wasap`
-3. Enviar un mensaje → todas las memorias deben aparecer en contexto (comportamiento anterior)
-4. Volver a `SEMANTIC_SEARCH_ENABLED=true` y reiniciar
-
-### 18d. Verificar embeddings en DB
-
-```bash
-# Contar embeddings de memorias
 sqlite3 data/wasap.db "SELECT COUNT(*) FROM vec_memories;"
+# Debe ser > 0
 
-# Contar memorias sin embedding (deberían ser 0 después de backfill)
+# Memorias sin embedding (debe ser 0 después del backfill)
 sqlite3 data/wasap.db "
-  SELECT m.id, m.content FROM memories m
+  SELECT m.id FROM memories m
   LEFT JOIN vec_memories v ON v.memory_id = m.id
   WHERE m.active = 1 AND v.memory_id IS NULL;
 "
@@ -397,212 +221,473 @@ sqlite3 data/wasap.db "
 
 ---
 
-## 19. MEMORY.md Bidireccional (Fase 6)
+## 7. Proyectos
 
-**Objetivo**: Editar `data/MEMORY.md` a mano y verificar que los cambios se sincronizan a SQLite.
+| Paso | Mensaje | Esperado |
+|---|---|---|
+| Crear | `Creá un proyecto llamado "Backend API" con descripción: Refactoring del módulo de auth` | `create_project(...)` → confirmación con ID |
+| Agregar task | `Agregá una tarea al proyecto Backend API: Migrar JWT a OAuth2` | `add_task(...)` → confirmación |
+| Ver progreso | `Cómo va el proyecto Backend API?` | Resumen con tareas y estado |
+| Completar task | `Marcá como hecha la tarea "Migrar JWT a OAuth2"` | `update_task(...)` status→done |
+| Nota | `Agregá una nota al proyecto: La migración requiere cambiar 3 endpoints` | `add_project_note(...)` |
+| Buscar | `Buscá notas del proyecto sobre endpoints` | Búsqueda semántica en project notes |
+| Archivar | `Archivá el proyecto Backend API` | `update_project_status(...)` → resumen final automático |
 
-### 19a. Sync File → DB (agregar)
-
-1. Abrir `data/MEMORY.md` con un editor de texto
-2. Agregar una línea: `- Editado desde el archivo`
-3. Guardar
-4. Esperar 1-2 segundos
-5. Verificar:
-   ```bash
-   sqlite3 data/wasap.db "SELECT * FROM memories WHERE content = 'Editado desde el archivo';"
-   ```
-   Debe existir la memoria en la DB.
-
-### 19b. Sync File → DB (borrar)
-
-1. Abrir `data/MEMORY.md`
-2. Eliminar una línea de memoria existente
-3. Guardar
-4. Verificar que la memoria fue desactivada en SQLite:
-   ```bash
-   sqlite3 data/wasap.db "SELECT id, content, active FROM memories ORDER BY id DESC LIMIT 5;"
-   ```
-
-### 19c. Sync DB → File
-
-1. Usar el comando de WhatsApp: `/remember Agregado desde WhatsApp`
-2. Verificar que `data/MEMORY.md` contiene la nueva línea
-3. El archivo debe estar formateado correctamente
-
-### 19d. Prevención de loops
-
-1. Hacer un cambio via `/remember` → verificar que no se generan múltiples syncs en los logs
-2. Editar el archivo → verificar que el watcher no entra en loop
-
-**Verificar en logs:**
-- `Synced from file → added: ...` — sync exitoso (file → DB)
-- `Synced from file → removed: ...` — sync exitoso (eliminación)
-- `Skipping sync (guard set)` — guard funcionando (previene loops)
-
-### 19e. Memorias con categoría
-
-1. Editar `data/MEMORY.md` y agregar: `- [hobby] Juega al fútbol`
-2. Verificar en DB:
-   ```bash
-   sqlite3 data/wasap.db "SELECT content, category FROM memories WHERE content LIKE '%fútbol%';"
-   ```
-   Debe tener `category = 'hobby'`.
+**Verificar en DB:**
+```bash
+sqlite3 data/wasap.db "SELECT name, status FROM projects;"
+sqlite3 data/wasap.db "SELECT description, status FROM project_tasks LIMIT 10;"
+```
 
 ---
 
-## 20. Búsqueda Semántica de Notas (Fase 6)
+## 8. Web Browsing (MCP — Fetch)
 
-**Objetivo**: Verificar que `search_notes` usa búsqueda semántica con fallback a keyword.
+### 8a. Puppeteer activo (modo primario)
 
-### 20a. Crear notas y buscar semánticamente
-
-1. Crear notas variadas:
-   - `Guardá una nota: Receta de pizza - Harina, tomate, mozzarella, albahaca`
-   - `Guardá una nota: Lista de compras - Leche, pan, huevos, manteca`
-   - `Guardá una nota: Ideas proyecto - App de recetas con IA`
-
-2. Buscar con términos semánticos (no exactos):
-   - `Buscá notas sobre cocina` → debería encontrar la receta de pizza
-   - `Buscá notas sobre comida` → debería encontrar la receta y la lista de compras
-   - `Qué ideas tengo anotadas?` → debería encontrar ideas de proyecto
-
-3. **Verificar en logs:**
-   - `Semantic search found N matching notes` — búsqueda semántica usada
-   - Si falla: `Semantic note search failed, falling back to keyword` — fallback
-
-### 20b. Notas inyectadas en contexto
-
-Las notas relevantes se inyectan automáticamente en el contexto del LLM:
-
-1. Crear una nota: `Guardá una nota: Reunión lunes - Hablar con Juan sobre el deploy`
-2. Preguntar: `Qué tengo pendiente para el lunes?`
-3. El LLM debería mencionar la reunión con Juan (inyectada como contexto, no via tool)
-
-### 20c. Verificar embeddings de notas
+| Mensaje | Esperado |
+|---|---|
+| `Qué dice https://example.com?` | Contenido real de la página |
+| `Resumí https://news.ycombinator.com` | Lista de links/títulos de HN |
 
 ```bash
-# Contar embeddings de notas
-sqlite3 data/wasap.db "SELECT COUNT(*) FROM vec_notes;"
+grep "Fetch mode: puppeteer\|Tool router.*fetch" data/wasap.log | tail -3
+```
 
-# Notas sin embedding
+### 8b. Fallback a mcp-fetch
+
+**Setup**: en `data/mcp_servers.json`, deshabilitar puppeteer y habilitar mcp-fetch. Reiniciar.
+
+| Mensaje | Esperado |
+|---|---|
+| `Qué hay en https://example.com?` | Contenido via HTTP básico, con nota al usuario sobre fetch limitado |
+
+```bash
+grep "Fetch mode: mcp-fetch\|mcp-fetch fallback" data/wasap.log | tail -3
+```
+
+### 8c. URL detectada automáticamente
+
+```
+https://github.com/fastapi/fastapi
+```
+**Esperado**: el clasificador fuerza categoría "fetch" aunque diga "none". Logs: `URL detected`.
+
+---
+
+## 9. MCP — GitHub
+
+**Requisito**: `GITHUB_PERSONAL_ACCESS_TOKEN` en `.env`
+
+| Mensaje | Esperado |
+|---|---|
+| `Lista las issues abiertas del repo wasap-assistant` | Lista de issues con número, título |
+| `Crea una issue: Test desde WasAP` | Issue creada, retorna URL |
+| `Buscá repositorios sobre FastAPI` | Lista de repos con estrellas |
+
+---
+
+## 10. MCP — Filesystem
+
+**Requisito**: servidor `mcp-filesystem` configurado y habilitado en `mcp_servers.json`.
+
+| Mensaje | Esperado |
+|---|---|
+| `Lista los archivos en /home/appuser/data` | Lista de archivos del directorio mapeado |
+| `Leé el archivo mcp_servers.json` | Contenido del JSON |
+| `Intentá leer /etc/passwd` | Error de permiso (fuera del path configurado) |
+
+---
+
+## 11. Selfcode (introspección del propio código)
+
+| Mensaje / Acción | Esperado |
+|---|---|
+| `Cuál es tu versión actual?` | `get_version_info()` → info de git + versión |
+| `Mostrá la estructura de app/skills/executor.py` | `get_file_outline(...)` → lista de funciones con números de línea |
+| `Leé las líneas 229 a 260 de app/skills/executor.py` | `read_lines(...)` → código numerado |
+| `Buscá en el código dónde se define select_tools` | `search_source_code("select_tools")` |
+| `Cuál es la configuración runtime?` | `get_runtime_config()` — sin tokens de WA |
+| `Cómo está la salud del sistema?` | `get_system_health()` — DB, embeddings, scheduler |
+| `Mostrá los últimos logs de error` | `get_recent_logs(level="ERROR")` |
+
+---
+
+## 12. Dynamic Tool Budget
+
+### 12a. Multi-categoría — distribución de budget
+
+```
+Necesito crear una issue en GitHub para el proyecto "backend-api" sobre el bug del login
+```
+
+**Verificar en logs:**
+```bash
+grep "Tool router: categories=\['projects', 'github'\]" data/wasap.log | tail -3
+# Esperado: ambas categorías tienen tools en la lista (no solo projects)
+```
+
+### 12b. Meta-tool `request_more_tools`
+
+Difícil de forzar manualmente (depende del clasificador). Verificar que está disponible:
+```bash
+grep "request_more_tools" data/wasap.log | tail -5
+```
+
+Si el LLM lo usa, ver: `request_more_tools: cats=[...], added=N: [tool_names]`.
+
+---
+
+## 13. Agent Mode — Sesiones agénticas
+
+### 13a. Tarea simple de código
+
+```
+/agent Corrí los tests y mostrame si hay algún fallo
+```
+
+**Esperado**:
+1. Respuesta inmediata: `🤖 Iniciando sesión de trabajo...`
+2. En background: agente llama `run_command("pytest tests/ -v")` → parsea resultado
+3. Respuesta final via WA con resultados del test
+4. Logs: `Agent round 1/15`, `Tool run_command`, `Agent session completed`
+
+### 13b. Tarea con múltiples steps
+
+```
+/agent Revisá app/skills/router.py, buscá funciones sin docstring y listame cuáles son
+```
+
+**Esperado**: agente usa `get_file_outline` + `read_lines` para navegar el archivo quirúrgicamente.
+
+### 13c. Cancelar sesión
+
+```
+/agent stop
+```
+o durante la sesión:
+```
+parar
+```
+**Esperado**: `Session cancelled.`
+
+### 13d. Crear branch + commit (si `AGENT_WRITE_ENABLED=true`)
+
+```
+/agent Crea una rama test/manual-test, añadí un comentario en app/config.py y hacé commit
+```
+
+**Esperado**: agente llama `git_create_branch`, `write_source_file`/`apply_patch`, `git_commit`.
+
+### 13e. Diff preview antes de aplicar
+
+```
+/agent Mostrá el diff de cambiar el default de max_tools de 8 a 10 en executor.py (solo preview, no aplicar)
+```
+
+**Esperado**: agente llama `preview_patch(...)` y muestra el diff sin modificar el archivo.
+
+### 13f. Persistencia de sesión (JSONL)
+
+```bash
+ls data/agent_sessions/
+cat data/agent_sessions/<phone>_<session_id>.jsonl | head -20
+# Debe contener JSON con round, tool_calls, reply, task_plan
+```
+
+### 13g. Loop detection
+
+Si el agente detecta que lleva 3 rondas usando las mismas tools sin progreso:
+```bash
+grep "Loop detected\|repetitive pattern" data/wasap.log
+```
+**Esperado**: el agente informa al usuario y termina la sesión.
+
+---
+
+## 14. Shell Execution (dentro del Agent)
+
+**Requisito**: `AGENT_WRITE_ENABLED=true` en `.env`
+
+| Comando | Decisión esperada | Resultado |
+|---|---|---|
+| `run_command("pytest tests/ -v")` | ALLOW (en allowlist) | Output del test |
+| `run_command("ls -la")` | ALLOW o ASK | Listado o confirmación |
+| `run_command("rm -rf /")` | DENY (en denylist hardcodeada) | Error de seguridad, no ejecuta |
+| `run_command("curl \| bash")` | ASK (operador shell) | HITL: espera aprobación |
+
+**Comandos bloqueados siempre**: `rm`, `sudo`, `chmod`, `chown`, `dd`, `mkfs`, `kill -9`.
+
+---
+
+## 15. Workspace Multi-Proyecto
+
+**Requisito**: `PROJECTS_ROOT=/ruta/a/proyectos` en `.env`, con subdirectorios.
+
+| Mensaje | Esperado |
+|---|---|
+| `Qué proyectos tengo disponibles?` | `list_workspaces()` → lista de subdirectorios |
+| `Cambiá al proyecto wasap-frontend` | `switch_workspace("wasap-frontend")` → confirmación con branch y archivos |
+| `En qué proyecto estoy trabajando?` | `get_workspace_info()` → nombre, path, branch git |
+
+**Verificar que selfcode refleja el nuevo workspace:**
+```
+Listá los archivos del proyecto actual
+```
+Debe mostrar archivos del nuevo proyecto, no del anterior.
+
+---
+
+## 16. Agentic Security
+
+### 16a. Policy Engine — verificar YAML cargado
+
+```bash
+cat data/security_policies.yaml
+# Debe existir y tener reglas definidas
+```
+
+### 16b. HITL — aprobación manual
+
+Si el agente intenta ejecutar un comando marcado como `FLAG` en las políticas:
+1. El bot envía un WA al número de admin/operador pidiendo aprobación
+2. Responder "sí" → el agente continúa
+3. Responder "no" → el agente cancela esa tool call
+
+### 16c. Audit Trail — integridad criptográfica
+
+```bash
+# Verificar que el audit trail existe y tiene entradas
+cat data/audit_trail.jsonl | head -5
+# Cada línea tiene: tool_name, action, previous_hash, entry_hash
+```
+
+```python
+# Verificar hash chain (opcional — script rápido)
+import json, hashlib
+entries = [json.loads(l) for l in open("data/audit_trail.jsonl")]
+for i, e in enumerate(entries[1:], 1):
+    prev_hash = hashlib.sha256(json.dumps(entries[i-1]).encode()).hexdigest()
+    assert prev_hash == e["previous_hash"], f"Chain broken at entry {i}"
+print("Hash chain OK")
+```
+
+---
+
+## 17. Expand (MCP Registry)
+
+| Mensaje | Esperado |
+|---|---|
+| `Buscá servidores MCP para Slack` | `search_mcp_registry("Slack")` → lista de resultados de Smithery |
+| `Mostrá info del servidor brave-search de Smithery` | `get_mcp_server_info(...)` → descripción, tools disponibles |
+| `Listá los servidores MCP activos` | `list_mcp_servers()` → tabla con nombre, tipo, estado |
+
+> La instalación real (`install_from_smithery`) requiere confirmación y afecta `mcp_servers.json` — probar en entorno no productivo.
+
+---
+
+## 18. Eval Pipeline
+
+### 18a. Guardrails en cada respuesta
+
+```bash
+# Buscar scores de guardrails en la última traza
 sqlite3 data/wasap.db "
-  SELECT n.id, n.title FROM notes n
-  LEFT JOIN vec_notes v ON v.note_id = n.id
-  WHERE v.note_id IS NULL;
+  SELECT check_name, value FROM trace_scores
+  WHERE source = 'system'
+  ORDER BY id DESC LIMIT 10;
+"
+```
+**Esperado**: scores para `not_empty`, `language_match`, `no_pii`, `excessive_length`, `no_raw_tool_json`.
+
+### 18b. Trazabilidad
+
+```bash
+# Ver última traza
+sqlite3 data/wasap.db "
+  SELECT id, input_preview, output_preview, duration_ms
+  FROM traces ORDER BY id DESC LIMIT 3;
+"
+# Ver spans de la traza
+sqlite3 data/wasap.db "
+  SELECT name, kind, duration_ms FROM trace_spans
+  WHERE trace_id = (SELECT id FROM traces ORDER BY id DESC LIMIT 1);
 "
 ```
 
----
+### 18c. Señales de usuario
 
-## 21. Auto-indexing (Fase 6)
+1. Reaccionar con 👍 a una respuesta del bot → `SELECT value FROM trace_scores WHERE source='user' ORDER BY id DESC LIMIT 1;` → debe ser 1.0
+2. Reaccionar con 👎 → debe ser 0.0
+3. Enviar `/feedback Estuvo buenísima esa respuesta` → score positivo guardado
 
-**Objetivo**: Verificar que los embeddings se crean/borran automáticamente.
+### 18d. Eval skill — resumen
 
-### 21a. /remember embede
+```
+/agent Mostrame el eval summary de las últimas 24 horas
+```
+**Esperado**: agente llama `get_eval_summary(hours=24)` → tabla con métricas por check.
 
-1. Enviar `/remember Dato nuevo para embeder`
-2. Verificar:
-   ```bash
-   sqlite3 data/wasap.db "
-     SELECT m.id, m.content, CASE WHEN v.memory_id IS NOT NULL THEN 'embedded' ELSE 'pending' END
-     FROM memories m
-     LEFT JOIN vec_memories v ON v.memory_id = m.id
-     WHERE m.content LIKE '%embeder%';
-   "
-   ```
-   Debe mostrar `embedded`.
-
-### 21b. /forget borra embedding
-
-1. Enviar `/forget Dato nuevo para embeder`
-2. Verificar que el embedding fue borrado:
-   ```bash
-   sqlite3 data/wasap.db "SELECT COUNT(*) FROM vec_memories WHERE memory_id NOT IN (SELECT id FROM memories WHERE active = 1);"
-   ```
-   Debe ser 0 (no hay embeddings huérfanos).
-
-### 21c. Backfill al startup
-
-1. Agregar una memoria directamente en SQLite (sin embedding):
-   ```bash
-   sqlite3 data/wasap.db "INSERT INTO memories (content) VALUES ('Memoria manual sin embedding');"
-   ```
-2. Reiniciar: `docker compose restart wasap`
-3. Verificar en logs: `Backfilled N memory embeddings`
-4. Verificar que ahora tiene embedding:
-   ```bash
-   sqlite3 data/wasap.db "
-     SELECT m.content FROM memories m
-     JOIN vec_memories v ON v.memory_id = m.id
-     WHERE m.content LIKE '%manual%';
-   "
-   ```
-
----
-
-## 22. Graceful Degradation (Fase 6)
-
-**Objetivo**: Verificar que la app funciona cuando fallan los componentes de Fase 6.
-
-### 22a. Sin modelo de embedding
-
-1. Borrar el modelo: `docker compose exec ollama ollama rm nomic-embed-text`
-2. Reiniciar: `docker compose restart wasap`
-3. Enviar un mensaje → debe funcionar normalmente (fallback a todas las memorias)
-4. Verificar en logs: `Failed to compute query embedding` o similar
-5. Restaurar: `docker compose exec ollama ollama pull nomic-embed-text`
-
-### 22b. SEMANTIC_SEARCH_ENABLED=false
-
-1. Setear `SEMANTIC_SEARCH_ENABLED=false` en `.env`
-2. Reiniciar
-3. Verificar que la app funciona con el comportamiento pre-Fase 6
-4. No se computan embeddings, no se busca semánticamente
-
-### 22c. MEMORY_FILE_WATCH_ENABLED=false
-
-1. Setear `MEMORY_FILE_WATCH_ENABLED=false` en `.env`
-2. Reiniciar
-3. Editar `data/MEMORY.md` → los cambios NO se sincronizan a SQLite
-4. `/remember` sigue funcionando normalmente (DB → archivo, dirección única)
-
----
-
-## Troubleshooting
-
-| Problema | Solución |
-|---|---|
-| `Tool not found` | Verificar logs de arranque — skill/MCP no se registró |
-| `MCP connection refused` | Verificar `npx --version` dentro del container |
-| `Search failed` | DuckDuckGo puede rate-limitear; esperar y reintentar |
-| `Weather service unavailable` | Problema de red/IPv6; verificar DNS en el container |
-| `GitHub auth error` | Verificar token en `.env` y scope `repo` |
-| Tool loop infinito | No debería pasar (max 5 iteraciones), pero verificar en logs |
-| `think` aparece en respuesta con tools | Bug: `think: True` no se deshabilitó; verificar `chat_with_tools()` |
-| `sqlite-vec not available` | Instalar `sqlite-vec` o verificar wheels en Docker; app sigue funcionando sin él |
-| `Failed to compute query embedding` | Modelo `nomic-embed-text` no descargado; `ollama pull nomic-embed-text` |
-| Watcher no detecta cambios | Verificar `MEMORY_FILE_WATCH_ENABLED=true` y que el archivo existe |
-| Watcher entra en loop | Bug en sync guard; verificar logs por `Skipping sync (guard set)` repetido |
-| Embeddings no se crean | Verificar `SEMANTIC_SEARCH_ENABLED=true` y que el modelo está disponible |
-
-### Logs útiles
+### 18e. Dataset vivo
 
 ```bash
-# Todos los logs
-docker compose logs -f wasap
-
-# Solo errores
-docker compose logs -f wasap 2>&1 | grep -i error
-
-# Tool calls
-docker compose logs -f wasap 2>&1 | grep -i "tool\|executing\|skill"
-
-# MCP
-docker compose logs -f wasap 2>&1 | grep -i "mcp\|server"
-
-# Embeddings y búsqueda semántica
-docker compose logs -f wasap 2>&1 | grep -i "embed\|vec\|semantic\|backfill"
-
-# Memory watcher
-docker compose logs -f wasap 2>&1 | grep -i "watcher\|sync\|guard"
+sqlite3 data/wasap.db "SELECT entry_type, COUNT(*) FROM eval_dataset GROUP BY entry_type;"
+# Debe mostrar: failure, golden_candidate (y correction si hubo correcciones)
 ```
+
+---
+
+## 19. Rate limiting y graceful shutdown
+
+### Rate limiting
+
+Enviar >10 mensajes en menos de 60 segundos desde el mismo número:
+```bash
+grep "Rate limit exceeded" data/wasap.log
+```
+**Esperado**: algunos mensajes ignorados silenciosamente sin error 500.
+
+### Graceful shutdown
+
+```bash
+docker compose stop wasap
+grep "Graceful shutdown\|Waiting for.*in-flight" data/wasap.log | tail -5
+```
+**Esperado**: espera hasta 30s a que los background tasks terminen antes de cerrar.
+
+---
+
+## 20. Graceful degradation
+
+| Escenario | Cómo simular | Esperado |
+|---|---|---|
+| Sin `nomic-embed-text` | `ollama rm nomic-embed-text` + restart | Fallback a todas las memorias, sin crash |
+| Sin sqlite-vec | Desinstalar extension + restart | App funciona sin búsqueda vectorial |
+| `SEMANTIC_SEARCH_ENABLED=false` | `.env` + restart | Sin búsqueda semántica, comportamiento clásico |
+| MCP no conectado | Deshabilitar servidor en `mcp_servers.json` | Tools de ese servidor no disponibles, resto funciona |
+| Ambos fetch servers desactivados | Deshabilitar puppeteer + mcp-fetch | LLM informa que no puede acceder a URLs |
+| DuckDuckGo rate limit | Múltiples búsquedas seguidas | `Error performing search: ...` — no crash |
+
+---
+
+## Verificación de logs por área
+
+```bash
+# Tool calls generales
+grep "Tool router\|Tool iteration\|Tool.*->" data/wasap.log | tail -20
+
+# Agent sessions
+grep "Agent round\|Agent session" data/wasap.log | tail -10
+
+# request_more_tools (dynamic budget)
+grep "request_more_tools\|per_cat" data/wasap.log | tail -10
+
+# Web fetch
+grep "Fetch mode\|puppeteer\|mcp-fetch" data/wasap.log | tail -5
+
+# Memoria y embeddings
+grep "embed\|semantic\|backfill\|Synced from" data/wasap.log | tail -10
+
+# Security
+grep "PolicyEngine\|AuditTrail\|HITL\|blocked_by_policy" data/wasap.log | tail -10
+
+# Cron jobs
+grep "cron\|CronTrigger\|Restored" data/wasap.log | tail -5
+
+# Errores
+grep -i "error\|exception\|traceback" data/wasap.log | tail -20
+```
+
+---
+
+## Checklist de release
+
+Marcar cada ítem antes de declarar la rama lista para merge/release:
+
+### Core
+- [ ] Chat básico sin tools funciona
+- [ ] Audio → transcripción → respuesta
+- [ ] Imagen → descripción → respuesta
+- [ ] Todos los comandos slash responden correctamente
+- [ ] Rate limiter activo (logs confirmados)
+- [ ] Graceful shutdown sin jobs perdidos
+
+### Tools
+- [ ] Calculadora: operaciones básicas + rechazo de código peligroso
+- [ ] Datetime: hora actual + conversión de timezones
+- [ ] Clima: ciudad válida + ciudad inválida (no crash)
+- [ ] Búsqueda web: retorna resultados
+- [ ] Notas: crear, listar, buscar semántico, borrar
+- [ ] Recordatorios one-shot: crear + entrega puntual
+
+### Memoria
+- [ ] `/remember` → aparece en MEMORY.md
+- [ ] Edición manual de MEMORY.md → sincroniza a DB
+- [ ] Búsqueda semántica: memoria relevante inyectada según pregunta
+- [ ] `/clear` → snapshot creado en `data/memory/snapshots/`
+- [ ] Backfill de embeddings en boot (logs confirmados)
+
+### Proyectos
+- [ ] Crear proyecto + tareas
+- [ ] Ver progreso + marcar tareas como done
+- [ ] Notas de proyecto con búsqueda semántica
+- [ ] Archivar proyecto con resumen automático
+
+### Agent Mode
+- [ ] Sesión inicia en background, respuesta inmediata al usuario
+- [ ] Agente ejecuta múltiples tool calls en secuencia
+- [ ] Persistencia JSONL: sesión guardada en `data/agent_sessions/`
+- [ ] Cancelación de sesión funciona
+- [ ] Loop detection activo (si aplica)
+
+### Shell + Git (requiere `AGENT_WRITE_ENABLED=true`)
+- [ ] `run_command("pytest")` → output correcto
+- [ ] Comandos peligrosos (rm, sudo) bloqueados por denylist
+- [ ] Shell operators (pipe, &&) → ASK (HITL)
+- [ ] `git_create_branch` + `git_commit` funcionan
+- [ ] `preview_patch` muestra diff sin modificar archivos
+
+### Cron Jobs
+- [ ] `create_cron` persiste en DB y registra en APScheduler
+- [ ] Cron sobrevive restart del container (logs: "Restored N cron jobs")
+- [ ] `delete_cron` elimina de DB y del scheduler
+
+### Web Fetch
+- [ ] URL en mensaje → categoría "fetch" forzada automáticamente
+- [ ] Puppeteer activo: retorna contenido real de la página
+- [ ] Fallback a mcp-fetch cuando Puppeteer no disponible
+
+### Seguridad
+- [ ] `data/security_policies.yaml` existe con reglas
+- [ ] `data/audit_trail.jsonl` crece con cada tool call
+- [ ] HITL: bot solicita aprobación para acciones flaggeadas
+
+### Dynamic Tool Budget
+- [ ] Multi-categoría (projects + github): ambas representadas en el tool set
+- [ ] `request_more_tools` aparece siempre en la lista de tools disponibles
+
+### Eval
+- [ ] `trace_scores` contiene scores de guardrails para respuestas recientes
+- [ ] Reacciones (👍/👎) guardan scores con `source='user'`
+- [ ] `eval_dataset` acumula entradas (failure + golden_candidate)
+
+### Graceful degradation
+- [ ] Sin nomic-embed-text: app funciona con fallback
+- [ ] Sin fetch servers: LLM informa sin crash
+- [ ] `make check` pasa: 0 errores de lint, typecheck, tests
+
+---
+
+## Troubleshooting rápido
+
+| Síntoma | Causa probable | Acción |
+|---|---|---|
+| `Tool not found: X` | Tool no registrado al boot | Verificar logs de arranque, `Registered tool: X` |
+| LLM presenta plan en lugar de ejecutar | 0 tools disponibles para la categoría | Verificar `select_tools` en logs |
+| Agent loop no inicia | `AGENT_WRITE_ENABLED` no seteado | Agregar a `.env` + restart |
+| Cron no se dispara | Timezone incorrecto o cron expr inválida | `list_crons` via WA, verificar expr |
+| MCP connection refused | `npx` no disponible en container | `docker compose exec wasap which npx` |
+| Sin embeddings en vec_memories | nomic-embed-text no descargado | `ollama pull nomic-embed-text` dentro del container |
+| `think` visible en respuestas con tools | Bug: `think=True` con tools activo | Verificar `chat_with_tools()` en `llm/client.py` |
+| HITL no llega por WA | Token de WA expirado o número incorrecto | Verificar `.env` y logs de WhatsApp client |
+| Hash chain roto en audit trail | Corrupción del JSONL | Investigar; NO borrar el archivo (evidencia) |

@@ -70,6 +70,21 @@ async def lifespan(app: FastAPI):
         model=settings.ollama_model,
     )
     app.state.repository = repository
+
+    # Prompt registry: seed default prompts into DB at startup (idempotent)
+    if settings.prompt_versioning_enabled:
+        from app.eval.prompt_registry import PROMPT_DEFAULTS
+
+        await repository.seed_default_prompts(PROMPT_DEFAULTS)
+
+    # TraceRecorder singleton: one Langfuse client for the lifetime of the app
+    if settings.tracing_enabled:
+        from app.tracing.recorder import TraceRecorder
+
+        app.state.trace_recorder = TraceRecorder.create(repository)
+    else:
+        app.state.trace_recorder = None
+
     app.state.memory_file = memory_file
     app.state.daily_log = daily_log
     app.state.command_registry = command_registry
@@ -115,12 +130,41 @@ async def lifespan(app: FastAPI):
     # Scheduler Skill
     from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
-    from app.skills.tools.scheduler_tools import set_scheduler
+    from app.skills.tools.scheduler_tools import set_repository, set_scheduler
 
     scheduler = AsyncIOScheduler()
     scheduler.start()
     set_scheduler(scheduler, app.state.whatsapp_client)
+    set_repository(repository)
     app.state.scheduler = scheduler
+
+    # Restore persistent cron jobs from DB
+    try:
+        from zoneinfo import ZoneInfo
+
+        from apscheduler.triggers.cron import CronTrigger
+
+        active_crons = await repository.get_active_cron_jobs()
+        for cron in active_crons:
+            try:
+                tz_obj = ZoneInfo(cron.get("timezone", "UTC"))
+                trigger = CronTrigger.from_crontab(cron["cron_expr"], timezone=tz_obj)
+                from app.skills.tools.scheduler_tools import _send_reminder
+
+                scheduler.add_job(
+                    _send_reminder,
+                    trigger,
+                    args=[cron["phone_number"], cron["message"]],
+                    name=cron["message"],
+                    id=f"cron_{cron['id']}",
+                    replace_existing=True,
+                )
+            except Exception:
+                logger.exception("Failed to restore cron job %s", cron.get("id"))
+        if active_crons:
+            logger.info("Restored %d cron job(s) from database", len(active_crons))
+    except Exception:
+        logger.exception("Cron job restore failed at startup")
 
     # Trace cleanup job: daily purge of traces older than trace_retention_days
     if settings.tracing_enabled:
@@ -144,6 +188,27 @@ async def lifespan(app: FastAPI):
             "Scheduled trace cleanup job (daily at 03:00, retention=%d days)",
             settings.trace_retention_days,
         )
+
+    # Self-correction memory cleanup: expire corrections older than 24h
+    async def _cleanup_self_corrections() -> None:
+        try:
+            removed = await repository.cleanup_expired_self_corrections(ttl_hours=24)
+            if removed:
+                logger.info("Self-correction cleanup: expired %d old corrections", removed)
+        except Exception:
+            logger.exception("Self-correction cleanup job failed")
+
+    scheduler.add_job(
+        _cleanup_self_corrections,
+        trigger="interval",
+        hours=1,
+        id="self_correction_cleanup",
+        replace_existing=True,
+    )
+    # Also run once at startup to clean up pre-existing stale corrections
+    import asyncio as _asyncio
+
+    _startup_cleanup_task = _asyncio.create_task(_cleanup_self_corrections())
 
     # Memory file watcher (bidirectional sync)
     memory_watcher = None
@@ -211,6 +276,10 @@ async def lifespan(app: FastAPI):
         memory_watcher.stop()
     scheduler.shutdown()
     await mcp_manager.cleanup()
+    # Flush Langfuse before exit so buffered spans are not lost
+    trace_recorder = getattr(app.state, "trace_recorder", None)
+    if trace_recorder is not None and trace_recorder.langfuse is not None:
+        trace_recorder.langfuse.flush()
     await db_conn.close()
     await http_client.aclose()
 

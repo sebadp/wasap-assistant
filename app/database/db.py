@@ -106,6 +106,41 @@ CREATE TABLE IF NOT EXISTS project_notes (
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 CREATE INDEX IF NOT EXISTS idx_pnotes_project ON project_notes(project_id);
+
+CREATE TABLE IF NOT EXISTS conversation_state (
+    conversation_id   INTEGER PRIMARY KEY REFERENCES conversations(id),
+    sticky_categories TEXT NOT NULL DEFAULT '[]',
+    updated_at        TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS agent_command_log (
+    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_id     TEXT NOT NULL,
+    phone_number   TEXT NOT NULL,
+    command        TEXT NOT NULL,
+    decision       TEXT NOT NULL
+                   CHECK (decision IN ('allow', 'deny', 'ask_approved', 'ask_rejected')),
+    exit_code      INTEGER,
+    stdout_preview TEXT,
+    stderr_preview TEXT,
+    duration_ms    INTEGER,
+    started_at     TEXT NOT NULL DEFAULT (datetime('now')),
+    completed_at   TEXT,
+    error          TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_cmd_log_session ON agent_command_log(session_id);
+CREATE INDEX IF NOT EXISTS idx_cmd_log_phone ON agent_command_log(phone_number);
+
+CREATE TABLE IF NOT EXISTS user_cron_jobs (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    phone_number TEXT NOT NULL,
+    cron_expr    TEXT NOT NULL,
+    message      TEXT NOT NULL,
+    timezone     TEXT NOT NULL DEFAULT 'UTC',
+    active       INTEGER NOT NULL DEFAULT 1,
+    created_at   TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_cron_phone ON user_cron_jobs(phone_number, active);
 """
 
 TRACING_SCHEMA = """
@@ -116,7 +151,7 @@ CREATE TABLE IF NOT EXISTS traces (
     output_text   TEXT,
     wa_message_id TEXT,
     message_type  TEXT NOT NULL DEFAULT 'text'
-                  CHECK (message_type IN ('text', 'audio', 'image')),
+                  CHECK (message_type IN ('text', 'audio', 'image', 'agent')),
     status        TEXT NOT NULL DEFAULT 'started'
                   CHECK (status IN ('started', 'completed', 'failed')),
     started_at    TEXT NOT NULL DEFAULT (datetime('now')),
@@ -159,6 +194,39 @@ CREATE TABLE IF NOT EXISTS trace_scores (
 );
 CREATE INDEX IF NOT EXISTS idx_scores_trace ON trace_scores(trace_id);
 CREATE INDEX IF NOT EXISTS idx_scores_name ON trace_scores(name, value);
+"""
+
+# Migration: add 'agent' to message_type CHECK constraint.
+# Run when an existing DB has the old constraint without 'agent'.
+# Uses PRAGMA foreign_keys=OFF so the DROP TABLE doesn't cascade-fail on
+# trace_spans / trace_scores FK references.
+_TRACES_MIGRATION = """
+PRAGMA foreign_keys = OFF;
+
+CREATE TABLE traces_v2 (
+    id            TEXT PRIMARY KEY,
+    phone_number  TEXT NOT NULL,
+    input_text    TEXT NOT NULL,
+    output_text   TEXT,
+    wa_message_id TEXT,
+    message_type  TEXT NOT NULL DEFAULT 'text'
+                  CHECK (message_type IN ('text', 'audio', 'image', 'agent')),
+    status        TEXT NOT NULL DEFAULT 'started'
+                  CHECK (status IN ('started', 'completed', 'failed')),
+    started_at    TEXT NOT NULL DEFAULT (datetime('now')),
+    completed_at  TEXT,
+    metadata      TEXT NOT NULL DEFAULT '{}'
+);
+
+INSERT INTO traces_v2 SELECT * FROM traces;
+DROP TABLE traces;
+ALTER TABLE traces_v2 RENAME TO traces;
+
+CREATE INDEX IF NOT EXISTS idx_traces_phone ON traces(phone_number, started_at);
+CREATE INDEX IF NOT EXISTS idx_traces_status ON traces(status);
+CREATE INDEX IF NOT EXISTS idx_traces_wa_msg ON traces(wa_message_id);
+
+PRAGMA foreign_keys = ON;
 """
 
 DATASET_SCHEMA = """
@@ -228,6 +296,17 @@ async def init_db(db_path: str, embedding_dims: int = 768) -> tuple[aiosqlite.Co
     await conn.execute("PRAGMA foreign_keys=ON")
     await conn.executescript(SCHEMA)
     await conn.executescript(TRACING_SCHEMA)
+
+    # Migrate existing `traces` table if it was created without 'agent' message_type
+    cursor = await conn.execute(
+        "SELECT sql FROM sqlite_master WHERE name='traces' AND type='table'"
+    )
+    row = await cursor.fetchone()
+    if row and "'agent'" not in row[0]:
+        logger.info("Migrating traces table: adding 'agent' to message_type CHECK constraint")
+        await conn.executescript(_TRACES_MIGRATION)
+        await conn.commit()
+
     await conn.executescript(DATASET_SCHEMA)
     await conn.executescript(PROMPT_SCHEMA)
     await conn.commit()

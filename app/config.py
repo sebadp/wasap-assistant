@@ -26,13 +26,18 @@ class Settings(BaseSettings):
         "You are a helpful personal assistant on WhatsApp. "
         "Be friendly. Answer in the same language the user writes in. "
         "Adapt your response length to the user's request — be brief for simple questions, "
-        "detailed when asked for long or thorough answers."
+        "detailed when asked for long or thorough answers. "
+        "CRITICAL: When the user provides a URL and you have URL-reading tools available, "
+        "ALWAYS use them to fetch the content before responding. "
+        "Do NOT assume a page is inaccessible without trying the tool first."
     )
     conversation_max_messages: int = 20
 
     # Database
     database_path: str = "data/wasap.db"
     summary_threshold: int = 40
+    compaction_threshold: int = 20000
+    history_verbatim_count: int = 8  # Last N messages verbatim; older ones replaced by summary
 
     # ngrok (only used in docker-compose, not by the app itself)
     ngrok_authtoken: str = ""
@@ -74,6 +79,7 @@ class Settings(BaseSettings):
     semantic_search_enabled: bool = True
     semantic_search_top_k: int = 10
     memory_file_watch_enabled: bool = True
+    memory_similarity_threshold: float = 1.0  # L2 distance threshold; 1.0 = accept all (tune with real data)
 
     # User profiles & onboarding (Phase 8)
     onboarding_enabled: bool = True
@@ -84,18 +90,31 @@ class Settings(BaseSettings):
     guardrails_language_check: bool = True
     guardrails_pii_check: bool = True
     guardrails_llm_checks: bool = False  # Activar en Iteración 6
+    guardrails_llm_timeout: float = 3.0  # segundos; 0.5 era demasiado bajo para qwen3:8b local
 
     # Tracing (Fase 2)
     tracing_enabled: bool = True
     tracing_sample_rate: float = 1.0  # 1.0 = trace everything
     trace_retention_days: int = 90
+    langfuse_public_key: str | None = None
+    langfuse_secret_key: str | None = None
+    langfuse_host: str = "http://localhost:3000"
 
     # Evaluation (Fase 3+)
     eval_auto_curate: bool = True
+
+    # Prompt versioning (Exec Plan 32)
+    prompt_versioning_enabled: bool = True  # Seed & track prompt versions in DB
 
     # Agent Mode
     agent_write_enabled: bool = False  # Habilita write tools (seguridad: OFF por defecto)
     agent_max_iterations: int = 15  # Límite de iteraciones por sesión agéntica
     agent_session_timeout: int = 300  # Timeout en segundos (5 minutos)
+    agent_shell_allowlist: str = (
+        "pytest,ruff,mypy,make,npm,pip,git,cat,head,tail,wc,ls,find,grep,echo,python,node"
+    )
+    github_token: str | None = None
+    github_repo: str | None = None
+    projects_root: str = ""  # Base directory for multi-project workspace (empty = single project)
 
     model_config = {"env_file": ".env"}

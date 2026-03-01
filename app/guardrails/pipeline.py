@@ -53,16 +53,19 @@ async def run_guardrails(
     if llm_checks_enabled and ollama_client is not None:
         from app.guardrails.checks import check_hallucination, check_tool_coherence
 
+        llm_timeout = getattr(settings, "guardrails_llm_timeout", 3.0) if settings else 3.0
         if tool_calls_used:
             await _run_async_check(
                 results,
                 "tool_coherence",
                 check_tool_coherence(user_text, reply, ollama_client),
+                timeout=llm_timeout,
             )
         await _run_async_check(
             results,
             "hallucination_check",
             check_hallucination(user_text, reply, ollama_client),
+            timeout=llm_timeout,
         )
 
     total_latency_ms = (time.monotonic() - start) * 1000

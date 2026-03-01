@@ -23,7 +23,6 @@ def register(
     mcp_manager: McpManager,
     settings: Settings,
 ) -> None:
-
     # ------------------------------------------------------------------
     # MCP Registry tools (Smithery)
     # ------------------------------------------------------------------

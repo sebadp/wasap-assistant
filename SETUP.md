@@ -120,7 +120,30 @@ CONVERSATION_MAX_MESSAGES=20
 NGROK_AUTHTOKEN=2xxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 
 LOG_LEVEL=INFO
+
+LANGFUSE_PUBLIC_KEY=pk-lf-...
+LANGFUSE_SECRET_KEY=sk-lf-...
+LANGFUSE_HOST=http://localhost:3000
 ```
+
+### 3.1 Configurar Langfuse (Tracing)
+
+La aplicación incluye integración con **Langfuse** para monitoreo y trazabilidad de las interacciones con el LLM.
+
+1. Al levantar los contenedores con Docker, Langfuse estará disponible en `http://localhost:3000`.
+2. Ingresá y creá una cuenta local (te pedirá nombre, email y contraseña).
+3. Creá un nuevo "Project" (ej. "WasAP").
+4. En el menú de la izquierda, andá a **Settings** -> **API Keys**.
+5. Hacé clic en **"Create new API keys"**.
+6. Copiá la **Public Key** y la **Secret Key** y agregalas a tu archivo `.env`:
+
+```env
+LANGFUSE_PUBLIC_KEY=pk-lf-...
+LANGFUSE_SECRET_KEY=sk-lf-...
+LANGFUSE_HOST=http://localhost:3000
+```
+
+*(Si dejás estas variables vacías, la app iniciará correctamente pero no enviará los logs a Langfuse).*
 
 ---
 
@@ -184,6 +207,14 @@ t=... lvl=info msg="started tunnel" ... url=https://xxxx-xx-xx.ngrok-free.app
 ```
 
 Copiar esa URL, la vas a necesitar para el paso siguiente.
+
+### Verificar Langfuse (Observabilidad)
+
+El stack incluye un servidor local de Langfuse para ver las trazas de ejecución.
+1. Ingresá a `http://localhost:3000`
+2. Si es la primera vez, creá una cuenta local (los datos quedan en tu máquina).
+3. Entrá a Settings -> API Keys, generá un par nuevo y pegalos en tu `.env`.
+4. Reiniciá el asistente: `docker compose restart wasap`
 
 ---
 

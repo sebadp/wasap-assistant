@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import logging
+import re
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from app.llm.client import OllamaClient
 
 from app.models import ChatMessage
+from app.tracing.context import get_current_trace
 
 logger = logging.getLogger(__name__)
 
@@ -19,7 +21,7 @@ TOOL_CATEGORIES: dict[str, list[str]] = {
     "weather": ["get_weather"],
     "search": ["web_search"],
     "news": ["search_news", "add_news_preference"],
-    "notes": ["save_note", "list_notes", "search_notes", "delete_note"],
+    "notes": ["save_note", "list_notes", "search_notes", "delete_note", "get_note"],
     "files": [
         "read_file",
         "write_file",
@@ -58,6 +60,8 @@ TOOL_CATEGORIES: dict[str, list[str]] = {
         "search_source_code",
         "get_skill_details",
         "get_recent_logs",
+        "get_file_outline",
+        "read_lines",
     ],
     "expand": [
         "search_mcp_registry",
@@ -93,16 +97,48 @@ TOOL_CATEGORIES: dict[str, list[str]] = {
         "propose_prompt_change",
         "get_dashboard_stats",
     ],
+    "debugging": [
+        "review_interactions",
+        "get_tool_output_full",
+        "get_interaction_context",
+        "write_debug_report",
+        "get_conversation_transcript",
+    ],
     "conversation": ["get_recent_messages"],
+    "shell": ["run_command", "manage_process"],
+    "workspace": ["list_workspaces", "switch_workspace", "get_workspace_info"],
+    "documentation": [
+        "create_feature_docs",
+        "update_architecture_rules",
+        "update_agent_docs",
+    ],
 }
 
-DEFAULT_CATEGORIES = ["time", "math", "weather", "search"]
+DEFAULT_CATEGORIES = ["time", "math", "weather", "search", "documentation"]
+
+# Maps worker_type -> list of TOOL_CATEGORIES that the worker should use.
+# Used by the planner-orchestrator to give each worker a focused tool set.
+WORKER_TOOL_SETS: dict[str, list[str]] = {
+    "reader": ["conversation", "selfcode", "evaluation", "notes", "debugging"],
+    "analyzer": ["evaluation", "selfcode", "debugging"],
+    "coder": ["selfcode", "shell"],
+    "reporter": ["evaluation", "notes", "debugging"],
+    "general": ["selfcode", "shell", "notes", "evaluation", "conversation", "debugging"],
+}
 
 _CLASSIFIER_PROMPT_TEMPLATE = (
     "Classify this message into tool categories. "
     'Reply with ONLY category names separated by commas, or "none".\n'
     "Categories: {categories}, none\n\n"
-    "Message: {user_message}"
+    "Examples:\n"
+    '"what time is it" → time\n'
+    '"15% of 230" → math\n'
+    '"remember that I like coffee" → notes\n'
+    '"search for restaurants nearby" → search\n'
+    '"show my projects" → projects\n'
+    '"tell me a joke" → none\n\n'
+    "{recent_context}"
+    "Message to classify: {user_message}"
 )
 
 
@@ -125,24 +161,105 @@ def register_dynamic_category(category: str, tool_names: list[str]) -> None:
 async def classify_intent(
     user_message: str,
     ollama_client: OllamaClient,
+    recent_messages: list[ChatMessage] | None = None,
+    sticky_categories: list[str] | None = None,
+    repository: object | None = None,
 ) -> list[str]:
-    """Call the LLM without tools/think to classify the user message into categories."""
+    """Classify the user message into tool categories with optional conversational context.
+
+    Args:
+        user_message: The latest user message to classify.
+        ollama_client: LLM client for classification.
+        recent_messages: Last few conversation messages for context. Helps classify
+            ambiguous follow-ups like 'Ambos' or 'Los de los últimos meses'.
+        sticky_categories: Categories from the previous tool-using turn. Used as
+            fallback when the classifier returns 'none' for short follow-ups.
+    """
     categories_str = ", ".join(TOOL_CATEGORIES.keys())
-    prompt = _CLASSIFIER_PROMPT_TEMPLATE.format(
-        categories=categories_str, user_message=user_message
+
+    # Fetch active prompt template (from DB/registry if versioning enabled, else hardcoded)
+    if repository is not None:
+        try:
+            from app.eval.prompt_manager import get_active_prompt
+
+            classifier_template = await get_active_prompt("classifier", repository)
+        except Exception:
+            logger.warning("Failed to fetch classifier prompt from DB, using hardcoded")
+            classifier_template = _CLASSIFIER_PROMPT_TEMPLATE
+    else:
+        classifier_template = _CLASSIFIER_PROMPT_TEMPLATE
+
+    # Fast-path for URLs: if the message contains a URL, ensure 'fetch' is an option
+    # so the agent has the web browsing tools available.
+    url_pattern = re.compile(r"https?://(?:[-\w.]|(?:%[\da-fA-F]{2}))+")
+    has_url = bool(url_pattern.search(user_message))
+
+    # Build recent context block (last 3 turns = up to 6 messages)
+    recent_context = ""
+    if recent_messages:
+        context_lines = []
+        for msg in recent_messages[-6:]:
+            if msg.role not in ("user", "assistant"):
+                continue
+            role_label = "User" if msg.role == "user" else "Assistant"
+            content_preview = msg.content[:200].replace("\n", " ")
+            context_lines.append(f"{role_label}: {content_preview}")
+        if context_lines:
+            recent_context = (
+                "Recent conversation (for context only):\n" + "\n".join(context_lines) + "\n\n"
+            )
+
+    prompt = classifier_template.format(
+        categories=categories_str,
+        user_message=user_message,
+        recent_context=recent_context,
     )
     messages = [ChatMessage(role="user", content=prompt)]
 
     try:
-        response = await ollama_client.chat_with_tools(messages, tools=None, think=False)
-        raw = response.content.strip().lower()
+        logger.debug("Intent Classifier FULL PROMPT:\n%s", prompt)
+        trace = get_current_trace()
+        if trace:
+            async with trace.span("llm:classify_intent", kind="generation") as _cls_span:
+                _cls_span.set_input({"user_message": user_message[:200]})
+                response = await ollama_client.chat_with_tools(messages, tools=None, think=False)
+                _cls_span.set_metadata(
+                    {
+                        "gen_ai.usage.input_tokens": response.input_tokens,
+                        "gen_ai.usage.output_tokens": response.output_tokens,
+                        "gen_ai.request.model": response.model,
+                    }
+                )
+                raw = response.content.strip().lower()
+                _cls_span.set_output({"raw": raw})
+        else:
+            response = await ollama_client.chat_with_tools(messages, tools=None, think=False)
+            raw = response.content.strip().lower()
+        logger.debug("Intent Classifier RAW OUTPUT: %r", raw)
 
         if raw == "none":
+            # Fast-path override: even if the LLM says 'none', if there's a URL, we must fetch
+            if has_url and "fetch" in TOOL_CATEGORIES:
+                logger.info("URL detected but classifier returned 'none', overriding to ['fetch'].")
+                return ["fetch"]
+
+            # Sticky fallback: if the user is continuing a tool-heavy conversation
+            # (e.g., asking a follow-up about GitHub repos), reuse last categories.
+            if sticky_categories:
+                logger.info(
+                    "Classifier returned 'none', falling back to sticky categories: %s",
+                    sticky_categories,
+                )
+                return sticky_categories
             return ["none"]
 
         # Parse comma-separated categories, keep only valid ones
         valid = set(TOOL_CATEGORIES.keys())
         categories = [c.strip() for c in raw.split(",") if c.strip() in valid]
+
+        if has_url and "fetch" not in categories:
+            logger.info("URL detected in message. Forcing 'fetch' category.")
+            categories.append("fetch")
 
         if not categories:
             logger.warning("Classifier returned no valid categories from: %r, using defaults", raw)
@@ -162,6 +279,14 @@ def select_tools(
 ) -> list[dict]:
     """Given categories and a map of all available tools (name -> ollama schema), return filtered list.
 
+    Budget is distributed proportionally across categories so every category receives
+    representation when multiple categories are requested:
+
+        per_cat = max(2, max_tools // len(categories))
+
+    A single category falls back to the full budget (per_cat == max_tools).
+    The result is always capped at max_tools via a final slice.
+
     Args:
         categories: List of category names from classify_intent.
         all_tools: Dict mapping tool name to its Ollama tool schema dict.
@@ -170,18 +295,70 @@ def select_tools(
     Returns:
         List of Ollama tool schema dicts, capped at max_tools.
     """
+    if not categories:
+        return []
+
     selected: list[dict] = []
     seen: set[str] = set()
+    per_cat = max(2, max_tools // len(categories))
 
     for category in categories:
         tool_names = TOOL_CATEGORIES.get(category, [])
+        cat_count = 0
         for name in tool_names:
             if name in seen:
                 continue
             if name in all_tools:
                 selected.append(all_tools[name])
                 seen.add(name)
-            if len(selected) >= max_tools:
-                return selected
+                cat_count += 1
+            if cat_count >= per_cat:
+                break
 
-    return selected
+    return selected[:max_tools]
+
+
+# ---------------------------------------------------------------------------
+# Meta-tool: request_more_tools
+# ---------------------------------------------------------------------------
+
+REQUEST_MORE_TOOLS_NAME = "request_more_tools"
+
+
+def build_request_more_tools_schema(available_categories: list[str]) -> dict:
+    """Build the Ollama tool schema for the request_more_tools meta-tool.
+
+    The meta-tool is always prepended to the active tool list so the LLM can
+    request additional categories when the initial selection is insufficient.
+    It is handled inline by execute_tool_loop — it never reaches the skill
+    registry or the security policy engine.
+    """
+    categories_str = ", ".join(sorted(available_categories))
+    return {
+        "type": "function",
+        "function": {
+            "name": REQUEST_MORE_TOOLS_NAME,
+            "description": (
+                "Request additional tool categories when the current tools are insufficient "
+                "for the task. Call this before attempting a task if you need tools that are "
+                f"not in the current set. Available categories: {categories_str}."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "categories": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": (
+                            f"Category names to load. Must be chosen from: {categories_str}"
+                        ),
+                    },
+                    "reason": {
+                        "type": "string",
+                        "description": "Brief explanation of why these tools are needed",
+                    },
+                },
+                "required": ["categories"],
+            },
+        },
+    }

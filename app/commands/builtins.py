@@ -1,13 +1,18 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 from datetime import UTC, datetime
 
 from app.commands.context import CommandContext
 from app.commands.registry import CommandRegistry, CommandSpec
+from app.eval.prompt_manager import activate_with_eval
 from app.models import ChatMessage
 
 logger = logging.getLogger(__name__)
+
+# Keep references to background agent tasks to prevent GC mid-execution
+_bg_agent_tasks: set[asyncio.Task] = set()
 
 
 async def cmd_cancel(args: str, context: CommandContext) -> str:
@@ -23,24 +28,113 @@ async def cmd_cancel(args: str, context: CommandContext) -> str:
     return "La sesión ya terminó o no se pudo cancelar."
 
 
-async def cmd_agent_status(args: str, context: CommandContext) -> str:
-    """Show the status of the current agent session."""
-    from app.agent.loop import get_active_session
+async def cmd_agent(args: str, context: CommandContext) -> str:
+    """Show the status of the current agent session, or start a new one if args provided."""
+    import asyncio
+
+    from app.agent.loop import create_session, get_active_session, run_agent_session
 
     session = get_active_session(context.phone_number)
-    if not session:
-        return "No hay ninguna sesión agéntica activa."
-    plan_preview = ""
-    if session.task_plan:
-        lines = session.task_plan.split("\n")[:8]
-        plan_preview = "\n".join(lines)
-        plan_preview = f"\n\n*Plan actual:*\n{plan_preview}"
-    return (
-        f"🤖 *Sesión agéntica activa*\n"
-        f"Estado: {session.status.value}\n"
-        f"Objetivo: {session.objective[:120]}"
-        f"{plan_preview}"
+
+    # If no args, just show status
+    if not args.strip():
+        if not session:
+            return (
+                "No hay ninguna sesión agéntica activa. Usa `/agent <objetivo>` para iniciar una."
+            )
+        plan_preview = ""
+        if session.task_plan:
+            lines = session.task_plan.split("\n")[:8]
+            plan_preview = "\n".join(lines)
+            plan_preview = f"\n\n*Plan actual:*\n{plan_preview}"
+        return (
+            f"🤖 *Sesión agéntica activa*\n"
+            f"Estado: {session.status.value}\n"
+            f"Objetivo: {session.objective[:120]}"
+            f"{plan_preview}"
+        )
+
+    # Start a new session
+    if session:
+        return "Ya hay una sesión activa. Usa /cancel antes de iniciar una nueva o /agent para ver su estado."
+
+    objective = args.strip()
+    new_session = create_session(context.phone_number, objective)
+
+    # Run the agent loop in the background — save reference to prevent GC mid-execution
+    task = asyncio.create_task(
+        run_agent_session(
+            session=new_session,
+            ollama_client=context.ollama_client,
+            skill_registry=context.skill_registry,
+            wa_client=context.wa_client,
+            mcp_manager=context.mcp_manager,
+            recorder=context.trace_recorder,
+        )
     )
+    _bg_agent_tasks.add(task)
+    task.add_done_callback(_bg_agent_tasks.discard)
+
+    return (
+        f"🚀 *Sesión agéntica iniciada*\n_Objetivo:_ {objective}\n\nTe iré informando mi progreso."
+    )
+
+
+async def cmd_agent_resume(args: str, context: CommandContext) -> str:
+    """Resume the most recent agent session from disk."""
+    import asyncio
+
+    from app.agent.loop import AgentSession, get_active_session, run_agent_session
+    from app.agent.persistence import get_latest_session_id, load_session_history
+
+    session = get_active_session(context.phone_number)
+    if session:
+        return "Ya hay una sesión activa en memoria. Usa /agent para ver su estado."
+
+    session_id = get_latest_session_id(context.phone_number)
+    if not session_id:
+        return "No encontré ninguna sesión reciente en disco para retomar."
+
+    history = load_session_history(context.phone_number, session_id)
+    if not history:
+        return f"Encontré la sesión {session_id} pero no tiene historial guardado."
+
+    # Reconstruct state from the last saved round
+    last_round = history[-1]
+
+    # We don't have the original objective saved in the JSONL directly,
+    # but we can extract it or use a default. Ideally, the resume logic
+    # just picks up the task plan.
+    reconstructed_session = AgentSession(
+        session_id=session_id,
+        phone_number=context.phone_number,
+        objective="[Retomado] " + (last_round.get("reply", "")[:50] + "..."),
+        max_iterations=15,
+    )
+    reconstructed_session.task_plan = last_round.get("task_plan")
+    reconstructed_session.iteration = last_round.get("iteration", 0)
+
+    # Since we can't easily reconstruct `messages: list[ChatMessage]` with exact fidelity
+    # just from the summary dict without importing internal models here,
+    # the agent loop will rely on its task plan injection to reorient itself.
+
+    asyncio.create_task(
+        run_agent_session(
+            session=reconstructed_session,
+            ollama_client=context.ollama_client,
+            skill_registry=context.skill_registry,
+            wa_client=context.wa_client,
+            mcp_manager=context.mcp_manager,
+            recorder=context.trace_recorder,
+        )
+    )
+
+    plan_preview = (
+        reconstructed_session.task_plan.split("\n")[0]
+        if reconstructed_session.task_plan
+        else "Sin plan previo."
+    )
+    return f"♻️ *Sesión agéntica {session_id[:8]} retomada*\n_Ronda {reconstructed_session.iteration}_\n_Plan:_ {plan_preview}"
 
 
 async def cmd_remember(args: str, context: CommandContext) -> str:
@@ -285,7 +379,10 @@ async def cmd_feedback(args: str, context: CommandContext) -> str:
         except (ValueError, Exception):
             pass  # keep default 0.5
 
-    await context.repository.save_trace_score(
+    from app.tracing.recorder import TraceRecorder
+
+    recorder = TraceRecorder(context.repository)
+    await recorder.add_score(
         trace_id=trace_id,
         name="human_feedback",
         value=sentiment_value,
@@ -308,7 +405,10 @@ async def cmd_rate(args: str, context: CommandContext) -> str:
     if not trace_id:
         return "No encontré una interacción reciente para evaluar."
 
-    await context.repository.save_trace_score(
+    from app.tracing.recorder import TraceRecorder
+
+    recorder = TraceRecorder(context.repository)
+    await recorder.add_score(
         trace_id=trace_id,
         name="human_rating",
         value=score / 5.0,
@@ -319,7 +419,7 @@ async def cmd_rate(args: str, context: CommandContext) -> str:
 
 
 async def cmd_approve_prompt(args: str, context: CommandContext) -> str:
-    """Activate a proposed prompt version."""
+    """Activate a proposed prompt version, optionally running eval first."""
     parts = args.strip().split()
     if len(parts) != 2:
         return "Uso: /approve-prompt <nombre> <versión>\nEjemplo: /approve-prompt system_prompt 3"
@@ -336,13 +436,114 @@ async def cmd_approve_prompt(args: str, context: CommandContext) -> str:
     if row["is_active"]:
         return "Esa versión ya está activa."
 
+    # Run eval if tracing is enabled and we have an ollama client
+    eval_summary = ""
+    if context.ollama_client:
+        try:
+            eval_result = await activate_with_eval(
+                prompt_name=prompt_name,
+                version=version,
+                repository=context.repository,
+                ollama_client=context.ollama_client,
+            )
+            if "error" not in eval_result:
+                score = eval_result["score"]
+                passed = eval_result["passed"]
+                details = eval_result["details"]
+                n = eval_result["entries_evaluated"]
+                if n == 0:
+                    eval_summary = "\n_Eval: sin dataset entries para evaluar._"
+                else:
+                    icon = "✅" if passed else "⚠️"
+                    eval_summary = f"\n{icon} *Eval score:* {score:.0%} — {details}"
+                    if not passed:
+                        eval_summary += "\n_Score bajo threshold. Activando de todas formas (advisory)._"
+        except Exception:
+            logger.exception("activate_with_eval failed in /approve-prompt")
+            eval_summary = "\n_Eval: no se pudo correr (activando de todas formas)._"
+
     await context.repository.activate_prompt_version(prompt_name, version)
 
     from app.eval.prompt_manager import invalidate_prompt_cache
 
     invalidate_prompt_cache(prompt_name)
 
-    return f"Prompt '{prompt_name}' v{version} activado. Los próximos mensajes usarán la nueva versión."
+    return (
+        f"Prompt '{prompt_name}' v{version} activado.{eval_summary}\n"
+        "Los próximos mensajes usarán la nueva versión."
+    )
+
+
+async def cmd_prompts(args: str, context: CommandContext) -> str:
+    """List registered prompts or show a specific prompt's content and history.
+
+    Usage:
+        /prompts                    → list all prompts with active version
+        /prompts <name>             → show active content + version history
+        /prompts <name> <version>   → show content of a specific version
+    """
+    parts = args.strip().split()
+
+    if not parts:
+        # List all prompts
+        rows = await context.repository.list_all_active_prompts()
+        if not rows:
+            return "No hay prompts registrados en la base de datos todavía."
+        lines = ["*Prompts registrados:*"]
+        for r in rows:
+            created = r["approved_at"] or r["created_at"] or ""
+            created = created[:10] if created else "—"
+            lines.append(f"- `{r['prompt_name']}` v{r['version']} — {r['created_by']} ({created})")
+        lines.append(
+            "\n_Usa `/prompts <nombre>` para ver el contenido y el historial de versiones._"
+        )
+        return "\n".join(lines)
+
+    prompt_name = parts[0]
+
+    if len(parts) >= 2:
+        # Show specific version
+        try:
+            version = int(parts[1])
+        except ValueError:
+            return "La versión debe ser un número.\nUso: /prompts <nombre> <versión>"
+        row = await context.repository.get_prompt_version(prompt_name, version)
+        if not row:
+            return f"No encontré la versión {version} del prompt '{prompt_name}'."
+        active_marker = " ✅ *activo*" if row["is_active"] else ""
+        header = f"*{prompt_name}* v{version}{active_marker} (por {row['created_by']})"
+        content_preview = row["content"][:800]
+        if len(row["content"]) > 800:
+            content_preview += f"\n…[{len(row['content'])} chars total]"
+        return f"{header}\n\n```\n{content_preview}\n```"
+
+    # Show active content + version history for prompt_name
+    active = await context.repository.get_active_prompt_version(prompt_name)
+    if not active:
+        return (
+            f"No encontré el prompt '{prompt_name}' en la base de datos.\n"
+            "Usa `/prompts` para ver los prompts disponibles."
+        )
+
+    content_preview = active["content"][:600]
+    if len(active["content"]) > 600:
+        content_preview += f"\n…[{len(active['content'])} chars total]"
+
+    versions = await context.repository.list_prompt_versions(prompt_name)
+    history_lines = []
+    for v in versions:
+        active_marker = " ✅" if v["is_active"] else ""
+        date = (v["approved_at"] or v["created_at"] or "")[:10]
+        history_lines.append(f"  v{v['version']}{active_marker} — {v['created_by']} ({date})")
+
+    history = "\n".join(history_lines) if history_lines else "  (sin historial)"
+    return (
+        f"*{prompt_name}* v{active['version']} ✅\n\n"
+        f"```\n{content_preview}\n```\n\n"
+        f"*Historial:*\n{history}\n\n"
+        "_Usa `/prompts {name} <versión>` para ver otra versión, "
+        "o `/approve-prompt {name} <versión>` para activarla._"
+    ).replace("{name}", prompt_name)
 
 
 async def cmd_help(args: str, context: CommandContext) -> str:
@@ -377,6 +578,61 @@ async def cmd_help(args: str, context: CommandContext) -> str:
                     lines.append(f"    - {tool.name}: {tool.description}")
 
     return "\n".join(lines)
+
+
+async def cmd_dev_review(args: str, context: CommandContext) -> str:
+    """Launch a planner-orchestrator session to analyze a user's recent interactions."""
+    import asyncio
+
+    from app.agent.loop import create_session, get_active_session, run_agent_session
+
+    session = get_active_session(context.phone_number)
+    if session:
+        return "Ya hay una sesión activa. Usa /cancel antes de iniciar una nueva."
+
+    # Args may be a phone number (for admins reviewing other users) or free-text instructions.
+    # If it looks like a phone number, use it as the target; otherwise use the caller's number
+    # and treat the args as additional focus instructions.
+    args_stripped = args.strip()
+    extra_focus = ""
+    if args_stripped and (args_stripped.startswith("+") or args_stripped.lstrip("+").isdigit()):
+        phone_target = args_stripped
+    else:
+        phone_target = context.phone_number
+        if args_stripped:
+            extra_focus = f" Focus especially on: {args_stripped}."
+
+    objective = (
+        f"Analyze the recent interactions of user with phone number {phone_target}. "
+        f"Use exactly this phone number when calling review_interactions or get_conversation_transcript. "
+        f"1. Read their conversation transcript to understand what happened. "
+        f"2. Review their traces to find anomalies (low scores, errors, hallucinations). "
+        f"3. For any problematic trace, deep-dive into tool calls and context. "
+        f"4. Write a debug report with findings and suggested fixes."
+        f"{extra_focus}"
+    )
+
+    new_session = create_session(context.phone_number, objective)
+
+    task = asyncio.create_task(
+        run_agent_session(
+            session=new_session,
+            ollama_client=context.ollama_client,
+            skill_registry=context.skill_registry,
+            wa_client=context.wa_client,
+            mcp_manager=context.mcp_manager,
+            use_planner=True,
+            recorder=context.trace_recorder,
+        )
+    )
+    _bg_agent_tasks.add(task)
+    task.add_done_callback(_bg_agent_tasks.discard)
+
+    return (
+        f"🔍 *Dev review iniciado*\n"
+        f"_Analizando interacciones de {phone_target}_\n\n"
+        "Te enviaré un reporte cuando termine."
+    )
 
 
 async def cmd_debug(args: str, context: CommandContext) -> str:
@@ -488,6 +744,14 @@ def register_builtins(registry: CommandRegistry) -> None:
     )
     registry.register(
         CommandSpec(
+            name="prompts",
+            description="Listar prompts registrados o ver contenido e historial de versiones",
+            usage="/prompts [nombre] [versión]",
+            handler=cmd_prompts,
+        )
+    )
+    registry.register(
+        CommandSpec(
             name="debug",
             description="Activar o desactivar el modo de autodiagnóstico",
             usage="/debug [on|off]",
@@ -513,8 +777,24 @@ def register_builtins(registry: CommandRegistry) -> None:
     registry.register(
         CommandSpec(
             name="agent",
-            description="Ver el estado de la sesión agéntica actual",
-            usage="/agent",
-            handler=cmd_agent_status,
+            description="Iniciar nueva sesión agéntica o ver estado actual",
+            usage="/agent [objetivo]",
+            handler=cmd_agent,
+        )
+    )
+    registry.register(
+        CommandSpec(
+            name="agent-resume",
+            description="Retomar la última sesión agéntica si el bot se reinició",
+            usage="/agent-resume",
+            handler=cmd_agent_resume,
+        )
+    )
+    registry.register(
+        CommandSpec(
+            name="dev-review",
+            description="Analizar interacciones recientes de un usuario (planner-orchestrator)",
+            usage="/dev-review [phone_number]",
+            handler=cmd_dev_review,
         )
     )

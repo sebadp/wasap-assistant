@@ -6,8 +6,20 @@ Documentos técnicos que bajan una intención de producto a cambios concretos en
 
 | Plan | Archivo | Estado |
 |---|---|---|
-| Arquitectura de Evaluación y Mejora Continua | [`eval_implementation_plan.md`](eval_implementation_plan.md) | 📋 Pendiente |
-| Sesiones Agénticas (Agent Mode) | [`agentic_sessions_plan.md`](agentic_sessions_plan.md) | ✅ Completado |
+| Arquitectura de Evaluación y Mejora Continua | [`11-eval_implementation_plan.md`](11-eval_implementation_plan.md) | 📋 Pendiente |
+| Sesiones Agénticas (Agent Mode) | [`18-agentic_sessions_plan.md`](18-agentic_sessions_plan.md) | ✅ Completado |
+| Context Engineering | [`08-context_engineering_plan.md`](08-context_engineering_plan.md) | ✅ Completado |
+| Claude Code Experience | [`EX-claude_code_experience.md`](EX-claude_code_experience.md) | 📋 Evaluación |
+| OpenClaw Experience | [`EX-openclaw_experience.md`](EX-openclaw_experience.md) | 📋 Evaluación |
+| **Autonomous Agent Experience** | [`19-autonomous_agent_plan.md`](19-autonomous_agent_plan.md) | **✅ Sprint 1 done** |
+| Autonomous Agent Sprint 2 | [`20-autonomous_agent_sprint2_plan.md`](20-autonomous_agent_sprint2_plan.md) | **✅ Completado** |
+| Autonomous Agent Sprint 3 | [`21-autonomous_agent_sprint3_plan.md`](21-autonomous_agent_sprint3_plan.md) | **✅ Completado** |
+| Dynamic Tool Budget & `request_more_tools` | [`27-dynamic_tool_budget_prd.md`](27-dynamic_tool_budget_prd.md) / [`27-dynamic_tool_budget_prp.md`](27-dynamic_tool_budget_prp.md) | ✅ Completado |
+| Planner-Orchestrator | [`28-planner_orchestrator_prd.md`](28-planner_orchestrator_prd.md) / [`28-planner_orchestrator_prp.md`](28-planner_orchestrator_prp.md) | 🚧 En progreso |
+| Observabilidad de Agentes | [`29-observability_prd.md`](29-observability_prd.md) / [`29-observability_prp.md`](29-observability_prp.md) | ✅ Completado |
+| Eval Stack Hardening | [`30-eval_hardening_prd.md`](30-eval_hardening_prd.md) / [`30-eval_hardening_prp.md`](30-eval_hardening_prp.md) | 📋 Pendiente |
+| Context Engineering v2 | [`31-context_engineering_v2_prd.md`](31-context_engineering_v2_prd.md) / [`31-context_engineering_v2_prp.md`](31-context_engineering_v2_prp.md) | ✅ Completado |
+| Prompt Engineering & Versioning | [`32-prompt_engineering_prd.md`](32-prompt_engineering_prd.md) / [`32-prompt_engineering_prp.md`](32-prompt_engineering_prp.md) | ✅ Completado |
 
 ## Convenciones
 
@@ -16,26 +28,52 @@ Documentos técnicos que bajan una intención de producto a cambios concretos en
 - Incluir siempre: objetivo, archivos a modificar, schema de datos, orden de implementación
 - Marcar el estado al terminar: 📋 Pendiente → 🚧 En progreso → ✅ Completado
 
-## Template mínimo de exec plan
+## Template de PRD (Product Requirements Document)
+
+Usar este como `docs/exec-plans/<numero>-<nombre>_prd.md` para asentar propósitos e intención.
 
 ```markdown
-# Plan: [Nombre]
+# PRD: [Nombre de la Feature]
 
-## Objetivo
-[Qué problema resuelve esta implementación]
+## Objetivo y Contexto
+[Qué problema resuelve esta implementación y por qué es importante]
 
-## Archivos a modificar
-| Archivo | Cambio |
-|---|---|
+## Alcance (In Scope & Out of Scope)
+- **In Scope:** [Lista...]
+- **Out of Scope:** [Lista...]
 
-## Schema de datos (si aplica)
-[Tablas SQL nuevas, modelos Pydantic, etc.]
+## Casos de Uso Críticos
+1. [Escenario 1]
+2. [Escenario 2]
 
-## Orden de implementación
-1. [Paso 1 — sin dependencias]
-2. [Paso 2 — depende de 1]
-...
+## Restricciones Arquitectónicas / Requerimientos Técnicos
+- [Dependencias o frameworks que no deben evadirse]
+- [Criterios de seguridad]
+```
 
-## Decisiones de diseño
-[Por qué este enfoque y no otro]
+## Template de PRP (Product Requirements Plan)
+
+Usar este como `docs/exec-plans/<numero>-<nombre>_prp.md` para asentar ejecución técnica y checkboxes. **OBLIGATORIO: MARCAR LOS CHECKS DURANTE LA EJECUCIÓN.**
+
+```markdown
+# PRP: [Nombre de la Feature]
+
+## Archivos a Modificar
+- `ruta/al/archivo1.py`: [Qué se cambia]
+- `ruta/al/archivo2.md`: [Nuevo archivo]
+
+## Fases de Implementación (con Checkboxes)
+
+### Phase 1: Fundamentos
+- [ ] Implementar X
+- [ ] Escribir tests para X
+
+### Phase 2: Integración
+- [ ] Agregar Y al webhook router
+- [ ] Escribir validaciones de borde de Y
+
+### Phase 3: Documentación
+- [ ] Correr `make check`
+- [ ] Escribir `docs/features/...`
+- [ ] Escribir `docs/testing/...`
 ```

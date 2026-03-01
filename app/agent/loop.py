@@ -1,15 +1,32 @@
-"""Agentic session loop: autonomous background execution."""
+"""Agentic session loop: planner-orchestrator architecture.
+
+3-phase execution model:
+  Phase 1 — UNDERSTAND: Planner reads context and creates a structured plan
+  Phase 2 — EXECUTE: Workers execute each task step with focused tools
+  Phase 3 — SYNTHESIZE: Planner reviews results, decides to respond or replan
+
+The planner creates an AgentPlan (JSON list of TaskSteps) which is dispatched
+to type-specific workers. Each worker runs execute_tool_loop with a focused
+prompt and filtered tool set. The legacy reactive loop is preserved as the
+fallback when the planner fails to produce valid JSON.
+"""
 
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import logging
 import uuid
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 from app.agent.models import AgentSession, AgentStatus
+from app.agent.persistence import append_to_session
+from app.agent.planner import create_plan, replan, synthesize
+from app.agent.workers import execute_worker
 from app.models import ChatMessage
-from app.skills.executor import execute_tool_loop
+from app.skills.executor import _clear_old_tool_results, execute_tool_loop
+from app.tracing.context import TraceContext, get_current_trace
 
 if TYPE_CHECKING:
     from app.llm.client import OllamaClient
@@ -19,30 +36,59 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+_PROJECT_ROOT = Path(__file__).resolve().parents[2]
+
 # Active sessions indexed by phone number - one concurrent session per user
 _active_sessions: dict[str, AgentSession] = {}
 # asyncio Tasks for each active session, so we can actually cancel them
 _active_tasks: dict[str, asyncio.Task] = {}
 
+# Tools per round: conservative cap so each round can do 1-2 meaningful actions
+_TOOLS_PER_ROUND = 8
+
+# Loop detection thresholds
+_LOOP_WARNING_THRESHOLD = 3
+_LOOP_CIRCUIT_BREAKER = 5
+_LOOP_HISTORY_SIZE = 20
+
 _AGENT_SYSTEM_PROMPT = """\
-You are in AGENT MODE. You have been given an objective by the user and must complete \
-it autonomously using the available tools.
+You are a senior software engineer working autonomously on this codebase.
 
 OBJECTIVE: {objective}
 
+WORKFLOW:
+1. UNDERSTAND: list_source_files, read_source_file, search_source_code to learn the codebase.
+2. PLAN: create_task_plan with concrete, small steps.
+3. EXECUTE: Use preview_patch FIRST to verify diffs visualmente, then apply_patch for actual edits. Use write_source_file only for NEW files.
+4. TEST: run_command("pytest ...") after EVERY code change.
+5. FIX: if tests fail, read errors, fix, re-test (max 3 attempts per step).
+6. DELIVER: git_commit, git_push when all tests pass.
+
 RULES:
-1. Break the objective into small, concrete steps using create_task_plan first.
-2. Execute one step at a time using tools.
-3. After completing each step, call update_task_status to mark it done.
-4. If you need user input before a critical action, call request_user_approval.
-5. Never loop on the same action — if a tool fails, try a different approach or skip.
-6. When ALL steps are done, write a concise summary of what was accomplished.
+- Always test after edits. Never commit untested code.
+- Prefer preview_patch before apply_patch to catch formatting/indentation mistakes.
+- Use apply_patch for edits to existing files. Only use write_source_file for NEW files.
+- Use conventional commit messages: "fix: ...", "feat: ...", "refactor: ..."
+- If a step fails 3 times, skip it and move to the next. Note the failure in the plan.
+- Ask for approval (request_user_approval) before destructive operations.
+- After completing each step, call update_task_status to mark it done.
+- For large files (>200 lines): use get_file_outline first, then read_lines for specific sections.
+  Do NOT use read_source_file on files >200 lines — use the outline+read_lines pattern.
+- When ALL steps are done, write a concise summary of what was accomplished.
+
+SCRATCHPAD: You can use <scratchpad>...</scratchpad> tags in your replies to persist notes between \
+rounds. Content inside scratchpad tags will be saved and re-injected in the next round. Use this \
+for: key findings, file paths discovered, decisions made, test results, partial progress. \
+The scratchpad content is NOT shown to the user — it is only visible to you in the next round.
 """
 
-_PLAN_REMINDER = """
+_PLAN_REMINDER = """\
+
 --- CURRENT TASK PLAN ---
 {task_plan}
 --- END TASK PLAN ---
+
+Continue executing the next pending [ ] step. Do not repeat steps already marked [x].
 """
 
 
@@ -111,17 +157,555 @@ def _register_session_tools(
     return session_registry
 
 
+def _inject_scratchpad(messages: list[ChatMessage], scratchpad: str) -> None:
+    """Insert scratchpad as a system message after the main system prompt.
+
+    Replaces an existing scratchpad injection if present (avoids accumulation).
+    """
+    scratchpad_msg = ChatMessage(
+        role="system",
+        content=f"<scratchpad_context>\n{scratchpad}\n</scratchpad_context>",
+    )
+    for i, msg in enumerate(messages):
+        if msg.role == "system" and "<scratchpad_context>" in msg.content:
+            messages[i] = scratchpad_msg
+            return
+    # Insert after the main system prompt
+    insert_pos = 1 if messages and messages[0].role == "system" else 0
+    messages.insert(insert_pos, scratchpad_msg)
+
+
+def _extract_scratchpad(reply: str) -> tuple[str, str]:
+    """Extract <scratchpad>...</scratchpad> content from the agent reply.
+
+    Returns:
+        (scratchpad_content, clean_reply) — scratchpad tags removed from the reply.
+    """
+    import re
+
+    pattern = re.compile(r"<scratchpad>(.*?)</scratchpad>", re.DOTALL)
+    match = pattern.search(reply)
+    if not match:
+        return "", reply
+    scratchpad_content = match.group(1).strip()
+    clean_reply = pattern.sub("", reply).strip()
+    return scratchpad_content, clean_reply
+
+
+def _inject_task_plan(messages: list[ChatMessage], task_plan: str) -> None:
+    """Insert or update the task plan reminder as the second system message.
+
+    Replaces the previous plan reminder if one exists, to avoid duplication.
+    Always keeps it right after the main system prompt (index 1).
+    """
+    plan_content = _PLAN_REMINDER.format(task_plan=task_plan)
+
+    # Find and replace an existing plan reminder
+    for i, msg in enumerate(messages):
+        if msg.role == "system" and "CURRENT TASK PLAN" in msg.content:
+            messages[i] = ChatMessage(role="system", content=plan_content)
+            return
+
+    # First time: insert right after the main system prompt
+    insert_pos = 1 if messages and messages[0].role == "system" else 0
+    messages.insert(insert_pos, ChatMessage(role="system", content=plan_content))
+
+
+def _check_loop_detection(tool_history: list[tuple[str, str]]) -> str | None:
+    """Detect if the agent is stuck in a loop.
+
+    Returns a warning message if a loop is detected, or None if OK.
+    Raises RuntimeError if circuit breaker threshold is reached.
+
+    Args:
+        tool_history: List of (tool_name, params_hash) tuples from recent calls.
+    """
+    if len(tool_history) < _LOOP_WARNING_THRESHOLD:
+        return None
+
+    # --- genericRepeat: same (name, hash) repeated N times ---
+    from collections import Counter
+
+    counts = Counter(tool_history[-_LOOP_HISTORY_SIZE:])
+    for (tool_name, _), count in counts.most_common(3):
+        if count >= _LOOP_CIRCUIT_BREAKER:
+            logger.warning(
+                "agent.loop.detected",
+                extra={
+                    "detector": "genericRepeat",
+                    "repeated_tool": tool_name,
+                    "count": count,
+                    "action": "circuit_breaker",
+                },
+            )
+            raise RuntimeError(
+                f"Loop detected: {tool_name} called {count} times with same params. "
+                "Aborting round to prevent infinite loop."
+            )
+        if count >= _LOOP_WARNING_THRESHOLD:
+            logger.warning(
+                "agent.loop.detected",
+                extra={
+                    "detector": "genericRepeat",
+                    "repeated_tool": tool_name,
+                    "count": count,
+                    "action": "warning",
+                },
+            )
+            return (
+                f"⚠️ You have called `{tool_name}` {count} times with identical parameters. "
+                "This looks like a loop. Try a different approach or skip this step."
+            )
+
+    # --- pingPong: A→B→A→B pattern ---
+    recent = tool_history[-6:]
+    if len(recent) >= 4:
+        names = [t[0] for t in recent]
+        # Check for alternating pattern: a,b,a,b
+        if len(set(names[-4:])) == 2 and names[-4] == names[-2] and names[-3] == names[-1]:
+            logger.warning(
+                "agent.loop.detected",
+                extra={
+                    "detector": "pingPong",
+                    "tools": f"{names[-2]}<->{names[-1]}",
+                    "action": "warning",
+                },
+            )
+            return (
+                f"⚠️ Ping-pong detected: alternating between `{names[-2]}` and `{names[-1]}` "
+                "without progress. Try a different approach."
+            )
+
+    return None
+
+
+def _extract_tool_history(messages: list[ChatMessage]) -> list[tuple[str, str]]:
+    """Extract (tool_name, params_hash) from recent assistant messages containing tool calls."""
+    history: list[tuple[str, str]] = []
+    for msg in messages:
+        if msg.role != "assistant":
+            continue
+        # Tool calls are embedded in the message content as JSON by Ollama
+        # We look for patterns like tool_name + params in the content
+        content = msg.content
+        if not content or len(content) < 5:
+            continue
+        # Create a rough hash of the content to detect repetition
+        content_hash = hashlib.md5(content.encode()).hexdigest()[:8]
+        # Use a simplified name — the first word or tool indicator
+        name = content.split("(")[0].split(":")[0].strip()[:40] if content else "unknown"
+        history.append((name, content_hash))
+    return history[-_LOOP_HISTORY_SIZE:]
+
+
+def _is_session_complete(session: AgentSession, last_reply: str) -> bool:
+    """Heuristic: determine if the agent considers the session complete.
+
+    Returns True when:
+    - The structured plan has no remaining pending tasks, OR
+    - The task plan has no remaining [ ] steps (all done), OR
+    - The reply contains a completion signal and there's no task plan
+
+    This is a soft check — max_iterations is always the hard safety net.
+    """
+    # Primary: structured plan exhausted
+    if session.plan is not None:
+        return session.plan.all_done()
+
+    # Secondary: markdown task plan exhausted
+    if session.task_plan is not None:
+        pending = session.task_plan.count("[ ]")
+        if pending == 0:
+            logger.info(
+                "Agent session %s: task plan complete (no pending steps)",
+                session.session_id,
+            )
+            return True
+        return False  # Still has work to do — don't check text signals
+
+    # Fallback: no task plan yet, look for completion signals in the text
+    completion_signals = [
+        "completad",
+        "terminad",
+        "finaliz",
+        "listo",
+        "done",
+        "finished",
+        "accomplished",
+        "all done",
+        "todo completo",
+    ]
+    lower_reply = last_reply.lower()
+    return any(sig in lower_reply for sig in completion_signals)
+
+
+def _build_security_hitl_callback(
+    session: AgentSession,
+    wa_client: WhatsAppClient,
+):
+    """Build the HITL callback for security policy enforcement."""
+
+    async def _security_hitl_callback(tool_name: str, arguments: dict, reason: str) -> bool:
+        from app.agent.hitl import request_user_approval
+
+        session.status = AgentStatus.WAITING_USER
+        try:
+            question = (
+                f"⚠️ *Alerta de Seguridad*\n"
+                f"El agente intenta ejecutar `{tool_name}`.\n"
+                f"Argumentos: `{arguments}`\n\n"
+                f"Motivo: *{reason}*\n\n"
+                f"¿Autorizás la ejecución? (Aprobar/Rechazar)"
+            )
+            user_reply = await request_user_approval(session.phone_number, question, wa_client)
+            return user_reply.lower().strip() in [
+                "aprobar",
+                "sí",
+                "si",
+                "yes",
+                "y",
+                "ok",
+                "dale",
+                "mandale",
+                "autorizo",
+            ]
+        finally:
+            session.status = AgentStatus.RUNNING
+
+    return _security_hitl_callback
+
+
+async def _run_planner_session(
+    session: AgentSession,
+    ollama_client: OllamaClient,
+    session_registry: SkillRegistry,
+    wa_client: WhatsAppClient,
+    mcp_manager: McpManager | None,
+    hitl_callback,
+) -> str:
+    """Run the 3-phase planner-orchestrator loop.
+
+    Phase 1 — UNDERSTAND: Planner creates structured plan
+    Phase 2 — EXECUTE: Workers run each task step sequentially
+    Phase 3 — SYNTHESIZE: Planner reviews results, may replan
+
+    Returns the final reply text.
+    """
+    # --- Phase 1: UNDERSTAND — Create plan ---
+    logger.info("Agent session %s: Phase 1 — UNDERSTAND (creating plan)", session.session_id)
+    trace = get_current_trace()
+    if trace:
+        async with trace.span("planner:create_plan", kind="span") as span:
+            span.set_input({"objective": session.objective[:200]})
+            plan = await create_plan(session.objective, ollama_client)
+            span.set_output({"tasks": len(plan.tasks), "plan_preview": plan.to_markdown()[:500]})
+    else:
+        plan = await create_plan(session.objective, ollama_client)
+    session.plan = plan
+    session.task_plan = plan.to_markdown()
+
+    try:
+        await wa_client.send_message(
+            session.phone_number,
+            f"📋 Plan creado: {len(plan.tasks)} pasos\n{plan.to_markdown()}",
+        )
+    except Exception:
+        pass  # Best-effort
+
+    # --- Phase 2 + 3: EXECUTE + SYNTHESIZE loop ---
+    max_cycles = session.max_iterations
+    for cycle in range(max_cycles):
+        session.iteration = cycle
+
+        # Execute pending tasks
+        task = plan.next_task()
+        while task is not None:
+            task.status = "in_progress"
+            session.task_plan = plan.to_markdown()
+            logger.info(
+                "Agent session %s: executing task #%d [%s]: %s",
+                session.session_id,
+                task.id,
+                task.worker_type,
+                task.description[:80],
+            )
+
+            trace = get_current_trace()
+            if trace:
+                async with trace.span(f"worker:task_{task.id}", kind="span") as worker_span:
+                    worker_span.set_input(
+                        {
+                            "description": task.description,
+                            "worker_type": task.worker_type,
+                        }
+                    )
+                    try:
+                        result = await execute_worker(
+                            task=task,
+                            objective=plan.objective,
+                            ollama_client=ollama_client,
+                            skill_registry=session_registry,
+                            mcp_manager=mcp_manager,
+                            max_tools=_TOOLS_PER_ROUND,
+                            hitl_callback=hitl_callback,
+                            parent_span_id=worker_span.span_id,
+                        )
+                        task.status = "done"
+                        task.result = result
+                        worker_span.set_output({"result": result[:500], "status": task.status})
+                    except Exception as e:
+                        logger.exception("Worker task #%d failed", task.id)
+                        task.status = "failed"
+                        task.result = f"Error: {e}"
+                        worker_span._status = "failed"
+                        worker_span.set_output({"error": str(e), "status": task.status})
+            else:
+                try:
+                    result = await execute_worker(
+                        task=task,
+                        objective=plan.objective,
+                        ollama_client=ollama_client,
+                        skill_registry=session_registry,
+                        mcp_manager=mcp_manager,
+                        max_tools=_TOOLS_PER_ROUND,
+                        hitl_callback=hitl_callback,
+                    )
+                    task.status = "done"
+                    task.result = result
+                except Exception as e:
+                    logger.exception("Worker task #%d failed", task.id)
+                    task.status = "failed"
+                    task.result = f"Error: {e}"
+
+            session.task_plan = plan.to_markdown()
+
+            # Persist after each task
+            try:
+                round_data = {
+                    "iteration": cycle + 1,
+                    "task_id": task.id,
+                    "task_status": task.status,
+                    "task_plan": session.task_plan,
+                    "reply": task.result or "",
+                }
+                append_to_session(session.phone_number, session.session_id, round_data)
+            except Exception as e:
+                logger.error("Error saving session round: %s", e)
+
+            # Progress update
+            done_count = sum(1 for t in plan.tasks if t.status == "done")
+            try:
+                await wa_client.send_message(
+                    session.phone_number,
+                    f"🔧 Task #{task.id} done ({done_count}/{len(plan.tasks)})",
+                )
+            except Exception:
+                pass
+
+            task = plan.next_task()
+
+        # All tasks executed (or failed) — check if we should replan
+        if plan.all_done():
+            break
+
+        # --- Phase 3: SYNTHESIZE / REPLAN ---
+        logger.info(
+            "Agent session %s: Phase 3 — SYNTHESIZE (reviewing results)", session.session_id
+        )
+        trace = get_current_trace()
+        if trace:
+            async with trace.span("planner:replan", kind="span") as span:
+                span.set_input(
+                    {
+                        "replans": plan.replans,
+                        "tasks_done": sum(1 for t in plan.tasks if t.status == "done"),
+                    }
+                )
+                new_plan = await replan(plan, ollama_client)
+                span.set_output(
+                    {
+                        "action": "replan" if new_plan else "done_or_continue",
+                        "new_tasks": len(new_plan.tasks) if new_plan else 0,
+                    }
+                )
+        else:
+            new_plan = await replan(plan, ollama_client)
+        if new_plan is None:
+            # Planner says done or continue (but no more pending tasks)
+            break
+        # Apply the new plan
+        plan = new_plan
+        session.plan = plan
+        session.task_plan = plan.to_markdown()
+        try:
+            await wa_client.send_message(
+                session.phone_number,
+                f"🔄 Re-planned: {len(plan.tasks)} new steps\n{plan.to_markdown()}",
+            )
+        except Exception:
+            pass
+
+    # --- Final synthesis ---
+    trace = get_current_trace()
+    if trace:
+        async with trace.span("planner:synthesize", kind="span") as span:
+            span.set_input(
+                {
+                    "tasks_done": sum(1 for t in plan.tasks if t.status == "done"),
+                    "tasks_failed": sum(1 for t in plan.tasks if t.status == "failed"),
+                }
+            )
+            reply = await synthesize(plan, ollama_client)
+            span.set_output({"reply_preview": reply[:300]})
+    else:
+        reply = await synthesize(plan, ollama_client)
+    return reply
+
+
+async def _run_reactive_session(
+    session: AgentSession,
+    ollama_client: OllamaClient,
+    session_registry: SkillRegistry,
+    wa_client: WhatsAppClient,
+    mcp_manager: McpManager | None,
+    hitl_callback,
+    messages: list[ChatMessage],
+) -> str:
+    """Run the legacy reactive agent loop (fallback).
+
+    Used when the planner-orchestrator is not applicable or as a fallback.
+    """
+    reply = ""
+    for iteration in range(session.max_iterations):
+        session.iteration = iteration
+        logger.info(
+            "Agent session %s — round %d/%d",
+            session.session_id,
+            iteration + 1,
+            session.max_iterations,
+        )
+
+        # Re-inject task plan before each round so the agent stays oriented.
+        if session.task_plan:
+            _inject_task_plan(messages, session.task_plan)
+
+        # Inject scratchpad as system message (if non-empty from a previous round)
+        if session.scratchpad:
+            _inject_scratchpad(messages, session.scratchpad)
+
+        # Token budget tracking (best-effort, no latency impact)
+        try:
+            from app.context.token_estimator import log_context_budget
+
+            log_context_budget(messages, extra={"agent_round": iteration + 1})
+        except Exception:
+            pass
+
+        # Run one round of tool execution
+        trace = get_current_trace()
+        if trace:
+            async with trace.span(f"reactive:round_{iteration + 1}", kind="span") as round_span:
+                round_span.set_input({"iteration": iteration + 1})
+                reply = await execute_tool_loop(
+                    messages=messages,
+                    ollama_client=ollama_client,
+                    skill_registry=session_registry,
+                    mcp_manager=mcp_manager,
+                    max_tools=_TOOLS_PER_ROUND,
+                    hitl_callback=hitl_callback,
+                    parent_span_id=round_span.span_id,
+                )
+                round_span.set_output({"reply_preview": reply[:200]})
+        else:
+            reply = await execute_tool_loop(
+                messages=messages,
+                ollama_client=ollama_client,
+                skill_registry=session_registry,
+                mcp_manager=mcp_manager,
+                max_tools=_TOOLS_PER_ROUND,
+                hitl_callback=hitl_callback,
+            )
+
+        # Extract and persist scratchpad before appending the clean reply
+        new_scratchpad, clean_reply = _extract_scratchpad(reply)
+        if new_scratchpad:
+            session.scratchpad = new_scratchpad
+            logger.debug(
+                "Agent session %s: scratchpad updated (%d chars)",
+                session.session_id,
+                len(new_scratchpad),
+            )
+        reply = clean_reply
+
+        messages.append(ChatMessage(role="assistant", content=reply))
+
+        if _is_session_complete(session, reply):
+            logger.info(
+                "Agent session %s: detected completion at round %d",
+                session.session_id,
+                iteration + 1,
+            )
+            break
+
+        # Loop detection
+        tool_history = _extract_tool_history(messages)
+        try:
+            loop_warning = _check_loop_detection(tool_history)
+            if loop_warning:
+                messages.append(ChatMessage(role="system", content=loop_warning))
+        except RuntimeError as e:
+            logger.error("Agent session %s: circuit breaker — %s", session.session_id, e)
+            messages.append(ChatMessage(role="system", content=str(e)))
+            break
+
+        # Progress update via WhatsApp
+        if session.task_plan:
+            done = session.task_plan.count("[x]")
+            total = done + session.task_plan.count("[ ]")
+            try:
+                await wa_client.send_message(
+                    session.phone_number,
+                    f"🔧 Round {iteration + 1}: {done}/{total} steps done",
+                )
+            except Exception:
+                pass
+
+        # Session Persistence
+        try:
+            round_data = {
+                "iteration": iteration + 1,
+                "task_plan": session.task_plan,
+                "reply": reply,
+                "messages": [
+                    m.model_dump() if hasattr(m, "model_dump") else m.dict() for m in messages[-4:]
+                ],
+            }
+            append_to_session(session.phone_number, session.session_id, round_data)
+        except Exception as e:
+            logger.error("Error saving session round: %s", e)
+
+        _clear_old_tool_results(messages, keep_last_n=2)
+
+    return reply
+
+
 async def run_agent_session(
     session: AgentSession,
     ollama_client: OllamaClient,
     skill_registry: SkillRegistry,
     wa_client: WhatsAppClient,
     mcp_manager: McpManager | None = None,
+    use_planner: bool = True,
+    recorder=None,
 ) -> None:
     """Run a full agentic session in the background.
 
-    The agent iterates: Think → Call Tools → Observe → Loop
-    until the objective is complete or max_iterations is reached.
+    Planner-orchestrator architecture (default):
+      Phase 1 — UNDERSTAND: Planner creates structured plan
+      Phase 2 — EXECUTE: Workers run each task step
+      Phase 3 — SYNTHESIZE: Planner reviews, replans if needed
+
+    Falls back to the reactive loop if the planner fails or use_planner=False.
     Proactively sends the result to the user via WhatsApp when done.
     """
     _active_sessions[session.phone_number] = session
@@ -135,36 +719,123 @@ async def run_agent_session(
         session.objective[:80],
     )
 
-    try:
-        system_content = _AGENT_SYSTEM_PROMPT.format(objective=session.objective)
-
-        messages: list[ChatMessage] = [
-            ChatMessage(role="system", content=system_content),
-            ChatMessage(role="user", content=session.objective),
-        ]
-
-        # Build a session-scoped registry with HITL + task-memory tools.
-        # This prevents concurrent sessions from overwriting each other's closures.
-        session_registry = _register_session_tools(session, skill_registry, wa_client)
-
-        # Run the tool loop with elevated max_tools to allow multi-step autonomy
-        reply = await execute_tool_loop(
-            messages=messages,
+    if recorder is not None:
+        async with TraceContext(
+            phone_number=session.phone_number,
+            input_text=session.objective,
+            recorder=recorder,
+            message_type="agent",
+        ):
+            # TraceContext sets contextvars — inner code uses get_current_trace() to add spans.
+            # session_id is embedded in the spans via planner/worker span names.
+            await _run_agent_body(
+                session=session,
+                ollama_client=ollama_client,
+                skill_registry=skill_registry,
+                wa_client=wa_client,
+                mcp_manager=mcp_manager,
+                use_planner=use_planner,
+            )
+    else:
+        await _run_agent_body(
+            session=session,
             ollama_client=ollama_client,
-            skill_registry=session_registry,
+            skill_registry=skill_registry,
+            wa_client=wa_client,
             mcp_manager=mcp_manager,
-            max_tools=session.max_iterations,
+            use_planner=use_planner,
         )
 
-        session.status = AgentStatus.COMPLETED
-        logger.info("Agent session %s completed", session.session_id)
 
-        # Send final result to the user via WhatsApp
-        from app.formatting.markdown_to_wa import markdown_to_whatsapp
+async def _run_agent_body(
+    session: AgentSession,
+    ollama_client: OllamaClient,
+    skill_registry: SkillRegistry,
+    wa_client: WhatsAppClient,
+    mcp_manager: McpManager | None,
+    use_planner: bool,
+) -> None:
+    """Inner implementation of run_agent_session. Run inside a TraceContext if tracing enabled."""
+    try:
+        # Build a session-scoped registry with HITL + task-memory tools.
+        session_registry = _register_session_tools(session, skill_registry, wa_client)
+        hitl_callback = _build_security_hitl_callback(session, wa_client)
+
+        if use_planner:
+            try:
+                reply = await _run_planner_session(
+                    session=session,
+                    ollama_client=ollama_client,
+                    session_registry=session_registry,
+                    wa_client=wa_client,
+                    mcp_manager=mcp_manager,
+                    hitl_callback=hitl_callback,
+                )
+            except Exception:
+                logger.exception("Planner session failed, falling back to reactive loop")
+                # Fallback to reactive loop
+                system_content = _AGENT_SYSTEM_PROMPT.format(objective=session.objective)
+                system_content = _load_bootstrap_context(system_content)
+                messages: list[ChatMessage] = [
+                    ChatMessage(role="system", content=system_content),
+                    ChatMessage(role="user", content=session.objective),
+                ]
+                reply = await _run_reactive_session(
+                    session=session,
+                    ollama_client=ollama_client,
+                    session_registry=session_registry,
+                    wa_client=wa_client,
+                    mcp_manager=mcp_manager,
+                    hitl_callback=hitl_callback,
+                    messages=messages,
+                )
+        else:
+            system_content = _AGENT_SYSTEM_PROMPT.format(objective=session.objective)
+            system_content = _load_bootstrap_context(system_content)
+            messages = [
+                ChatMessage(role="system", content=system_content),
+                ChatMessage(role="user", content=session.objective),
+            ]
+            reply = await _run_reactive_session(
+                session=session,
+                ollama_client=ollama_client,
+                session_registry=session_registry,
+                wa_client=wa_client,
+                mcp_manager=mcp_manager,
+                hitl_callback=hitl_callback,
+                messages=messages,
+            )
+
+        # --- Session ended ---
+        session.status = AgentStatus.COMPLETED
+        logger.info(
+            "Agent session %s completed after %d round(s)",
+            session.session_id,
+            session.iteration + 1,
+        )
+
+        # Final plan summary
+        final_message = reply
+        if session.plan:
+            done = sum(1 for t in session.plan.tasks if t.status == "done")
+            failed = sum(1 for t in session.plan.tasks if t.status == "failed")
+            total = len(session.plan.tasks)
+            plan_status = f"_Plan: {done}/{total} completed"
+            if failed:
+                plan_status += f", {failed} failed"
+            plan_status += "._\n\n"
+            final_message = plan_status + reply
+        elif session.task_plan:
+            done = session.task_plan.count("[x]")
+            pending = session.task_plan.count("[ ]")
+            plan_status = f"_Plan: {done} pasos completados, {pending} pendientes._\n\n"
+            final_message = plan_status + reply
+
+        from app.formatting.whatsapp import markdown_to_whatsapp
 
         await wa_client.send_message(
             session.phone_number,
-            markdown_to_whatsapp(f"✅ *Sesión agéntica completada*\n\n{reply}"),
+            markdown_to_whatsapp(f"✅ *Sesión agéntica completada*\n\n{final_message}"),
         )
 
     except asyncio.CancelledError:
@@ -184,6 +855,20 @@ async def run_agent_session(
     finally:
         _active_sessions.pop(session.phone_number, None)
         _active_tasks.pop(session.phone_number, None)
+
+
+def _load_bootstrap_context(system_content: str) -> str:
+    """Append optional bootstrap files (SOUL.md, USER.md, TOOLS.md) to system content."""
+    bootstrap_files = ["SOUL.md", "USER.md", "TOOLS.md"]
+    for bs_file in bootstrap_files:
+        bs_path = _PROJECT_ROOT / bs_file
+        if bs_path.exists():
+            try:
+                content = bs_path.read_text(encoding="utf-8")
+                system_content += f"\n\n--- {bs_file} ---\n{content}\n"
+            except Exception as e:
+                logger.warning("Could not read bootstrap file %s: %s", bs_file, e)
+    return system_content
 
 
 def get_active_session(phone_number: str) -> AgentSession | None:

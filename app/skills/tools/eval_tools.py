@@ -183,14 +183,35 @@ def register(
                 lines.append(f"- {tag}: {count}")
         return "\n".join(lines)
 
-    async def run_quick_eval(category: str = "all") -> str:
+    async def run_quick_eval(
+        category: str = "all",
+        prompt_name: str | None = None,
+        prompt_version: int | None = None,
+    ) -> str:
         """Run a quick evaluation against the dataset for a category.
 
+        Uses LLM-as-judge with a binary yes/no prompt to assess whether the model's
+        response correctly answers the question, compared against expected_output.
         Uses ollama_client.chat() directly (no tool loop) to avoid recursion.
-        Compares raw LLM response against expected_output for correction entries.
+
+        Args:
+            category: Filter dataset entries by type (default: all correction pairs).
+            prompt_name: Optional — if provided with prompt_version, evaluates the candidate
+                prompt version (used to preview a proposal before activating it).
+            prompt_version: Required when prompt_name is set.
         """
         if not ollama_client:
             return "Cannot run eval: Ollama client not available."
+
+        # Resolve optional prompt override
+        system_prompt_override: str | None = None
+        override_label = ""
+        if prompt_name and prompt_version is not None:
+            override_row = await repository.get_prompt_version(prompt_name, prompt_version)
+            if not override_row:
+                return f"No encontré '{prompt_name}' v{prompt_version} en la DB."
+            system_prompt_override = override_row["content"]
+            override_label = f" [override: {prompt_name} v{prompt_version}]"
 
         try:
             entries = await repository.get_dataset_entries(
@@ -211,38 +232,49 @@ def register(
             if not entry.get("expected_output"):
                 continue
             try:
-                resp = await ollama_client.chat(
-                    [
+                # Step 1: generate the model's actual response (with optional system prompt)
+                if system_prompt_override:
+                    inference_messages = [
+                        ChatMessage(role="system", content=system_prompt_override),
                         ChatMessage(role="user", content=entry["input_text"]),
                     ]
-                )
-                actual = resp.strip() if isinstance(resp, str) else resp
+                else:
+                    inference_messages = [ChatMessage(role="user", content=entry["input_text"])]
+
+                resp = await ollama_client.chat(inference_messages, think=False)
+                actual = str(resp).strip() if resp else ""
                 expected = entry["expected_output"]
-                # Simple overlap metric: shared words / total words
-                actual_words = set(str(actual).lower().split())
-                expected_words = set(expected.lower().split())
-                overlap = len(actual_words & expected_words) / max(len(expected_words), 1)
-                results.append(
-                    {
-                        "entry_id": entry["id"],
-                        "overlap": round(overlap, 2),
-                    }
+
+                # Step 2: LLM-as-judge — binary yes/no, think=False for determinism
+                judge_prompt = (
+                    f"Question: {entry['input_text'][:300]}\n"
+                    f"Expected answer: {expected[:300]}\n"
+                    f"Actual answer: {actual[:300]}\n\n"
+                    "Does the actual answer correctly and completely answer the question? "
+                    "Reply ONLY 'yes' or 'no'."
                 )
+                judge_resp = await ollama_client.chat(
+                    [ChatMessage(role="user", content=judge_prompt)],
+                    think=False,
+                )
+                passed = str(judge_resp).strip().lower().startswith("yes")
+                results.append({"entry_id": entry["id"], "passed": passed})
             except Exception:
                 logger.exception("run_quick_eval inference failed for entry %s", entry["id"])
 
         if not results:
             return "No correction entries with expected_output found. Try add_to_dataset() first."
 
-        avg_overlap = sum(r["overlap"] for r in results) / len(results)
+        correct = sum(1 for r in results if r["passed"])
         lines = [
-            f"*Quick eval results* ({len(results)} entries, category={category})",
-            f"Avg word overlap vs expected: {avg_overlap:.0%}",
+            f"*Quick eval results* ({len(results)} entries, category={category}{override_label})",
+            f"Correct: {correct}/{len(results)} ({correct / len(results):.0%})",
             "",
             "*Per entry:*",
         ]
         for r in results:
-            lines.append(f"- entry #{r['entry_id']}: overlap={r['overlap']:.0%}")
+            icon = "✅" if r["passed"] else "❌"
+            lines.append(f"- entry #{r['entry_id']}: {icon}")
         return "\n".join(lines)
 
     async def get_dashboard_stats(days: int = 30) -> str:
@@ -419,13 +451,21 @@ def register(
 
     registry.register_tool(
         name="run_quick_eval",
-        description="Run a quick evaluation against correction pairs in the dataset to measure response quality",
+        description="Run a quick evaluation against correction pairs in the dataset to measure response quality. Optionally pass prompt_name + prompt_version to test a candidate prompt before activating it.",
         parameters={
             "type": "object",
             "properties": {
                 "category": {
                     "type": "string",
                     "description": "Category filter for dataset entries (default: all)",
+                },
+                "prompt_name": {
+                    "type": "string",
+                    "description": "Optional: name of the prompt to evaluate (e.g. 'classifier')",
+                },
+                "prompt_version": {
+                    "type": "integer",
+                    "description": "Required when prompt_name is set: version number to evaluate",
                 },
             },
         },

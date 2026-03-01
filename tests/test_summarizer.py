@@ -51,6 +51,22 @@ async def test_summarize_includes_previous_summary(repository):
     assert "Previous summary here." in prompt_text
 
 
+async def test_maybe_summarize_uses_think_false(repository):
+    """maybe_summarize must pass think=False to LLM to suppress chain-of-thought."""
+    conv_id = await repository.get_or_create_conversation("123")
+    for i in range(10):
+        await repository.save_message(conv_id, "user", f"msg{i}")
+
+    ollama = AsyncMock()
+    ollama.chat = AsyncMock(return_value="Summary.")
+
+    await maybe_summarize(conv_id, repository, ollama, threshold=5, max_messages=3)
+
+    ollama.chat.assert_called_once()
+    _, kwargs = ollama.chat.call_args
+    assert kwargs.get("think") is False
+
+
 async def test_summarize_handles_error(repository):
     conv_id = await repository.get_or_create_conversation("123")
     for i in range(10):

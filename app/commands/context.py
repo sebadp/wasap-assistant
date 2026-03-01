@@ -19,3 +19,6 @@ class CommandContext:
     ollama_client: Any = field(default=None, repr=False)
     daily_log: Any = field(default=None, repr=False)
     embed_model: str | None = field(default=None, repr=False)
+    wa_client: Any = field(default=None, repr=False)
+    settings: Any = field(default=None, repr=False)
+    trace_recorder: Any = field(default=None, repr=False)

@@ -351,7 +351,7 @@ Phase D: _build_context() → chat_with_tools (LLM principal, ~3-8s)
   - *Capa 2* (Automática): G-Eval offline para testear métricas
   - *Capa 3* (Explícita): Comando `/feedback` para human-in-the-loop
 - **Dataset vivo y Auto-evolución**: Creación de un dataset de interacciones y prompts dinámicos
-- Ver detalle en `docs/exec-plans/eval_implementation_plan.md`
+- Ver detalle en `docs/exec-plans/11-eval_implementation_plan.md`
 
 ---
 
