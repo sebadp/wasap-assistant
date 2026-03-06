@@ -878,6 +878,17 @@ class Repository:
         row = await cursor.fetchone()
         return row[0] if row else None
 
+    async def get_trace_io_by_id(self, trace_id: str) -> tuple[str, str] | None:
+        """Return (input_text, output_text) for a trace, or None if not found."""
+        cursor = await self._conn.execute(
+            "SELECT input_text, output_text FROM traces WHERE id = ?",
+            (trace_id,),
+        )
+        row = await cursor.fetchone()
+        if not row:
+            return None
+        return row[0] or "", row[1] or ""
+
     async def get_trace_scores(self, trace_id: str) -> list[dict]:
         cursor = await self._conn.execute(
             "SELECT id, name, value, source, comment, span_id, created_at "
@@ -1162,11 +1173,14 @@ class Repository:
         for name, content in defaults.items():
             existing = await self.get_active_prompt_version(name)
             if existing is None:
-                await self.save_prompt_version(name, version=1, content=content, created_by="system")
+                await self.save_prompt_version(
+                    name, version=1, content=content, created_by="system"
+                )
                 await self.activate_prompt_version(name, version=1)
                 seeded += 1
         if seeded:
             import logging as _logging
+
             _logging.getLogger(__name__).info("Seeded %d default prompt(s) into DB", seeded)
         return seeded
 

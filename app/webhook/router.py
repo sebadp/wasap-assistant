@@ -107,15 +107,14 @@ async def incoming_webhook(
     payload = await request.json()
 
     repository = get_repository(request)
+    wa_client = get_whatsapp_client(request)
 
     # Process reactions first (lightweight, fire-and-forget, no dedup needed)
     reactions = extract_reactions(payload)
     for reaction in reactions:
-        background_tasks.add_task(_handle_reaction, reaction, repository)
+        background_tasks.add_task(_handle_reaction, reaction, repository, wa_client, settings)
 
     messages = extract_messages(payload)
-
-    wa_client = get_whatsapp_client(request)
     ollama_client = get_ollama_client(request)
     conversation = get_conversation_manager(request)
     command_registry = get_command_registry(request)
@@ -579,8 +578,11 @@ async def _save_self_correction_memory(
         logger.warning("Failed to save self-correction memory", exc_info=True)
 
 
-async def _handle_reaction(reaction, repository) -> None:
-    """Convert a WhatsApp reaction to a trace score. Best-effort, no exceptions propagated."""
+async def _handle_reaction(reaction, repository, wa_client=None, settings=None) -> None:
+    """Convert a WhatsApp reaction to a trace score and trigger dataset curation.
+
+    Best-effort — no exceptions propagated.
+    """
     from app.models import WhatsAppReaction
 
     if not isinstance(reaction, WhatsAppReaction):
@@ -610,6 +612,42 @@ async def _handle_reaction(reaction, repository) -> None:
             trace_id,
             value,
         )
+
+        # Feed reaction signal into the dataset curation pipeline
+        if settings and getattr(settings, "eval_auto_curate", False):
+            io = await repository.get_trace_io_by_id(trace_id)
+            if io:
+                input_text, output_text = io
+                asyncio.create_task(
+                    maybe_curate_to_dataset(
+                        trace_id=trace_id,
+                        input_text=input_text,
+                        output_text=output_text,
+                        repository=repository,
+                    )
+                )
+
+        # For very negative reactions, ask the user what the correct answer should have been
+        if value <= 0.2 and wa_client:
+            existing_scores = await repository.get_trace_scores(trace_id)
+            already_prompted = any(s["name"] == "correction_prompted" for s in existing_scores)
+            if not already_prompted:
+                await repository.save_trace_score(
+                    trace_id=trace_id,
+                    name="correction_prompted",
+                    value=1.0,
+                    source="system",
+                    comment="correction prompt sent after negative reaction",
+                )
+                asyncio.create_task(
+                    wa_client.send_message(
+                        reaction.from_number,
+                        "Vi que no te gustó mi respuesta. "
+                        "¿Qué debería haber dicho? "
+                        "Respondé con la respuesta correcta y la recordaré para mejorar.",
+                    )
+                )
+
     except Exception:
         logger.warning("Failed to process reaction", exc_info=True)
 
@@ -1040,6 +1078,37 @@ async def _handle_message(
         summary = ctx.summary
         projects_summary = ctx.projects_summary
 
+        # Implicit signal: detect if user is responding to a bot correction prompt (👎 flow)
+        if user_text and settings.eval_auto_curate:
+            prev_trace_id = await repository.get_latest_trace_id(msg.from_number)
+            if prev_trace_id:
+                prev_scores = await repository.get_trace_scores(prev_trace_id)
+                prompted = any(s["name"] == "correction_prompted" for s in prev_scores)
+                received = any(s["name"] == "correction_received" for s in prev_scores)
+                if prompted and not received:
+                    await repository.save_trace_score(
+                        trace_id=prev_trace_id,
+                        name="correction_received",
+                        value=1.0,
+                        source="human",
+                        comment=user_text[:200],
+                    )
+                    prev_io = await repository.get_trace_io_by_id(prev_trace_id)
+                    _track_task(
+                        asyncio.create_task(
+                            add_correction_pair(
+                                previous_trace_id=prev_trace_id,
+                                input_text=(prev_io[0] if prev_io else ""),
+                                bad_output=(prev_io[1] if prev_io else None),
+                                correction_text=user_text,
+                                repository=repository,
+                            )
+                        )
+                    )
+                    logger.info(
+                        "Correction pair saved from reaction prompt for trace %s", prev_trace_id
+                    )
+
         # Implicit signal: detect if user is correcting the bot's previous response
         if trace_ctx and user_text:
             correction_score = _detect_correction(user_text)
@@ -1116,9 +1185,7 @@ async def _handle_message(
             skills_summary = _build_capabilities_for_categories(
                 pre_classified, skill_registry, command_registry, mcp_manager
             )
-            logger.debug(
-                "context.capabilities: filtered to categories %s", pre_classified
-            )
+            logger.debug("context.capabilities: filtered to categories %s", pre_classified)
         else:
             # pre_classified is None (classification failed) — include full capabilities
             skills_summary = _build_capabilities_section(
