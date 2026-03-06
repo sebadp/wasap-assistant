@@ -1,4 +1,5 @@
 from enum import StrEnum
+from typing import Literal
 
 from pydantic import BaseModel
 
@@ -14,6 +15,6 @@ class IncomingMessage(BaseModel):
     message_id: str
     timestamp: str
     text: str
-    type: str  # "text" | "audio" | "image"
+    type: Literal["text", "audio", "image"]
     media_id: str | None = None
     reply_to_message_id: str | None = None

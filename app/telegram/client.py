@@ -58,6 +58,7 @@ class TelegramClient:
         file_path = data["result"]["file_path"]
         url = _TELEGRAM_FILE.format(token=self._token, path=file_path)
         file_resp = await self._http.get(url)
+        file_resp.raise_for_status()
         return file_resp.content
 
     async def mark_as_read(self, message_id: str) -> None:
@@ -85,12 +86,15 @@ class TelegramClient:
     def platform_name(self) -> str:
         return "telegram"
 
-    async def set_webhook(self, url: str, secret: str) -> None:
-        """Register the webhook URL and secret with the Telegram Bot API."""
+    async def set_webhook(self, url: str, secret: str | None = None) -> None:
+        """Register the webhook URL and optional secret with the Telegram Bot API."""
+        payload: dict = {"url": url}
+        if secret:
+            payload["secret_token"] = secret
         try:
             resp = await self._http.post(
                 self._url("setWebhook"),
-                json={"url": url, "secret_token": secret},
+                json=payload,
             )
             data = resp.json()
             if data.get("ok"):

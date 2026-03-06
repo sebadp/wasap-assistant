@@ -5,7 +5,7 @@ import base64
 import datetime
 import logging
 import re as _re
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal, cast
 
 from fastapi import APIRouter, BackgroundTasks, Query, Request
 from fastapi.responses import PlainTextResponse, Response
@@ -102,7 +102,7 @@ def _wa_msg_to_incoming(msg: WhatsAppMessage) -> IncomingMessage:
         message_id=msg.message_id,
         timestamp=msg.timestamp,
         text=msg.text,
-        type=msg.type,
+        type=cast(Literal["text", "audio", "image"], msg.type),
         media_id=msg.media_id,
         reply_to_message_id=msg.reply_to_message_id,
     )

@@ -66,7 +66,7 @@ def markdown_to_telegram_html(text: str) -> str:
         original = placeholders[idx]
         if original.startswith("```"):
             # Strip ``` fence and optional language tag
-            inner = re.sub(r"^```\w*\n?", "", original)
+            inner = re.sub(r"^```[^\n]*\n?", "", original)
             inner = re.sub(r"```\s*$", "", inner)
             inner = inner.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
             return f"<pre>{inner}</pre>"

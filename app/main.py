@@ -75,7 +75,7 @@ async def lifespan(app: FastAPI):
         if settings.telegram_webhook_url:
             await tg_client.set_webhook(
                 settings.telegram_webhook_url + "/telegram/webhook",
-                settings.telegram_webhook_secret,
+                settings.telegram_webhook_secret or None,
             )
         logger.info("Telegram integration enabled")
     else:
