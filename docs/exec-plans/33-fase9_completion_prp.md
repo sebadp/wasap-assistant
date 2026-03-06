@@ -17,8 +17,8 @@
 
 **Objetivo:** poder reconstruir `input_text`/`output_text` desde una traza para pasarlos a `maybe_curate_to_dataset`.
 
-- [ ] Leer el schema actual de la tabla `traces` en `app/database/db.py` para confirmar columnas disponibles (`input_text`, `output_text` o equivalentes)
-- [ ] Agregar método `get_trace_io_by_id(trace_id: str) -> tuple[str, str] | None` en `repository.py`:
+- [x] Leer el schema actual de la tabla `traces` en `app/database/db.py` para confirmar columnas disponibles (`input_text`, `output_text` o equivalentes)
+- [x] Agregar método `get_trace_io_by_id(trace_id: str) -> tuple[str, str] | None` en `repository.py`:
   ```python
   async def get_trace_io_by_id(self, trace_id: str) -> tuple[str, str] | None:
       """Return (input_text, output_text) for a trace, or None if not found."""
@@ -29,7 +29,7 @@
           return None
       return row["input_text"] or "", row["output_text"] or ""
   ```
-- [ ] Verificar firma actual de `maybe_curate_to_dataset()` en `app/eval/dataset.py` — confirmar que acepta `user_positive_signal: bool | None = None` (debería existir ya)
+- [x] Verificar firma actual de `maybe_curate_to_dataset()` en `app/eval/dataset.py` — confirmar que acepta `user_positive_signal: bool | None = None` (debería existir ya)
 
 ---
 
@@ -37,14 +37,14 @@
 
 **Objetivo:** conectar reacción → score → curation → (opcional) prompt de corrección.
 
-- [ ] Leer `_handle_reaction()` completo en `router.py` (líneas ~582-614)
-- [ ] Leer el call site en `process_incoming_message()` / `webhook_post()` para entender cómo se llama `_handle_reaction`
-- [ ] Agregar `wa_client` y `settings` a la firma de `_handle_reaction()`:
+- [x] Leer `_handle_reaction()` completo en `router.py` (líneas ~582-614)
+- [x] Leer el call site en `process_incoming_message()` / `webhook_post()` para entender cómo se llama `_handle_reaction`
+- [x] Agregar `wa_client` y `settings` a la firma de `_handle_reaction()`:
   ```python
   async def _handle_reaction(reaction, repository, wa_client=None, settings=None) -> None:
   ```
-- [ ] Actualizar el call site para pasar `wa_client=wa_client` y `settings=settings`
-- [ ] Después de guardar el score, agregar bloque de curation (best-effort, gated por `settings.eval_auto_curate`):
+- [x] Actualizar el call site para pasar `wa_client=wa_client` y `settings=settings`
+- [x] Después de guardar el score, agregar bloque de curation (best-effort, gated por `settings.eval_auto_curate`):
   ```python
   if settings and settings.eval_auto_curate:
       io = await repository.get_trace_io_by_id(trace_id)
@@ -60,7 +60,7 @@
               )
           )
   ```
-- [ ] Para reacciones muy negativas (`value <= 0.2`), enviar prompt de corrección si `wa_client` disponible:
+- [x] Para reacciones muy negativas (`value <= 0.2`), enviar prompt de corrección si `wa_client` disponible:
   ```python
   if value <= 0.2 and wa_client:
       # Check we haven't already sent a correction prompt for this trace
@@ -101,7 +101,7 @@
 >
 > Implementar **Opción A** primero como heurística simple:
 
-- [ ] En `_run_normal_flow()` (o al inicio de `_handle_message()`), verificar si hay una traza reciente con score `correction_prompted=1.0` y sin `correction_received`:
+- [x] En `_run_normal_flow()` (o al inicio de `_handle_message()`), verificar si hay una traza reciente con score `correction_prompted=1.0` y sin `correction_received`:
   ```python
   # Si el mensaje parece ser una corrección (traza reciente negativa sin corrección recibida)
   recent_trace = await repository.get_latest_trace_id(phone_number)
@@ -124,43 +124,43 @@
           )
           # Still process the message normally — don't short-circuit
   ```
-- [ ] Verificar firma de `add_correction_pair()` en `app/eval/dataset.py`
-- [ ] Asegurarse de que el flujo normal continúa (la corrección se guarda como background, el LLM igual procesa el mensaje)
+- [x] Verificar firma de `add_correction_pair()` en `app/eval/dataset.py`
+- [x] Asegurarse de que el flujo normal continúa (la corrección se guarda como background, el LLM igual procesa el mensaje)
 
 ---
 
 ### Phase 4: Tests
 
-- [ ] Crear `tests/test_reaction_curation.py` con los siguientes tests:
+- [x] Crear `tests/test_reaction_curation.py` con los siguientes tests:
 
   **Repository:**
-  - [ ] `test_get_trace_io_by_id_returns_tuple`
-  - [ ] `test_get_trace_io_by_id_returns_none_for_unknown_trace`
+  - [x] `test_get_trace_io_by_id_returns_tuple`
+  - [x] `test_get_trace_io_by_id_returns_none_for_unknown_trace`
 
   **Reaction → curation:**
-  - [ ] `test_positive_reaction_triggers_curation` — mock `maybe_curate_to_dataset`, verificar que se llama con `user_positive_signal=True`
-  - [ ] `test_negative_reaction_triggers_curation` — verificar `user_positive_signal=False`
-  - [ ] `test_reaction_curation_skipped_when_eval_auto_curate_disabled`
-  - [ ] `test_reaction_curation_skipped_when_no_trace_found`
+  - [x] `test_positive_reaction_triggers_curation` — mock `maybe_curate_to_dataset`, verificar que se llama con `user_positive_signal=True`
+  - [x] `test_negative_reaction_triggers_curation` — verificar `user_positive_signal=False`
+  - [x] `test_reaction_curation_skipped_when_eval_auto_curate_disabled`
+  - [x] `test_reaction_curation_skipped_when_no_trace_found`
 
   **Reaction → correction prompt:**
-  - [ ] `test_very_negative_reaction_sends_correction_prompt` — mock `wa_client.send_message`, verificar que se llama
-  - [ ] `test_correction_prompt_not_sent_twice` — mock `get_trace_scores` retornando `correction_prompted`, verificar que `send_message` NO se llama
-  - [ ] `test_neutral_reaction_no_correction_prompt` — score=0.5, verificar que `send_message` NO se llama
+  - [x] `test_very_negative_reaction_sends_correction_prompt` — mock `wa_client.send_message`, verificar que se llama
+  - [x] `test_correction_prompt_not_sent_twice` — mock `get_trace_scores` retornando `correction_prompted`, verificar que `send_message` NO se llama
+  - [x] `test_neutral_reaction_no_correction_prompt` — score=0.5, verificar que `send_message` NO se llama
 
   **Correction pair:**
-  - [ ] `test_message_after_correction_prompt_saved_as_correction_pair`
-  - [ ] `test_correction_not_saved_when_no_pending_prompt`
+  - [x] `test_message_after_correction_prompt_saved_as_correction_pair`
+  - [x] `test_correction_not_saved_when_no_pending_prompt`
 
 ---
 
 ### Phase 5: Tests, lint y documentación
 
-- [ ] Correr `make check` (lint + typecheck + tests): all passed
-- [ ] Actualizar `docs/exec-plans/README.md` — marcar plan 33 como ✅ Completado
-- [ ] Crear `docs/features/33-fase9_completion.md`
-- [ ] Actualizar `CLAUDE.md` con el nuevo patrón de `_handle_reaction` (firma + curation + correction prompt)
-- [ ] Marcar Fase 9 como ✅ en `README.md` (ya hecho en la sesión de documentación — verificar)
+- [x] Correr `make check` (lint + typecheck + tests): all passed
+- [x] Actualizar `docs/exec-plans/README.md` — marcar plan 33 como ✅ Completado
+- [x] Crear `docs/features/33-fase9_completion.md`
+- [x] Actualizar `CLAUDE.md` con el nuevo patrón de `_handle_reaction` (firma + curation + correction prompt)
+- [x] Marcar Fase 9 como ✅ en `README.md` (ya hecho en la sesión de documentación — verificar)
 
 ---
 
