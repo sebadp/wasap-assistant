@@ -21,16 +21,16 @@
 
 ```bash
 # Sync MEMORY.md
-docker compose logs -f wasap 2>&1 | grep -i "memory.*sync\|watcher"
+docker compose logs -f localforge 2>&1 | grep -i "memory.*sync\|watcher"
 
 # Pre-compaction flush
-docker compose logs -f wasap 2>&1 | grep -i "flush\|pre.compaction\|extract"
+docker compose logs -f localforge 2>&1 | grep -i "flush\|pre.compaction\|extract"
 
 # Consolidation
-docker compose logs -f wasap 2>&1 | grep -i "consolidat\|dedup\|merge"
+docker compose logs -f localforge 2>&1 | grep -i "consolidat\|dedup\|merge"
 
 # Daily log
-docker compose logs -f wasap 2>&1 | grep -i "daily.log"
+docker compose logs -f localforge 2>&1 | grep -i "daily.log"
 ```
 
 ---
@@ -39,7 +39,7 @@ docker compose logs -f wasap 2>&1 | grep -i "daily.log"
 
 ```bash
 # Memorias por categoría
-sqlite3 data/wasap.db "SELECT category, COUNT(*) FROM memories WHERE active=1 GROUP BY category;"
+sqlite3 data/localforge.db "SELECT category, COUNT(*) FROM memories WHERE active=1 GROUP BY category;"
 
 # Daily logs en disco
 ls -la data/memory/

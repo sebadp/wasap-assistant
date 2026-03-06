@@ -8,7 +8,7 @@
 ## Verificar que la feature está activa
 
 ```bash
-docker compose logs -f wasap | head -40
+docker compose logs -f localforge | head -40
 ```
 
 Confirmar:
@@ -43,13 +43,13 @@ Confirmar:
 
 ```bash
 # Mensaje recibido y procesado
-docker compose logs -f wasap 2>&1 | grep -i "incoming\|received\|handle_message"
+docker compose logs -f localforge 2>&1 | grep -i "incoming\|received\|handle_message"
 
 # Llamada LLM
-docker compose logs -f wasap 2>&1 | grep -i "ollama\|chat"
+docker compose logs -f localforge 2>&1 | grep -i "ollama\|chat"
 
 # Errores
-docker compose logs -f wasap 2>&1 | grep -i "error\|exception"
+docker compose logs -f localforge 2>&1 | grep -i "error\|exception"
 ```
 
 ---

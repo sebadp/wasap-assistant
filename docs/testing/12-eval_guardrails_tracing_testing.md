@@ -10,13 +10,13 @@
 Al arrancar el container, verificar en los logs:
 
 ```bash
-docker compose logs -f wasap | head -60
+docker compose logs -f localforge | head -60
 ```
 
 No hay línea de log específica de guardrails al startup (no hay setup costoso). Se activan por mensaje. Para verificar, enviar un mensaje y buscar:
 
 ```bash
-docker compose logs -f wasap 2>&1 | grep -i "guardrail"
+docker compose logs -f localforge 2>&1 | grep -i "guardrail"
 ```
 
 Si hay fallas de guardrail, se verá:
@@ -79,13 +79,13 @@ Los 32 tests de guardrails son determinísticos — no requieren Ollama ni DB.
 
 ```bash
 # Guardrail failures
-docker compose logs -f wasap 2>&1 | grep -i "guardrail"
+docker compose logs -f localforge 2>&1 | grep -i "guardrail"
 
 # Trace recording errors (best-effort — no afectan el pipeline)
-docker compose logs -f wasap 2>&1 | grep -i "tracerecorder"
+docker compose logs -f localforge 2>&1 | grep -i "tracerecorder"
 
 # Guardrail remediation (re-prompts)
-docker compose logs -f wasap 2>&1 | grep -i "guardrail_failure"
+docker compose logs -f localforge 2>&1 | grep -i "guardrail_failure"
 ```
 
 ---
@@ -94,22 +94,22 @@ docker compose logs -f wasap 2>&1 | grep -i "guardrail_failure"
 
 ```bash
 # Ver últimas trazas
-sqlite3 data/wasap.db "SELECT id, phone_number, status, started_at, completed_at FROM traces ORDER BY started_at DESC LIMIT 10;"
+sqlite3 data/localforge.db "SELECT id, phone_number, status, started_at, completed_at FROM traces ORDER BY started_at DESC LIMIT 10;"
 
 # Spans de una traza específica
-sqlite3 data/wasap.db "SELECT name, kind, status, latency_ms FROM trace_spans WHERE trace_id = '<trace_id>' ORDER BY started_at;"
+sqlite3 data/localforge.db "SELECT name, kind, status, latency_ms FROM trace_spans WHERE trace_id = '<trace_id>' ORDER BY started_at;"
 
 # Scores de guardrails (últimas 24h)
-sqlite3 data/wasap.db "SELECT ts.name, ts.value, ts.source, t.started_at FROM trace_scores ts JOIN traces t ON t.id = ts.trace_id WHERE t.started_at > datetime('now', '-1 day') ORDER BY t.started_at DESC;"
+sqlite3 data/localforge.db "SELECT ts.name, ts.value, ts.source, t.started_at FROM trace_scores ts JOIN traces t ON t.id = ts.trace_id WHERE t.started_at > datetime('now', '-1 day') ORDER BY t.started_at DESC;"
 
 # Trazas con guardrail failures
-sqlite3 data/wasap.db "SELECT DISTINCT t.id, t.phone_number, ts.name FROM traces t JOIN trace_scores ts ON ts.trace_id = t.id WHERE ts.value < 1.0 AND ts.source = 'system' ORDER BY t.started_at DESC LIMIT 10;"
+sqlite3 data/localforge.db "SELECT DISTINCT t.id, t.phone_number, ts.name FROM traces t JOIN trace_scores ts ON ts.trace_id = t.id WHERE ts.value < 1.0 AND ts.source = 'system' ORDER BY t.started_at DESC LIMIT 10;"
 
 # Contar trazas por estado
-sqlite3 data/wasap.db "SELECT status, COUNT(*) FROM traces GROUP BY status;"
+sqlite3 data/localforge.db "SELECT status, COUNT(*) FROM traces GROUP BY status;"
 
 # Verificar wa_message_id vinculado
-sqlite3 data/wasap.db "SELECT id, wa_message_id FROM traces WHERE wa_message_id IS NOT NULL ORDER BY started_at DESC LIMIT 5;"
+sqlite3 data/localforge.db "SELECT id, wa_message_id FROM traces WHERE wa_message_id IS NOT NULL ORDER BY started_at DESC LIMIT 5;"
 ```
 
 ---
@@ -123,7 +123,7 @@ sqlite3 data/wasap.db "SELECT id, wa_message_id FROM traces WHERE wa_message_id 
 4. Revertir el bug
 
 **Si el TraceRecorder falla:**
-1. Desconectar/cerrar la DB (simular con: `mv data/wasap.db data/wasap.db.bak`)
+1. Desconectar/cerrar la DB (simular con: `mv data/localforge.db data/localforge.db.bak`)
 2. Enviar un mensaje
 3. Verificar que el usuario recibe respuesta (tracing es best-effort)
 4. Restaurar la DB

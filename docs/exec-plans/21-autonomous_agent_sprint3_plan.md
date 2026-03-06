@@ -37,7 +37,7 @@ Sprint 1 estableció la autonomía core (shell, loops, prompts). Sprint 2 añadi
 
 Actualmente `scheduler_tools.py` soporta reminders one-shot (`schedule_task`). F8 extiende esto con **cron jobs persistentes** que sobreviven reinicios del container.
 
-#### [MODIFY] [db.py](file:///Users/sebastiandavila/wasap/wasap-assistant/app/database/db.py)
+#### [MODIFY] [db.py](file:///Users/sebastiandavila/localforge/localforge-assistant/app/database/db.py)
 
 Agregar tabla `user_cron_jobs` al `SCHEMA`:
 
@@ -54,7 +54,7 @@ CREATE TABLE IF NOT EXISTS user_cron_jobs (
 CREATE INDEX IF NOT EXISTS idx_cron_phone ON user_cron_jobs(phone_number, active);
 ```
 
-#### [MODIFY] [repository.py](file:///Users/sebastiandavila/wasap/wasap-assistant/app/database/repository.py)
+#### [MODIFY] [repository.py](file:///Users/sebastiandavila/localforge/localforge-assistant/app/database/repository.py)
 
 Agregar métodos CRUD para `user_cron_jobs`:
 - `create_cron_job(phone_number, cron_expr, message, timezone) -> int`
@@ -62,7 +62,7 @@ Agregar métodos CRUD para `user_cron_jobs`:
 - `delete_cron_job(job_id, phone_number) -> bool`
 - `get_active_cron_jobs() -> list[dict]` — para restaurar al boot
 
-#### [MODIFY] [scheduler_tools.py](file:///Users/sebastiandavila/wasap/wasap-assistant/app/skills/tools/scheduler_tools.py)
+#### [MODIFY] [scheduler_tools.py](file:///Users/sebastiandavila/localforge/localforge-assistant/app/skills/tools/scheduler_tools.py)
 
 Agregar 3 nuevas tools:
 
@@ -81,14 +81,14 @@ Agregar 3 nuevas tools:
 - Remueve el job de APScheduler
 - Retorna confirmación
 
-#### [MODIFY] [main.py](file:///Users/sebastiandavila/wasap/wasap-assistant/app/main.py)
+#### [MODIFY] [main.py](file:///Users/sebastiandavila/localforge/localforge-assistant/app/main.py)
 
 Al inicio del lifespan, después de inicializar el scheduler:
 - Llamar a `repository.get_active_cron_jobs()` 
 - Para cada cron, registrarlo en APScheduler con `CronTrigger.from_crontab(cron_expr)`
 - Log: `"Restored N cron jobs from database"`
 
-#### [MODIFY] [router.py](file:///Users/sebastiandavila/wasap/wasap-assistant/app/skills/router.py)
+#### [MODIFY] [router.py](file:///Users/sebastiandavila/localforge/localforge-assistant/app/skills/router.py)
 
 Agregar `create_cron`, `list_crons`, `delete_cron` a la categoría `"time"` en `TOOL_CATEGORIES`.
 
@@ -98,7 +98,7 @@ Agregar `create_cron`, `list_crons`, `delete_cron` a la categoría `"time"` en `
 
 Actualmente `read_source_file` lee el archivo completo. Para archivos de 500+ líneas, esto satura el contexto del LLM innecesariamente. F9 agrega dos tools que permiten exploración quirúrgica.
 
-#### [MODIFY] [selfcode_tools.py](file:///Users/sebastiandavila/wasap/wasap-assistant/app/skills/tools/selfcode_tools.py)
+#### [MODIFY] [selfcode_tools.py](file:///Users/sebastiandavila/localforge/localforge-assistant/app/skills/tools/selfcode_tools.py)
 
 **`get_file_outline(path)`**
 - Usa `ast.parse()` para archivos `.py`
@@ -126,7 +126,7 @@ Actualmente `read_source_file` lee el archivo completo. Para archivos de 500+ l�
 
 **Impacto en prompt del agente:**
 
-#### [MODIFY] [loop.py](file:///Users/sebastiandavila/wasap/wasap-assistant/app/agent/loop.py)
+#### [MODIFY] [loop.py](file:///Users/sebastiandavila/localforge/localforge-assistant/app/agent/loop.py)
 
 Actualizar `_AGENT_SYSTEM_PROMPT` para incluir instrucción:
 ```
@@ -140,7 +140,7 @@ Actualizar `_AGENT_SYSTEM_PROMPT` para incluir instrucción:
 
 Permite al agente trabajar en múltiples codebases sin reconfigurar el container.
 
-#### [MODIFY] [config.py](file:///Users/sebastiandavila/wasap/wasap-assistant/app/config.py)
+#### [MODIFY] [config.py](file:///Users/sebastiandavila/localforge/localforge-assistant/app/config.py)
 
 Agregar:
 ```python
@@ -149,7 +149,7 @@ projects_root: str = ""  # e.g. "/home/user/projects"
 
 Si está vacío, el comportamiento es el actual (single project = raíz del repo).
 
-#### [NEW] [workspace_tools.py](file:///Users/sebastiandavila/wasap/wasap-assistant/app/skills/tools/workspace_tools.py)
+#### [NEW] [workspace_tools.py](file:///Users/sebastiandavila/localforge/localforge-assistant/app/skills/tools/workspace_tools.py)
 
 Tres tools para gestión de workspace:
 
@@ -169,22 +169,22 @@ Tres tools para gestión de workspace:
 **`get_workspace_info()`**
 - Retorna info del workspace activo: nombre, path, branch git, archivos totales, últimos commits
 
-#### [MODIFY] [selfcode_tools.py](file:///Users/sebastiandavila/wasap/wasap-assistant/app/skills/tools/selfcode_tools.py)
+#### [MODIFY] [selfcode_tools.py](file:///Users/sebastiandavila/localforge/localforge-assistant/app/skills/tools/selfcode_tools.py)
 
 - Extraer `_PROJECT_ROOT` a una variable mutable (actualmente es constante de módulo)
 - Exponer `set_project_root(path)` para que `workspace_tools` pueda cambiarla
 - Validar que el nuevo root siempre esté dentro de `projects_root` o sea el root original
 
-#### [MODIFY] [shell_tools.py](file:///Users/sebastiandavila/wasap/wasap-assistant/app/skills/tools/shell_tools.py)
+#### [MODIFY] [shell_tools.py](file:///Users/sebastiandavila/localforge/localforge-assistant/app/skills/tools/shell_tools.py)
 
 - Exponer `set_cwd(path)` para cambiar el directorio de trabajo del shell executor
 - Validar que el nuevo cwd siempre esté dentro de `projects_root`
 
-#### [MODIFY] [__init__.py](file:///Users/sebastiandavila/wasap/wasap-assistant/app/skills/tools/__init__.py)
+#### [MODIFY] [__init__.py](file:///Users/sebastiandavila/localforge/localforge-assistant/app/skills/tools/__init__.py)
 
 - Importar y registrar `workspace_tools.register(registry, settings)` en `register_builtin_tools()`
 
-#### [MODIFY] [router.py](file:///Users/sebastiandavila/wasap/wasap-assistant/app/skills/router.py)
+#### [MODIFY] [router.py](file:///Users/sebastiandavila/localforge/localforge-assistant/app/skills/router.py)
 
 Agregar categoría `"workspace"` a `TOOL_CATEGORIES`:
 ```python
@@ -260,7 +260,7 @@ pytest tests/ -v
 #### F10: Multi-Project
 1. **Listar**: "Qué proyectos tengo disponibles?"
    - Esperado: lista de directorios en `projects_root`
-2. **Cambiar**: "Cambiá al proyecto wasap-frontend"
+2. **Cambiar**: "Cambiá al proyecto localforge-frontend"
    - Esperado: confirmación, nuevo branch, conteo de archivos
 3. **Verificar**: "Listá los archivos del proyecto actual"
    - Esperado: archivos del nuevo proyecto, no del anterior

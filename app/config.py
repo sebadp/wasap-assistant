@@ -15,7 +15,7 @@ class Settings(BaseSettings):
     def parse_phone_numbers(cls, v: object) -> object:
         if isinstance(v, str):
             return [n.strip() for n in v.split(",") if n.strip()]
-        if isinstance(v, (int, float)):
+        if isinstance(v, int | float):
             return [str(int(v))]
         return v
 
@@ -34,7 +34,7 @@ class Settings(BaseSettings):
     conversation_max_messages: int = 20
 
     # Database
-    database_path: str = "data/wasap.db"
+    database_path: str = "data/localforge.db"
     summary_threshold: int = 40
     compaction_threshold: int = 20000
     history_verbatim_count: int = 8  # Last N messages verbatim; older ones replaced by summary
@@ -79,7 +79,9 @@ class Settings(BaseSettings):
     semantic_search_enabled: bool = True
     semantic_search_top_k: int = 10
     memory_file_watch_enabled: bool = True
-    memory_similarity_threshold: float = 1.0  # L2 distance threshold; 1.0 = accept all (tune with real data)
+    memory_similarity_threshold: float = (
+        1.0  # L2 distance threshold; 1.0 = accept all (tune with real data)
+    )
 
     # User profiles & onboarding (Phase 8)
     onboarding_enabled: bool = True

@@ -2,7 +2,7 @@
 
 ## Resumen
 
-WasAP injected de 6-7 system messages separados a qwen3:8b sin medir cuántos tokens consumía
+LocalForge injected de 6-7 system messages separados a qwen3:8b sin medir cuántos tokens consumía
 ni filtrar por relevancia. Context Engineering v2 implementa 7 optimizaciones que reducen el
 contexto al mínimo de alta señal por request.
 

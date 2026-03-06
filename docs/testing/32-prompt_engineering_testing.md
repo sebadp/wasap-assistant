@@ -10,7 +10,7 @@
 Al arrancar el container, buscar en los logs:
 
 ```bash
-docker compose logs -f wasap | head -60
+docker compose logs -f localforge | head -60
 ```
 
 Confirmar las siguientes líneas:
@@ -78,16 +78,16 @@ Confirmar las siguientes líneas:
 
 ```bash
 # Seeding al startup
-docker compose logs wasap | grep -i "seeded"
+docker compose logs localforge | grep -i "seeded"
 
 # Cache invalidation al aprobar prompt
-docker compose logs wasap | grep -i "prompt cache invalidated"
+docker compose logs localforge | grep -i "prompt cache invalidated"
 
 # Eval score al aprobar
-docker compose logs wasap | grep -i "activate_with_eval"
+docker compose logs localforge | grep -i "activate_with_eval"
 
 # Fallback al default cuando DB no tiene versión
-docker compose logs wasap | grep -i "prompt_manager"
+docker compose logs localforge | grep -i "prompt_manager"
 ```
 
 ---
@@ -96,17 +96,17 @@ docker compose logs wasap | grep -i "prompt_manager"
 
 ```bash
 # Ver todos los prompts registrados
-sqlite3 data/wasap.db "SELECT prompt_name, version, is_active, created_by FROM prompt_versions ORDER BY prompt_name, version;"
+sqlite3 data/localforge.db "SELECT prompt_name, version, is_active, created_by FROM prompt_versions ORDER BY prompt_name, version;"
 
 # Ver historial de un prompt específico
-sqlite3 data/wasap.db "SELECT version, is_active, created_by, approved_at FROM prompt_versions WHERE prompt_name='classifier' ORDER BY version;"
+sqlite3 data/localforge.db "SELECT version, is_active, created_by, approved_at FROM prompt_versions WHERE prompt_name='classifier' ORDER BY version;"
 
 # Verificar que hay exactamente 1 activo por prompt
-sqlite3 data/wasap.db "SELECT prompt_name, COUNT(*) as activos FROM prompt_versions WHERE is_active=1 GROUP BY prompt_name HAVING activos != 1;"
+sqlite3 data/localforge.db "SELECT prompt_name, COUNT(*) as activos FROM prompt_versions WHERE is_active=1 GROUP BY prompt_name HAVING activos != 1;"
 # → debe retornar vacío (0 rows)
 
 # Ver el contenido del prompt activo
-sqlite3 data/wasap.db "SELECT content FROM prompt_versions WHERE prompt_name='classifier' AND is_active=1;"
+sqlite3 data/localforge.db "SELECT content FROM prompt_versions WHERE prompt_name='classifier' AND is_active=1;"
 ```
 
 ---
@@ -119,10 +119,10 @@ El sistema usa fail-open: si `get_active_prompt()` no puede leer de DB, cae al d
 
 ```bash
 # Simular: renombrar temporalmente el archivo de DB
-mv data/wasap.db data/wasap.db.bak
+mv data/localforge.db data/localforge.db.bak
 # Enviar mensaje de WhatsApp → debe responder (usando defaults hardcodeados)
 # Restaurar
-mv data/wasap.db.bak data/wasap.db
+mv data/localforge.db.bak data/localforge.db
 ```
 
 **Escenario: Ollama no disponible al correr /approve-prompt**

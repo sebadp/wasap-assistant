@@ -6,7 +6,7 @@
 ---
 
 ## 1. Prerrequisitos
-- Contenedor de `wasap` activo junto con `ollama` y la red conectada.
+- Contenedor de `localforge` activo junto con `ollama` y la red conectada.
 - El servidor MCP de puppeteer debe estar disponible en `data/mcp_servers.json`. (O tener skills `fetch_*` locales en `skills/`).
 
 ## 2. Test Cases Manuales (WhatsApp)

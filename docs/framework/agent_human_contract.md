@@ -1,6 +1,6 @@
 # Framework: Contrato Agente-Humano para Repositorios
 
-> **Destilado de la experiencia real** construyendo [wasap-assistant](https://github.com/sebadp/wasap-assistant): 8 fases, 3 sprints agénticos, 30+ features implementadas con pair programming humano–AI.
+> **Destilado de la experiencia real** construyendo [localforge-assistant](https://github.com/sebadp/localforge-assistant): 8 fases, 3 sprints agénticos, 30+ features implementadas con pair programming humano–AI.
 
 ---
 
@@ -168,4 +168,4 @@ Cuando aplicás este framework a un repositorio nuevo (o existente), creá/verif
 ---
 
 *Framework v1.0 — Febrero 2026*
-*Destilado del proyecto wasap-assistant (sebadp/wasap-assistant)*
+*Destilado del proyecto localforge-assistant (sebadp/localforge-assistant)*

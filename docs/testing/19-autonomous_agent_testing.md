@@ -12,7 +12,7 @@
 grep AGENT_WRITE_ENABLED .env
 
 # Rebuild si cambiaste .env
-docker compose up -d --build wasap
+docker compose up -d --build localforge
 ```
 
 ---
@@ -34,7 +34,7 @@ docker compose up -d --build wasap
 
 **Verificar en logs**:
 ```bash
-docker compose logs wasap 2>&1 | grep "agent.shell"
+docker compose logs localforge 2>&1 | grep "agent.shell"
 # Debe mostrar: decision=allow, exit_code, duration_ms
 ```
 
@@ -51,7 +51,7 @@ docker compose logs wasap 2>&1 | grep "agent.shell"
 
 **Verificar en logs**:
 ```bash
-docker compose logs wasap 2>&1 | grep "decision.*deny"
+docker compose logs localforge 2>&1 | grep "decision.*deny"
 ```
 
 ### TC-3: Comando desconocido (HITL)
@@ -90,7 +90,7 @@ docker compose logs wasap 2>&1 | grep "decision.*deny"
 
 **Verificar en logs**:
 ```bash
-docker compose logs wasap 2>&1 | grep "agent.shell.timeout"
+docker compose logs localforge 2>&1 | grep "agent.shell.timeout"
 ```
 
 ### TC-6: Background process
@@ -122,7 +122,7 @@ docker compose logs wasap 2>&1 | grep "agent.shell.timeout"
 
 **Verificar en logs**:
 ```bash
-docker compose logs wasap 2>&1 | grep "agent.loop.detected"
+docker compose logs localforge 2>&1 | grep "agent.loop.detected"
 # Debe mostrar: detector=genericRepeat, count, action=warning|circuit_breaker
 ```
 
@@ -227,13 +227,13 @@ Forzar un loop: dar al agente una instrucción que causa lectura repetida del mi
 
 ```sql
 -- Últimos comandos ejecutados
-sqlite3 data/wasap.db "SELECT command, decision, exit_code, duration_ms, started_at FROM agent_command_log ORDER BY id DESC LIMIT 10;"
+sqlite3 data/localforge.db "SELECT command, decision, exit_code, duration_ms, started_at FROM agent_command_log ORDER BY id DESC LIMIT 10;"
 
 -- Comandos bloqueados
-sqlite3 data/wasap.db "SELECT command, decision FROM agent_command_log WHERE decision = 'deny';"
+sqlite3 data/localforge.db "SELECT command, decision FROM agent_command_log WHERE decision = 'deny';"
 
 -- Stats por sesión
-sqlite3 data/wasap.db "SELECT session_id, COUNT(*) as cmds, SUM(CASE WHEN exit_code=0 THEN 1 ELSE 0 END) as ok FROM agent_command_log GROUP BY session_id;"
+sqlite3 data/localforge.db "SELECT session_id, COUNT(*) as cmds, SUM(CASE WHEN exit_code=0 THEN 1 ELSE 0 END) as ok FROM agent_command_log GROUP BY session_id;"
 ```
 
 ---
@@ -242,16 +242,16 @@ sqlite3 data/wasap.db "SELECT session_id, COUNT(*) as cmds, SUM(CASE WHEN exit_c
 
 ```bash
 # Shell execution events
-docker compose logs wasap 2>&1 | grep "agent.shell"
+docker compose logs localforge 2>&1 | grep "agent.shell"
 
 # Loop detection events
-docker compose logs wasap 2>&1 | grep "agent.loop"
+docker compose logs localforge 2>&1 | grep "agent.loop"
 
 # Progress updates
-docker compose logs wasap 2>&1 | grep "agent.progress"
+docker compose logs localforge 2>&1 | grep "agent.progress"
 
 # Process GC events
-docker compose logs wasap 2>&1 | grep "agent.process.gc"
+docker compose logs localforge 2>&1 | grep "agent.process.gc"
 ```
 
 ---
@@ -352,16 +352,16 @@ Recordame todos los lunes a las 9am que revise los PRs pendientes
 
 **Verificar en DB**:
 ```sql
-sqlite3 data/wasap.db "SELECT * FROM user_cron_jobs WHERE active=1;"
+sqlite3 data/localforge.db "SELECT * FROM user_cron_jobs WHERE active=1;"
 ```
 
 ### TC-20: Persistencia tras restart
 
 1. Crear un cron
-2. Reiniciar el container: `docker compose restart wasap`
+2. Reiniciar el container: `docker compose restart localforge`
 3. Verificar en los logs al arrancar:
    ```bash
-   docker compose logs wasap 2>&1 | grep "Restored"
+   docker compose logs localforge 2>&1 | grep "Restored"
    # Debe mostrar: Restored N cron job(s) from database
    ```
 4. El cron debe seguir apareciendo en `list_crons`

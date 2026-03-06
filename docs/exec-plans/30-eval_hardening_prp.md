@@ -176,10 +176,10 @@ ruff check app/ scripts/run_eval.py tests/test_guardrails.py tests/test_eval_too
 python3.12 -m mypy app/
 
 # 4. Benchmark offline
-python scripts/run_eval.py --db data/wasap.db --ollama http://localhost:11434
+python scripts/run_eval.py --db data/localforge.db --ollama http://localhost:11434
 
 # 5. Verificar tags en dataset
-sqlite3 data/wasap.db "SELECT tag, count(*) FROM eval_dataset_tags GROUP BY tag ORDER BY count(*) DESC;"
+sqlite3 data/localforge.db "SELECT tag, count(*) FROM eval_dataset_tags GROUP BY tag ORDER BY count(*) DESC;"
 
 # 6. Verificar timeout configurable
 python3.12 -c "from app.config import Settings; s = Settings(...); print(s.guardrails_llm_timeout)"

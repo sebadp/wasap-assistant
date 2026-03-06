@@ -78,7 +78,7 @@ Métrica dice "correcto" aunque semánticamente distintos.
 
 **Antes:** No hay forma de correr eval sin el servidor completo levantado.
 
-**Después:** `python scripts/run_eval.py --db data/wasap.db --ollama http://localhost:11434`
+**Después:** `python scripts/run_eval.py --db data/localforge.db --ollama http://localhost:11434`
 → imprime tabla de resultados y exit code 0/1 según threshold de accuracy.
 
 ---

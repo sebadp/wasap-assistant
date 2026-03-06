@@ -1,4 +1,4 @@
-"""Context engineering package for wasap-assistant.
+"""Context engineering package for localforge-assistant.
 
 Provides:
 - ConversationContext: state object that flows through the message pipeline

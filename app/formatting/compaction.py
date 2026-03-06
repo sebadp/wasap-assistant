@@ -52,7 +52,7 @@ def _try_json_extraction(text: str, max_length: int) -> str | None:
     Returns a compact JSON string preserving exact identifiers, or None if
     the text is not parseable JSON or can't be meaningfully reduced.
 
-    This eliminates the hallucination risk (LLM replacing "wasap-assistant"
+    This eliminates the hallucination risk (LLM replacing "localforge-assistant"
     with "[repo-name]") for structured API responses.
     """
     try:

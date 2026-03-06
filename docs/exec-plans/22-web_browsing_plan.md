@@ -1,7 +1,7 @@
 # Plan: Leer URLs y Web Browsing (V2 - MCP Approach)
 
 ## Objetivo
-Permitir que el agente WasAP visite y extraiga el contenido de cualquier hipervínculo provisto por el usuario (ej. links de LinkedIn, documentación, webs interactivas). Basado en las mejores prácticas de **2026** para scraping vía agentes de IA, se descarta el approach de HTTP llano (tipo `requests` + `BeautifulSoup`) debido a:
+Permitir que el agente LocalForge visite y extraiga el contenido de cualquier hipervínculo provisto por el usuario (ej. links de LinkedIn, documentación, webs interactivas). Basado en las mejores prácticas de **2026** para scraping vía agentes de IA, se descarta el approach de HTTP llano (tipo `requests` + `BeautifulSoup`) debido a:
 1. Contenido renderizado dinámicamente vía Client-Side Routing (React/Vue).
 2. Protecciones anti-bot modernas.
 
@@ -40,8 +40,8 @@ En su lugar, se implementará el soporte a través del **Model Context Protocol 
    - Depende de terceros.
 
 ## Orden de implementación (Puppeteer Local)
-1. **Validación del entorno**: Asegurar que `node` y `npx` están disponibles en el contenedor/host de WasAP.
-2. **Integración**: Configurar `wasap` para que inicie el server MCP de Puppeteer (vía CLI config preexistente en la arquitectura MCP de WasAP).
+1. **Validación del entorno**: Asegurar que `node` y `npx` están disponibles en el contenedor/host de LocalForge.
+2. **Integración**: Configurar `localforge` para que inicie el server MCP de Puppeteer (vía CLI config preexistente en la arquitectura MCP de LocalForge).
 3. **Instrucciones de Skill**: Ajustar el prompt base o el `SKILL.md` de búsqueda / web para que el agente entienda que las URLs crudas en el chat deben pasarse a la tool `puppeteer_navigate`.
 
 ## Decisiones de diseño

@@ -1,4 +1,4 @@
-# WasAP - Guía de Setup y Testing
+# LocalForge - Guía de Setup y Testing
 
 ## Requisitos previos
 
@@ -45,7 +45,7 @@ Vas a necesitar:
 1. Ir a https://developers.facebook.com/apps
 2. Clickear **"Create App"**
 3. Seleccionar **"Other"** como caso de uso, luego **"Business"** como tipo
-4. Ponerle un nombre (ej: "WasAP") y clickear **"Create App"**
+4. Ponerle un nombre (ej: "LocalForge") y clickear **"Create App"**
 
 ### 2.2 Agregar WhatsApp
 
@@ -98,7 +98,7 @@ Vas a necesitar:
 ## Paso 3: Configurar .env
 
 ```bash
-cd wasap
+cd localforge
 cp .env.example .env
 ```
 
@@ -132,7 +132,7 @@ La aplicación incluye integración con **Langfuse** para monitoreo y trazabilid
 
 1. Al levantar los contenedores con Docker, Langfuse estará disponible en `http://localhost:3000`.
 2. Ingresá y creá una cuenta local (te pedirá nombre, email y contraseña).
-3. Creá un nuevo "Project" (ej. "WasAP").
+3. Creá un nuevo "Project" (ej. "LocalForge").
 4. En el menú de la izquierda, andá a **Settings** -> **API Keys**.
 5. Hacé clic en **"Create new API keys"**.
 6. Copiá la **Public Key** y la **Secret Key** y agregalas a tu archivo `.env`:
@@ -214,7 +214,7 @@ El stack incluye un servidor local de Langfuse para ver las trazas de ejecución
 1. Ingresá a `http://localhost:3000`
 2. Si es la primera vez, creá una cuenta local (los datos quedan en tu máquina).
 3. Entrá a Settings -> API Keys, generá un par nuevo y pegalos en tu `.env`.
-4. Reiniciá el asistente: `docker compose restart wasap`
+4. Reiniciá el asistente: `docker compose restart localforge`
 
 ---
 
@@ -249,7 +249,7 @@ Si todo está bien, Meta envía un GET a tu webhook, recibe el challenge de vuel
 ### Ver logs en tiempo real
 
 ```bash
-docker compose logs -f wasap
+docker compose logs -f localforge
 ```
 
 Deberías ver el flujo:
@@ -270,12 +270,12 @@ Una vez que el chat funciona, probá los comandos:
 
 ### Verificar persistencia
 
-1. Verificar que existe `data/wasap.db` con datos:
+1. Verificar que existe `data/localforge.db` con datos:
    ```bash
-   sqlite3 data/wasap.db "SELECT * FROM memories;"
+   sqlite3 data/localforge.db "SELECT * FROM memories;"
    ```
 2. Verificar que `data/MEMORY.md` refleja las memorias guardadas
-3. Reiniciar la app (`docker compose restart wasap`) y verificar que el historial y memorias persisten
+3. Reiniciar la app (`docker compose restart localforge`) y verificar que el historial y memorias persisten
 
 ### Troubleshooting
 
@@ -292,7 +292,7 @@ Una vez que el chat funciona, probá los comandos:
 | Error 401 Unauthorized | Access token expirado | Generar nuevo token en API Setup o usar token permanente (ver abajo) |
 | Error 400 "permission" | Token sin permisos correctos | Verificar que el System User tenga `whatsapp_business_messaging` |
 | Ollama 404 "model not found" | Modelo no descargado | `docker compose exec ollama ollama pull <modelo>` |
-| Docker build falla con "Temporary failure resolving" | DNS no funciona dentro de Docker (común en hosts IPv6-only) | Buildear con `docker build --network host -t wasap-wasap .` y luego `docker compose up -d` (ver abajo) |
+| Docker build falla con "Temporary failure resolving" | DNS no funciona dentro de Docker (común en hosts IPv6-only) | Buildear con `docker build --network host -t localforge-localforge .` y luego `docker compose up -d` (ver abajo) |
 
 ---
 
@@ -312,7 +312,7 @@ make test
 .venv/bin/python -m pytest tests/ -v
 
 # Desde el container Docker
-docker compose run --rm wasap python -m pytest tests/ -v
+docker compose run --rm localforge python -m pytest tests/ -v
 ```
 
 Los pre-commit hooks corren automáticamente en cada `git commit`:
@@ -332,7 +332,7 @@ El token temporal de Meta expira en 24hs. Para obtener uno permanente:
 3. Clickear en el System User > **Generate New Token**
 4. Seleccionar tu app y los permisos: `whatsapp_business_messaging`, `whatsapp_business_management`
 5. Copiar el token generado y reemplazar `WHATSAPP_ACCESS_TOKEN` en `.env`
-6. Reiniciar: `docker compose restart wasap`
+6. Reiniciar: `docker compose restart localforge`
 
 ---
 
@@ -349,27 +349,27 @@ docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d
 docker compose down
 
 # Ver logs de un servicio
-docker compose logs -f wasap
+docker compose logs -f localforge
 docker compose logs -f ollama
 docker compose logs -f ngrok
 
-# Reiniciar solo wasap (después de cambiar .env)
-docker compose restart wasap
+# Reiniciar solo localforge (después de cambiar .env)
+docker compose restart localforge
 
 # Cambiar modelo
 docker compose exec ollama ollama pull qwen3:8b
-# Luego cambiar OLLAMA_MODEL en .env y reiniciar wasap
+# Luego cambiar OLLAMA_MODEL en .env y reiniciar localforge
 
 # Listar modelos descargados
 docker compose exec ollama ollama list
 
 # Rebuild después de cambiar código
-docker compose up -d --build wasap
+docker compose up -d --build localforge
 
 # Si el build falla con "Temporary failure resolving" (problema DNS/IPv6):
-docker build --network host -t wasap-wasap .
+docker build --network host -t localforge-localforge .
 docker compose up -d
 # Con GPU:
-docker build --network host -t wasap-wasap .
+docker build --network host -t localforge-localforge .
 docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d
 ```

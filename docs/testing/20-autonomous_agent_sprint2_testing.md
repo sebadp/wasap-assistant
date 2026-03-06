@@ -17,7 +17,7 @@ pytest tests/test_agent.py -v
 
 1. **Preview básico**:
    ```
-   /agent Muéstrame un diff de cómo quedaría README.md si cambias "WasAP" por "WasApp"
+   /agent Muéstrame un diff de cómo quedaría README.md si cambias "LocalForge" por "WasApp"
    ```
    **Esperado**: El agente llama `preview_patch`, muestra diff formateado con `+`/`-`, NO modifica el archivo.
 
@@ -97,13 +97,13 @@ pytest tests/test_agent.py -v
 
 ```bash
 # Persistencia de sesión
-grep "agent.session.save" data/wasap.log
+grep "agent.session.save" data/localforge.log
 
 # Bootstrap files cargados
-grep "bootstrap" data/wasap.log
+grep "bootstrap" data/localforge.log
 
 # PR creation
-grep "git_create_pr" data/wasap.log
+grep "git_create_pr" data/localforge.log
 ```
 
 ---

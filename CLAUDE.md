@@ -1,4 +1,4 @@
-# WasAP — Convenciones del Proyecto
+# LocalForge — Convenciones del Proyecto
 
 > **Mapa del proyecto** → `AGENTS.md` (dónde está cada cosa, workflow, skills activos)
 > Este archivo documenta **convenciones de código y patrones arquitectónicos**.

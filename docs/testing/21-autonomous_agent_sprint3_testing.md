@@ -112,13 +112,13 @@ pytest tests/test_scheduler_tools.py -v
 
 ```bash
 # Cron job creado
-grep "create_cron" data/wasap.log
+grep "create_cron" data/localforge.log
 
 # Cron disparado
-grep "cron.*fired\|cron.*dispatched" data/wasap.log
+grep "cron.*fired\|cron.*dispatched" data/localforge.log
 
 # Workspace switch
-grep "switch_workspace\|set_project_root" data/wasap.log
+grep "switch_workspace\|set_project_root" data/localforge.log
 ```
 
 ---

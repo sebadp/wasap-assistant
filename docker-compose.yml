@@ -1,5 +1,5 @@
 services:
-  wasap:
+  localforge:
     build: .
     env_file: .env
     volumes:
@@ -29,7 +29,7 @@ services:
       - NGROK_AUTHTOKEN=${NGROK_AUTHTOKEN}
     network_mode: host
     depends_on:
-      - wasap
+      - localforge
     restart: unless-stopped
 
   langfuse-server:

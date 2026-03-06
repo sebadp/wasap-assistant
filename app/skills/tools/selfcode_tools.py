@@ -15,7 +15,7 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-# Resolve project root once at import time (wasap-assistant/)
+# Resolve project root once at import time (localforge-assistant/)
 _PROJECT_ROOT = Path(__file__).resolve().parents[3]
 
 _SENSITIVE = {
@@ -297,9 +297,9 @@ def register(
             if lines > 500:
                 return "Request too large. Max lines is 500."
 
-            log_path = _PROJECT_ROOT / "data" / "wasap.log"
+            log_path = _PROJECT_ROOT / "data" / "localforge.log"
             if not log_path.exists():
-                return "Log file not found at data/wasap.log"
+                return "Log file not found at data/localforge.log"
 
             try:
                 result = subprocess.run(
@@ -488,7 +488,7 @@ def register(
                             )
                             # Iterate direct class members only (not nested via ast.walk)
                             for child in node.body:
-                                if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                                if isinstance(child, ast.FunctionDef | ast.AsyncFunctionDef):
                                     cend = getattr(child, "end_lineno", child.lineno)
                                     args = [a.arg for a in child.args.args]
                                     items.append(
@@ -497,7 +497,7 @@ def register(
                                             f"    def {child.name}({', '.join(args)})  [L{child.lineno}-{cend}]",
                                         )
                                     )
-                        elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                        elif isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef):
                             # Top-level functions only (direct children of Module)
                             end = getattr(node, "end_lineno", node.lineno)
                             args = [a.arg for a in node.args.args]
@@ -677,7 +677,7 @@ def register(
 
     registry.register_tool(
         name="get_recent_logs",
-        description="Get the most recent lines from the application log file (data/wasap.log)",
+        description="Get the most recent lines from the application log file (data/localforge.log)",
         parameters={
             "type": "object",
             "properties": {

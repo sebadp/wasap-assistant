@@ -10,7 +10,7 @@
 Al arrancar el container, buscar en los logs:
 
 ```bash
-docker compose logs -f wasap | head -80
+docker compose logs -f localforge | head -80
 ```
 
 Confirmar las siguientes líneas:
@@ -20,7 +20,7 @@ Confirmar las siguientes líneas:
 Para verificar que la tabla nueva existe:
 
 ```bash
-sqlite3 data/wasap.db ".schema conversation_state"
+sqlite3 data/localforge.db ".schema conversation_state"
 # Debe mostrar: CREATE TABLE IF NOT EXISTS conversation_state (...)
 ```
 
@@ -41,7 +41,7 @@ El caso más importante. Reproducir el bug original:
 
 **Verificar en logs**:
 ```bash
-docker compose logs -f wasap 2>&1 | grep -E "sticky|fallback|categories"
+docker compose logs -f localforge 2>&1 | grep -E "sticky|fallback|categories"
 ```
 
 Debe verse:
@@ -56,7 +56,7 @@ Tool router: categories=['github'], selected N tools: [...]
 
 **Verificar en DB** (después del paso 1):
 ```bash
-sqlite3 data/wasap.db "
+sqlite3 data/localforge.db "
 SELECT c.phone_number, cs.sticky_categories, cs.updated_at
 FROM conversation_state cs
 JOIN conversations c ON c.id = cs.conversation_id
@@ -72,12 +72,12 @@ Debe mostrar `["github"]` para el número del usuario.
 | Paso | Acción | Resultado esperado |
 |------|--------|-------------------|
 | 1 | Guardar una memoria: `"Mi usuario de GitHub es sebadp"` (vía `/memory` o conversación normal) | La memoria queda en DB |
-| 2 | Pedir: `"Abrí un issue en wasap-assistant sobre el bug de fechas"` | El agente crea el issue usando `sebadp/wasap-assistant`, no un username inventado |
+| 2 | Pedir: `"Abrí un issue en localforge-assistant sobre el bug de fechas"` | El agente crea el issue usando `sebadp/localforge-assistant`, no un username inventado |
 | 3 | Pedir: `"Listá mis pull requests"` | El agente lista PRs bajo `sebadp`, no el nombre del owner de la instalación |
 
 **Verificar en logs**:
 ```bash
-docker compose logs -f wasap 2>&1 | grep "user_facts"
+docker compose logs -f localforge 2>&1 | grep "user_facts"
 ```
 
 Debe verse:
@@ -92,12 +92,12 @@ Injected user_facts into tool loop: ['github_username']
 
 | Paso | Acción | Resultado esperado |
 |------|--------|-------------------|
-| 1 | Pedir: `"Listar todos mis repositorios"` (si tiene >15 repos) | El agente lista repos **con nombres reales** como `wasap-assistant`, `portfolio`, etc. |
+| 1 | Pedir: `"Listar todos mis repositorios"` (si tiene >15 repos) | El agente lista repos **con nombres reales** como `localforge-assistant`, `portfolio`, etc. |
 | 2 | El usuario ve nombres reales, NO `[repo-name-1]`, `[repo-name-2]` | ✅ |
 
 **Verificar en logs**:
 ```bash
-docker compose logs -f wasap 2>&1 | grep -i "compact"
+docker compose logs -f localforge 2>&1 | grep -i "compact"
 ```
 
 Si el payload fue grande:
@@ -122,7 +122,7 @@ Este caso es difícil de observar directamente; se verifica por ausencia de prob
 
 **Verificar en logs** (iteraciones múltiples):
 ```bash
-docker compose logs -f wasap 2>&1 | grep "Tool iteration"
+docker compose logs -f localforge 2>&1 | grep "Tool iteration"
 ```
 
 Debe mostrar:
@@ -143,7 +143,7 @@ Tool iteration 2: LLM decided to reply directly: ...
 
 **Verificar cooldown activo**:
 ```bash
-docker compose logs -f wasap 2>&1 | grep "Self-correction"
+docker compose logs -f localforge 2>&1 | grep "Self-correction"
 ```
 
 Debe verse:
@@ -153,7 +153,7 @@ Self-correction skipped (cooldown active for: language_match)
 
 **Verificar en DB**:
 ```bash
-sqlite3 data/wasap.db "
+sqlite3 data/localforge.db "
 SELECT id, content, created_at
 FROM memories
 WHERE category = 'self_correction' AND active = 1
@@ -169,7 +169,7 @@ Requiere haber activado una sesión agéntica (`/agent <objetivo>`).
 
 | Paso | Acción / Verificación | Resultado esperado |
 |------|----------------------|-------------------|
-| 1 | Enviar: `/agent Abrí un issue en wasap-assistant con el título 'Test de context engineering'` | El agente inicia, crea un task plan y ejecuta en rounds |
+| 1 | Enviar: `/agent Abrí un issue en localforge-assistant con el título 'Test de context engineering'` | El agente inicia, crea un task plan y ejecuta en rounds |
 | 2 | Verificar logs: `grep "Agent session .* round"` | Debe mostrar rondas numeradas: `round 1/15`, `round 2/15`, etc. |
 | 3 | Verificar que el plan se re-inyecta | Logs: `grep "CURRENT TASK PLAN"` en debug |
 | 4 | Al completar, el mensaje de WhatsApp incluye el resumen del plan | `_Plan: N pasos completados, 0 pendientes._` |
@@ -177,7 +177,7 @@ Requiere haber activado una sesión agéntica (`/agent <objetivo>`).
 
 **Verificar rounds en logs**:
 ```bash
-docker compose logs -f wasap 2>&1 | grep -E "Agent session|round [0-9]+/"
+docker compose logs -f localforge 2>&1 | grep -E "Agent session|round [0-9]+/"
 ```
 
 Debe verse:
@@ -191,7 +191,7 @@ Agent session abc123 completed after 2 round(s)
 
 **Verificar clearing entre rounds**:
 ```bash
-docker compose logs -f wasap 2>&1 | grep "Previous result processed"
+docker compose logs -f localforge 2>&1 | grep "Previous result processed"
 ```
 
 ---
@@ -215,19 +215,19 @@ docker compose logs -f wasap 2>&1 | grep "Previous result processed"
 
 ```bash
 # Clasificación e intent routing
-docker compose logs -f wasap 2>&1 | grep -E "Tool router|sticky|fallback"
+docker compose logs -f localforge 2>&1 | grep -E "Tool router|sticky|fallback"
 
 # User facts
-docker compose logs -f wasap 2>&1 | grep -E "user_facts|Injected"
+docker compose logs -f localforge 2>&1 | grep -E "user_facts|Injected"
 
 # Compactación
-docker compose logs -f wasap 2>&1 | grep -i "compact"
+docker compose logs -f localforge 2>&1 | grep -i "compact"
 
 # Self-correction
-docker compose logs -f wasap 2>&1 | grep -i "self.correction\|guardrail"
+docker compose logs -f localforge 2>&1 | grep -i "self.correction\|guardrail"
 
 # Errores
-docker compose logs -f wasap 2>&1 | grep -i "error\|exception" | grep -v "DeprecationWarning"
+docker compose logs -f localforge 2>&1 | grep -i "error\|exception" | grep -v "DeprecationWarning"
 ```
 
 ---
@@ -236,28 +236,28 @@ docker compose logs -f wasap 2>&1 | grep -i "error\|exception" | grep -v "Deprec
 
 ```bash
 # Sticky categories actuales por conversación
-sqlite3 data/wasap.db "
+sqlite3 data/localforge.db "
 SELECT c.phone_number, cs.sticky_categories, cs.updated_at
 FROM conversation_state cs JOIN conversations c ON c.id = cs.conversation_id
 ORDER BY cs.updated_at DESC LIMIT 10;
 "
 
 # Self-corrections activas (no expiradas)
-sqlite3 data/wasap.db "
+sqlite3 data/localforge.db "
 SELECT id, content, created_at FROM memories
 WHERE category = 'self_correction' AND active = 1
 ORDER BY created_at DESC;
 "
 
 # Cuántas self-corrections se expirarían hoy (TTL 24h)
-sqlite3 data/wasap.db "
+sqlite3 data/localforge.db "
 SELECT COUNT(*) FROM memories
 WHERE category = 'self_correction' AND active = 1
 AND created_at < datetime('now', '-24 hours');
 "
 
 # Verificar que conversation_state tabla existe
-sqlite3 data/wasap.db ".tables" | grep conversation_state
+sqlite3 data/localforge.db ".tables" | grep conversation_state
 ```
 
 ---
@@ -267,7 +267,7 @@ sqlite3 data/wasap.db ".tables" | grep conversation_state
 El sistema está diseñado para degradar gracefully: si cualquier componente falla, el chat sigue funcionando sin context engineering.
 
 **Simular fallo de sticky categories**:
-1. Borrar datos de la tabla: `sqlite3 data/wasap.db "DELETE FROM conversation_state;"`
+1. Borrar datos de la tabla: `sqlite3 data/localforge.db "DELETE FROM conversation_state;"`
 2. Enviar un follow-up ambiguo
 3. Verificar que el sistema responde (quizás sin contexto, pero sin error)
 

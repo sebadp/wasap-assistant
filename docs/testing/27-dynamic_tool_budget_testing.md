@@ -38,7 +38,7 @@ Necesito crear una issue en GitHub para el proyecto "backend-api" que trackee el
 
 **Verificar en logs**:
 ```bash
-grep "Tool router: categories=\['projects', 'github'\]" data/wasap.log
+grep "Tool router: categories=\['projects', 'github'\]" data/localforge.log
 # Esperado: "selected 8 tools: ['create_project'..., 'list_issues'...]"
 # ANTES del fix solo veía tools de projects, nunca de github
 ```
@@ -55,7 +55,7 @@ grep "Tool router: categories=\['projects', 'github'\]" data/wasap.log
 
 **Verificar en logs**:
 ```bash
-grep "Tool router: categories\|selected.*tools" data/wasap.log | tail -5
+grep "Tool router: categories\|selected.*tools" data/localforge.log | tail -5
 ```
 
 **Esperado**: la lista de tools seleccionadas incluye `request_more_tools` como primera entrada.
@@ -85,7 +85,7 @@ Anotá en mis notas que tengo que revisar los PRs de hoy en el repo
 
 **Verificar en logs**:
 ```bash
-grep "request_more_tools" data/wasap.log
+grep "request_more_tools" data/localforge.log
 # Esperado: "request_more_tools: cats=['github'], added=7: ['list_issues', 'create_issue', ...]"
 ```
 
@@ -116,7 +116,7 @@ Difícil de forzar manualmente (el schema describe las categorías válidas). Si
 
 ```
 # Simular via logs: buscar intentos con categoría "foobar"
-grep "request_more_tools.*added=0" data/wasap.log
+grep "request_more_tools.*added=0" data/localforge.log
 ```
 
 **Esperado**: added=0, sin crash, loop continúa.
@@ -155,16 +155,16 @@ Dame la hora, el clima, busca noticias de tecnología, anota "reunión 3pm", y c
 
 ```bash
 # Budget distribution — buscar el nuevo patrón de selección
-grep "Tool router: categories" data/wasap.log | tail -10
+grep "Tool router: categories" data/localforge.log | tail -10
 
 # Expansiones dinámicas
-grep "request_more_tools" data/wasap.log
+grep "request_more_tools" data/localforge.log
 
 # Sin regresiones — verificar que no hay "selected 0 tools" para categorías válidas
-grep "selected 0 tools" data/wasap.log  # No debe aparecer para categorías conocidas
+grep "selected 0 tools" data/localforge.log  # No debe aparecer para categorías conocidas
 
 # Combinado: ver todas las selecciones recientes
-grep "Tool router\|request_more_tools" data/wasap.log | tail -20
+grep "Tool router\|request_more_tools" data/localforge.log | tail -20
 ```
 
 ---

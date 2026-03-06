@@ -73,7 +73,7 @@ SELECT tag, count(*) FROM eval_dataset_tags GROUP BY tag;
 ### 4. Benchmark offline
 
 ```bash
-python scripts/run_eval.py --db data/wasap.db --ollama http://localhost:11434 --limit 5
+python scripts/run_eval.py --db data/localforge.db --ollama http://localhost:11434 --limit 5
 ```
 
 Verificar:

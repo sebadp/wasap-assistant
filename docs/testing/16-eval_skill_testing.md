@@ -56,7 +56,7 @@ Usuario: "ese fallo fue error mío, márcalo como golden"
 → "Trace agregada como golden."
 
 Verificar en DB:
-sqlite3 data/wasap.db "SELECT * FROM eval_dataset ORDER BY created_at DESC LIMIT 1;"
+sqlite3 data/localforge.db "SELECT * FROM eval_dataset ORDER BY created_at DESC LIMIT 1;"
 ```
 
 ### propose_correction
@@ -87,19 +87,19 @@ Usuario: "corrí una evaluación rápida"
 # (el registry vive en memoria, no en DB — verificar via /review-skill)
 
 # Verificar trazas disponibles para diagnóstico
-sqlite3 data/wasap.db "
+sqlite3 data/localforge.db "
 SELECT id, phone_number, status, started_at
 FROM traces
 ORDER BY started_at DESC LIMIT 5;"
 
 # Verificar scores disponibles para get_eval_summary
-sqlite3 data/wasap.db "
+sqlite3 data/localforge.db "
 SELECT name, source, AVG(value), COUNT(*)
 FROM trace_scores
 GROUP BY name, source;"
 
 # Verificar fallos (traces con score < 0.5)
-sqlite3 data/wasap.db "
+sqlite3 data/localforge.db "
 SELECT DISTINCT t.id, MIN(ts.value) as min_score
 FROM traces t
 JOIN trace_scores ts ON ts.trace_id = t.id

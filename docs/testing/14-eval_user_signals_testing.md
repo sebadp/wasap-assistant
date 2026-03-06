@@ -8,7 +8,7 @@
 ## Verificar que la feature está activa
 
 ```bash
-docker compose logs -f wasap 2>&1 | grep -i "reaction\|feedback\|correction"
+docker compose logs -f localforge 2>&1 | grep -i "reaction\|feedback\|correction"
 ```
 
 ---
@@ -61,7 +61,7 @@ docker compose logs -f wasap 2>&1 | grep -i "reaction\|feedback\|correction"
 
 ```bash
 # Ver scores de usuario de las últimas 24h
-sqlite3 data/wasap.db "
+sqlite3 data/localforge.db "
 SELECT ts.name, ts.value, ts.source, ts.comment, t.started_at
 FROM trace_scores ts
 JOIN traces t ON t.id = ts.trace_id
@@ -70,7 +70,7 @@ WHERE ts.source IN ('user', 'human')
 ORDER BY t.started_at DESC;"
 
 # Ver reacciones registradas
-sqlite3 data/wasap.db "
+sqlite3 data/localforge.db "
 SELECT ts.comment AS emoji, ts.value, t.phone_number
 FROM trace_scores ts
 JOIN traces t ON t.id = ts.trace_id
@@ -78,21 +78,21 @@ WHERE ts.name = 'user_reaction'
 ORDER BY ts.created_at DESC LIMIT 10;"
 
 # Ver feedbacks humanos
-sqlite3 data/wasap.db "
+sqlite3 data/localforge.db "
 SELECT ts.value, ts.comment, ts.created_at
 FROM trace_scores ts
 WHERE ts.name IN ('human_feedback', 'human_rating')
 ORDER BY ts.created_at DESC LIMIT 10;"
 
 # Ver correcciones detectadas
-sqlite3 data/wasap.db "
+sqlite3 data/localforge.db "
 SELECT ts.value, ts.comment, ts.created_at
 FROM trace_scores ts
 WHERE ts.name = 'user_correction'
 ORDER BY ts.created_at DESC LIMIT 10;"
 
 # Distribución de scores por fuente
-sqlite3 data/wasap.db "
+sqlite3 data/localforge.db "
 SELECT source, name, AVG(value) as avg_score, COUNT(*) as n
 FROM trace_scores
 GROUP BY source, name
@@ -107,7 +107,7 @@ Para testear `_handle_reaction` sin un número real, usar el endpoint de webhook
 
 ```bash
 # Primero obtener un wa_message_id real de la DB
-sqlite3 data/wasap.db "SELECT wa_message_id FROM traces WHERE wa_message_id IS NOT NULL LIMIT 1;"
+sqlite3 data/localforge.db "SELECT wa_message_id FROM traces WHERE wa_message_id IS NOT NULL LIMIT 1;"
 
 # Enviar payload de reacción
 curl -X POST http://localhost:8000/webhook \

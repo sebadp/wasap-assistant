@@ -8,7 +8,7 @@
 ## Verificar que la feature está activa
 
 ```bash
-docker compose logs -f wasap | head -40
+docker compose logs -f localforge | head -40
 ```
 
 Confirmar que no hay errores de DB al startup.
@@ -31,10 +31,10 @@ Confirmar que no hay errores de DB al startup.
 
 ```bash
 # Comandos procesados
-docker compose logs -f wasap 2>&1 | grep -i "command"
+docker compose logs -f localforge 2>&1 | grep -i "command"
 
 # Summarization
-docker compose logs -f wasap 2>&1 | grep -i "summar\|compact\|flush"
+docker compose logs -f localforge 2>&1 | grep -i "summar\|compact\|flush"
 ```
 
 ---
@@ -43,16 +43,16 @@ docker compose logs -f wasap 2>&1 | grep -i "summar\|compact\|flush"
 
 ```bash
 # Memorias activas
-sqlite3 data/wasap.db "SELECT id, content, category FROM memories WHERE active=1 ORDER BY id DESC LIMIT 10;"
+sqlite3 data/localforge.db "SELECT id, content, category FROM memories WHERE active=1 ORDER BY id DESC LIMIT 10;"
 
 # Conversaciones
-sqlite3 data/wasap.db "SELECT id, phone_number, created_at FROM conversations;"
+sqlite3 data/localforge.db "SELECT id, phone_number, created_at FROM conversations;"
 
 # Mensajes recientes
-sqlite3 data/wasap.db "SELECT role, substr(content,1,50), created_at FROM messages ORDER BY id DESC LIMIT 10;"
+sqlite3 data/localforge.db "SELECT role, substr(content,1,50), created_at FROM messages ORDER BY id DESC LIMIT 10;"
 
 # Summaries
-sqlite3 data/wasap.db "SELECT conversation_id, substr(content,1,80), created_at FROM summaries ORDER BY id DESC LIMIT 5;"
+sqlite3 data/localforge.db "SELECT conversation_id, substr(content,1,80), created_at FROM summaries ORDER BY id DESC LIMIT 5;"
 ```
 
 ---

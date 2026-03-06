@@ -1,10 +1,10 @@
 # Plan de Implementación: Mejoras de Observabilidad y Langfuse
 
 ## Objetivo
-Mejorar la visibilidad interna del sistema WasAP permitiendo logs con nivel `DEBUG` detallados, e integrando **Langfuse** para la visualización profunda de las trazas jerárquicas (spans, generaciones LLM, guardrails, policy engine).
+Mejorar la visibilidad interna del sistema LocalForge permitiendo logs con nivel `DEBUG` detallados, e integrando **Langfuse** para la visualización profunda de las trazas jerárquicas (spans, generaciones LLM, guardrails, policy engine).
 
 ## Contexto Actual
-Actualmente, WasAP recolecta trazas usando `contextvars` y un `TraceRecorder` que guarda datos serializados en SQLite (`data/wasap.db`). El logging está configurado vía `app/logging_config.py` y obedece a `LOG_LEVEL` en el `.env`, pero no tenemos una UI dedicada para analizar las métricas.
+Actualmente, LocalForge recolecta trazas usando `contextvars` y un `TraceRecorder` que guarda datos serializados en SQLite (`data/localforge.db`). El logging está configurado vía `app/logging_config.py` y obedece a `LOG_LEVEL` en el `.env`, pero no tenemos una UI dedicada para analizar las métricas.
 
 
 ---

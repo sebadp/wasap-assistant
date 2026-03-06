@@ -2,7 +2,7 @@
 
 ## 1. Objetivo y Contexto
 
-WasAP usa qwen3:8b (32K context window) como LLM principal. El contexto se construye
+LocalForge usa qwen3:8b (32K context window) como LLM principal. El contexto se construye
 inyectando múltiples bloques (system prompt, perfil, memorias, notas, daily logs,
 capabilities, summary, historial de 20 mensajes) sin medir cuántos tokens consume ni
 cuánto de eso es realmente relevante para el mensaje actual.

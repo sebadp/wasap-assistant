@@ -1,6 +1,6 @@
 # Plan de Implementación — Arquitectura de Evaluación y Mejora Continua
 
-> Documento técnico que baja los 6 pilares conceptuales a cambios concretos en el codebase de WasAP.
+> Documento técnico que baja los 6 pilares conceptuales a cambios concretos en el codebase de LocalForge.
 >
 > **Revisión 2** — Corregido contra el codebase real. Incluye errores detectados en la v1,
 > prerequisitos faltantes, y detalles de integración verificados contra el código fuente.
@@ -752,7 +752,7 @@ async def evaluate_language_match(input_text: str, output_text: str,
 
 #### 3.2.3 Pipeline de evaluación simplificado
 
-Los tests de eval necesitan ejecutar el pipeline de WasAP **sin WhatsApp**. Esto requiere
+Los tests de eval necesitan ejecutar el pipeline de LocalForge **sin WhatsApp**. Esto requiere
 un helper que construya el contexto mínimo:
 
 ```python

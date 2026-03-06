@@ -5,7 +5,7 @@ Usage:
     python scripts/run_eval.py [options]
 
 Options:
-    --db PATH           Path to SQLite database (default: data/wasap.db)
+    --db PATH           Path to SQLite database (default: data/localforge.db)
     --ollama URL        Ollama base URL (default: http://localhost:11434)
     --model MODEL       Ollama model (default: qwen3:8b)
     --entry-type TYPE   Filter by entry type: correction | golden | failure | all (default: all)
@@ -160,10 +160,10 @@ async def _run_eval(
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Offline LLM-as-judge eval benchmark for WasAP.",
+        description="Offline LLM-as-judge eval benchmark for LocalForge.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
-    parser.add_argument("--db", default="data/wasap.db", help="Path to SQLite database")
+    parser.add_argument("--db", default="data/localforge.db", help="Path to SQLite database")
     parser.add_argument("--ollama", default="http://localhost:11434", help="Ollama base URL")
     parser.add_argument("--model", default="qwen3:8b", help="Ollama model name")
     parser.add_argument(

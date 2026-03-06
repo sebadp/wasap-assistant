@@ -1,4 +1,4 @@
-# WasAP — AGENTS.md: Mapa del Proyecto
+# LocalForge — AGENTS.md: Mapa del Proyecto
 
 > **Este archivo es el índice de navegación del proyecto, para agentes y humanos.**
 > No contiene implementación: contiene dónde encontrar cada cosa, cómo trabajar, y qué crear al terminar una feature.

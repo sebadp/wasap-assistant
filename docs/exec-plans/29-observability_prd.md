@@ -1,7 +1,7 @@
 
 ## 1. Objetivo y Contexto
 
-WasAP tiene un sistema de trazabilidad funcional (SQLite + Langfuse dual-backend) para el flujo
+LocalForge tiene un sistema de trazabilidad funcional (SQLite + Langfuse dual-backend) para el flujo
 normal de mensajes, pero el flujo agéntico (planner-orchestrator) es completamente invisible:
 no genera spans, no captura pasos intermedios, y no se correlaciona con traces. Además, la
 llamada LLM principal no tiene span de generación, los tokens de Ollama se descartan, y los

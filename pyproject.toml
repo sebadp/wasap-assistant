@@ -1,5 +1,5 @@
 [project]
-name = "wasap"
+name = "localforge"
 version = "0.1.0"
 description = "Personal WhatsApp assistant powered by a local LLM (Ollama)"
 requires-python = ">=3.11"

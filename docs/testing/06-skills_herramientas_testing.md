@@ -33,13 +33,13 @@
 
 ```bash
 # Clasificación de intent
-docker compose logs -f wasap 2>&1 | grep -i "Tool router\|categories"
+docker compose logs -f localforge 2>&1 | grep -i "Tool router\|categories"
 
 # Tool calls
-docker compose logs -f wasap 2>&1 | grep -i "Tool iteration\|tool call\|_run_tool"
+docker compose logs -f localforge 2>&1 | grep -i "Tool iteration\|tool call\|_run_tool"
 
 # MCP
-docker compose logs -f wasap 2>&1 | grep -i "mcp\|server"
+docker compose logs -f localforge 2>&1 | grep -i "mcp\|server"
 ```
 
 ---

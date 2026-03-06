@@ -30,7 +30,7 @@
 
 ## Objetivo
 
-Convertir el agente WasAP en un **programador autónomo** controlable desde WhatsApp. El usuario describe una tarea ("arreglá el bug de login", "agregá dark mode") y el agente:
+Convertir el agente LocalForge en un **programador autónomo** controlable desde WhatsApp. El usuario describe una tarea ("arreglá el bug de login", "agregá dark mode") y el agente:
 1. Entiende el codebase (lee, busca, lista)
 2. Planifica (task plan con steps concretos)
 3. Ejecuta (edita archivos, corre tests, fixea errores)
@@ -45,7 +45,7 @@ Convertir el agente WasAP en un **programador autónomo** controlable desde What
 
 > La pieza #1 que falta. Sin esto el agente no puede correr tests, linters, ni validar sus cambios.
 
-#### [NEW] [shell_tools.py](file:///Users/sebastiandavila/wasap/wasap-assistant/app/skills/tools/shell_tools.py)
+#### [NEW] [shell_tools.py](file:///Users/sebastiandavila/localforge/localforge-assistant/app/skills/tools/shell_tools.py)
 
 Dos tools:
 
@@ -85,15 +85,15 @@ Seguridad:
 - Bloquea: `rm -rf`, `sudo`, pipes a archivos sensibles
 - Todos corren en `_PROJECT_ROOT` como cwd
 
-#### [MODIFY] [__init__.py](file:///Users/sebastiandavila/wasap/wasap-assistant/app/skills/tools/__init__.py)
+#### [MODIFY] [__init__.py](file:///Users/sebastiandavila/localforge/localforge-assistant/app/skills/tools/__init__.py)
 
 - Importar y llamar `register_shell(registry, settings)` en `register_builtin_tools()`
 
-#### [MODIFY] [config.py](file:///Users/sebastiandavila/wasap/wasap-assistant/app/config.py)
+#### [MODIFY] [config.py](file:///Users/sebastiandavila/localforge/localforge-assistant/app/config.py)
 
 - Agregar `agent_shell_allowlist: str = "pytest,ruff,mypy,make,npm,pip,git,cat,head,tail,wc,ls,find,grep"`
 
-#### [MODIFY] [router.py](file:///Users/sebastiandavila/wasap/wasap-assistant/app/skills/router.py)
+#### [MODIFY] [router.py](file:///Users/sebastiandavila/localforge/localforge-assistant/app/skills/router.py)
 
 - Agregar categoría `"shell"` a `TOOL_CATEGORIES` con keywords: `run, execute, command, test, lint, build, install`
 
@@ -103,7 +103,7 @@ Seguridad:
 
 > Previene que el agente gaste sus 15 rounds repitiendo la misma acción sin progreso.
 
-#### [MODIFY] [loop.py](file:///Users/sebastiandavila/wasap/wasap-assistant/app/agent/loop.py)
+#### [MODIFY] [loop.py](file:///Users/sebastiandavila/localforge/localforge-assistant/app/agent/loop.py)
 
 Nueva función `_check_loop_detection(tool_history)`:
 - Trackea últimos 20 tool calls como `(tool_name, params_hash)`
@@ -126,7 +126,7 @@ _LOOP_HISTORY_SIZE = 20
 
 > El agente necesita instrucciones especializadas para programar (vs. chatear) y el usuario necesita saber qué está pasando.
 
-#### [MODIFY] [loop.py](file:///Users/sebastiandavila/wasap/wasap-assistant/app/agent/loop.py)
+#### [MODIFY] [loop.py](file:///Users/sebastiandavila/localforge/localforge-assistant/app/agent/loop.py)
 
 **Coding prompt**: reemplazar `_AGENT_SYSTEM_PROMPT` con versión coding-aware:
 ```
@@ -169,7 +169,7 @@ if wa_client and session.task_plan:
 
 ### F4: Diff Preview
 
-#### [MODIFY] [selfcode_tools.py](file:///Users/sebastiandavila/wasap/wasap-assistant/app/skills/tools/selfcode_tools.py)
+#### [MODIFY] [selfcode_tools.py](file:///Users/sebastiandavila/localforge/localforge-assistant/app/skills/tools/selfcode_tools.py)
 
 Nuevo tool `preview_patch(path, search, replace)`:
 - Genera un diff formateado (unified diff format)
@@ -179,34 +179,34 @@ Nuevo tool `preview_patch(path, search, replace)`:
 
 ### F5: PR Creation
 
-#### [MODIFY] [git_tools.py](file:///Users/sebastiandavila/wasap/wasap-assistant/app/skills/tools/git_tools.py)
+#### [MODIFY] [git_tools.py](file:///Users/sebastiandavila/localforge/localforge-assistant/app/skills/tools/git_tools.py)
 
 Nuevo tool `git_create_pr(title, body)`:
 - Usa GitHub API (`POST /repos/{owner}/{repo}/pulls`)
 - Requiere `GITHUB_TOKEN` en config
 - Retorna URL del PR creado
 
-#### [MODIFY] [config.py](file:///Users/sebastiandavila/wasap/wasap-assistant/app/config.py)
+#### [MODIFY] [config.py](file:///Users/sebastiandavila/localforge/localforge-assistant/app/config.py)
 
 - Agregar `github_token: str = ""` y `github_repo: str = ""`
 
 ### F6: Session Persistence (JSONL)
 
-#### [NEW] [persistence.py](file:///Users/sebastiandavila/wasap/wasap-assistant/app/agent/persistence.py)
+#### [NEW] [persistence.py](file:///Users/sebastiandavila/localforge/localforge-assistant/app/agent/persistence.py)
 
 - `save_round(session_id, round_data)` → append a `data/agent_sessions/<session_id>.jsonl`
 - `load_session(session_id)` → leer y reconstruir estado
 - `list_sessions(phone_number)` → listar sesiones de un usuario
 - Cada línea JSONL: `{"round": N, "tool_calls": [...], "reply": "...", "task_plan": "..."}`
 
-#### [MODIFY] [loop.py](file:///Users/sebastiandavila/wasap/wasap-assistant/app/agent/loop.py)
+#### [MODIFY] [loop.py](file:///Users/sebastiandavila/localforge/localforge-assistant/app/agent/loop.py)
 
 - Después de cada round, `save_round(session.session_id, round_data)`
 - Nuevo comando `/agent-resume` para retomar la última sesión
 
 ### F7: Bootstrap Files
 
-#### [MODIFY] [loop.py](file:///Users/sebastiandavila/wasap/wasap-assistant/app/agent/loop.py)
+#### [MODIFY] [loop.py](file:///Users/sebastiandavila/localforge/localforge-assistant/app/agent/loop.py)
 
 - Al inicio de `run_agent_session`, cargar archivos opcionales:
   - `data/workspace/SOUL.md` → prepend como system message (personalidad)
@@ -220,30 +220,30 @@ Nuevo tool `git_create_pr(title, body)`:
 
 ### F8: User-Defined Cron Jobs
 
-#### [MODIFY] [scheduler_tools.py](file:///Users/sebastiandavila/wasap/wasap-assistant/app/skills/tools/scheduler_tools.py)
+#### [MODIFY] [scheduler_tools.py](file:///Users/sebastiandavila/localforge/localforge-assistant/app/skills/tools/scheduler_tools.py)
 
 - `create_cron(schedule, message, phone_number)` → registra en APScheduler + tabla `user_cron_jobs`
 - `list_crons()` → lista crons del usuario
 - `delete_cron(id)` → elimina un cron
 
-#### [MODIFY] [db.py](file:///Users/sebastiandavila/wasap/wasap-assistant/app/database/db.py)
+#### [MODIFY] [db.py](file:///Users/sebastiandavila/localforge/localforge-assistant/app/database/db.py)
 
 - Tabla `user_cron_jobs`: `id, phone_number, schedule, message, created_at, active`
 
 ### F9: Intelligent Context Loading
 
-#### [MODIFY] [selfcode_tools.py](file:///Users/sebastiandavila/wasap/wasap-assistant/app/skills/tools/selfcode_tools.py)
+#### [MODIFY] [selfcode_tools.py](file:///Users/sebastiandavila/localforge/localforge-assistant/app/skills/tools/selfcode_tools.py)
 
 - `get_file_outline(path)` → extrae funciones/clases con líneas (AST-based)
 - `read_lines(path, start, end)` → lee un rango específico de un archivo
 
 ### F10: Multi-Project Workspace
 
-#### [MODIFY] [config.py](file:///Users/sebastiandavila/wasap/wasap-assistant/app/config.py)
+#### [MODIFY] [config.py](file:///Users/sebastiandavila/localforge/localforge-assistant/app/config.py)
 
 - `projects_root: str = ""` — directorio base para proyectos
 
-#### [NEW] [workspace_tools.py](file:///Users/sebastiandavila/wasap/wasap-assistant/app/skills/tools/workspace_tools.py)
+#### [NEW] [workspace_tools.py](file:///Users/sebastiandavila/localforge/localforge-assistant/app/skills/tools/workspace_tools.py)
 
 - `switch_project(name)` → cambia `_PROJECT_ROOT` dinámicamente
 - `list_projects()` → lista directorios en `projects_root`
@@ -505,13 +505,13 @@ No necesitamos un sistema de alertas externo — aprovechamos el logging JSON + 
 
 ```bash
 # Alertar si hay comandos denegados (posible prompt injection)
-docker compose logs -f wasap 2>&1 | grep '"decision": "deny"'
+docker compose logs -f localforge 2>&1 | grep '"decision": "deny"'
 
 # Alertar si hay circuit breakers (agente atascado)
-docker compose logs -f wasap 2>&1 | grep '"action": "circuit_breaker"'
+docker compose logs -f localforge 2>&1 | grep '"action": "circuit_breaker"'
 
 # Alertar si hay procesos zombie (>30 min)
-docker compose logs -f wasap 2>&1 | grep 'agent.process.gc'
+docker compose logs -f localforge 2>&1 | grep 'agent.process.gc'
 ```
 
 ---
@@ -611,10 +611,10 @@ make check
 6. **Process limit**: Lanzar 6 procesos background → 6to rechazado
 
 ### Observability checks
-1. Verificar en logs: `grep "agent.shell.execute" data/wasap.log`
-2. Verificar audit trail: `sqlite3 data/wasap.db "SELECT * FROM agent_command_log ORDER BY id DESC LIMIT 5;"`
-3. Verificar tracing spans: `sqlite3 data/wasap.db "SELECT name, kind FROM trace_spans WHERE name LIKE 'shell:%' ORDER BY id DESC LIMIT 5;"`
-4. Verificar loop detection: enviar tarea ambigua y verificar `grep "agent.loop.detected" data/wasap.log`
+1. Verificar en logs: `grep "agent.shell.execute" data/localforge.log`
+2. Verificar audit trail: `sqlite3 data/localforge.db "SELECT * FROM agent_command_log ORDER BY id DESC LIMIT 5;"`
+3. Verificar tracing spans: `sqlite3 data/localforge.db "SELECT name, kind FROM trace_spans WHERE name LIKE 'shell:%' ORDER BY id DESC LIMIT 5;"`
+4. Verificar loop detection: enviar tarea ambigua y verificar `grep "agent.loop.detected" data/localforge.log`
 
 ### Manual (WhatsApp)
 1. `/agent Corré los tests y arreglá los que fallen`

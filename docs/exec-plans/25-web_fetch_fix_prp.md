@@ -7,7 +7,7 @@ This plan outlines the execution steps for resolving the issue where the agent f
   1. The semantic intent classifier (`app.skills.router`) struggled to categorize single URLs into the `fetch` category reliably.
   2. The LLM preemptively refused to use tools for common domains.
   3. **New finding**: The `mcp-server-fetch` has a hardcoded default `max_length=5000`. When fetching full HTML, 5000 characters is mostly `<head>` boilerplate.
-  4. **Latencies**: `wasap-assistant` summarization (`compaction.py`) kicks in at 4000 chars. Processing 5000 chars of garbage HTML took the local LLM ~2 minutes just to summarize nothing.
+  4. **Latencies**: `localforge-assistant` summarization (`compaction.py`) kicks in at 4000 chars. Processing 5000 chars of garbage HTML took the local LLM ~2 minutes just to summarize nothing.
   5. **Environment Overrides**: The `docker-compose.yml` and `.env` files hardcoded `SYSTEM_PROMPT`, causing the Docker container to silently ignore all prompt-engineering fixes made in `app/config.py`.
   
 - **Design Decisions**:

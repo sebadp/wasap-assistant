@@ -2,7 +2,7 @@
 
 ## 1. Objetivo y Contexto
 
-El sistema de selección de tools de WasAP tiene un bug crítico de producción: cuando el
+El sistema de selección de tools de LocalForge tiene un bug crítico de producción: cuando el
 pre-clasificador de intención elige múltiples categorías, `select_tools()` llena el budget
 de 8 tools con la primera categoría sin distribuir el cupo entre las demás. Resultado
 observado en logs:
@@ -53,7 +53,7 @@ de que qwen3:8b elija la tool equivocada (accuracy degrada después de ~30 tools
 
 ### ¿Por qué no Tool-RAG embedding-based ahora?
 
-WasAP tiene la infraestructura (nomic-embed-text + sqlite-vec), pero con ~50 tools actuales el
+LocalForge tiene la infraestructura (nomic-embed-text + sqlite-vec), pero con ~50 tools actuales el
 beneficio marginal no justifica la complejidad. `request_more_tools` es más simple, funciona con
 qwen3:8b, y no requiere indexación. Tool-RAG queda documentado para cuando tools > 50.
 
@@ -61,7 +61,7 @@ qwen3:8b, y no requiere indexación. Tool-RAG queda documentado para cuando tool
 
 Este patrón es el que Anthropic implementó como `tool_search_tool` en la API (Sonnet 4.0+, Feb 2026)
 y el que describe el paper ITR (arxiv:2602.17046): 95% reducción de contexto, 32% mejora de accuracy.
-WasAP implementa una versión simplificada (por categorías, no embedding search) adecuada para
+LocalForge implementa una versión simplificada (por categorías, no embedding search) adecuada para
 qwen3:8b local.
 
 ## 5. Restricciones
@@ -80,7 +80,7 @@ qwen3:8b local.
 **Concepto:** Embeder todas las tool descriptions al registrarlas. En cada request, embeder el
 user message → cosine search en sqlite-vec → top-K tools directamente, sin categorías.
 
-**Por qué WasAP está bien posicionado:**
+**Por qué LocalForge está bien posicionado:**
 - `nomic-embed-text` ya corre en Ollama
 - `sqlite-vec` ya disponible en `app/database/db.py`
 - `embed_note()` y `embed_memory()` en `app/embeddings/indexer.py` son el patrón a replicar

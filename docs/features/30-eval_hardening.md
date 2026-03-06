@@ -2,7 +2,7 @@
 
 ## Problema que resuelve
 
-El stack de eval de WasAP existía pero tenía 5 gaps que lo hacían ineficaz:
+El stack de eval de LocalForge existía pero tenía 5 gaps que lo hacían ineficaz:
 1. `language_match` remediation débil — hint en inglés que qwen3 podía ignorar
 2. LLM judges inutilizables — timeout de 0.5s (siempre timeout con qwen3:8b local)
 3. `run_quick_eval` medía word overlap (métrica semánticamente inválida)
@@ -100,7 +100,7 @@ WHERE t.tag = 'guardrail:language_match';
 **Archivo:** `scripts/run_eval.py`
 
 ```bash
-python scripts/run_eval.py [--db data/wasap.db] [--ollama http://localhost:11434]
+python scripts/run_eval.py [--db data/localforge.db] [--ollama http://localhost:11434]
                            [--model qwen3:8b] [--entry-type all] [--limit 20]
                            [--threshold 0.7]
 ```

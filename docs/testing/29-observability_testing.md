@@ -10,7 +10,7 @@
 Al arrancar el container, buscar en los logs:
 
 ```bash
-docker compose logs -f wasap | head -60
+docker compose logs -f localforge | head -60
 ```
 
 Con Langfuse configurado, confirmar:
@@ -88,13 +88,13 @@ Tests incluidos:
 
 ```bash
 # Verificar que TraceRecorder se inicializa correctamente
-docker compose logs wasap 2>&1 | grep -i "langfuse"
+docker compose logs localforge 2>&1 | grep -i "langfuse"
 
 # Verificar spans de workers
-docker compose logs -f wasap 2>&1 | grep "Worker \["
+docker compose logs -f localforge 2>&1 | grep "Worker \["
 
 # Errores de tracing (best-effort, no deben romper el flujo)
-docker compose logs wasap 2>&1 | grep "TraceRecorder"
+docker compose logs localforge 2>&1 | grep "TraceRecorder"
 ```
 
 ---
@@ -103,16 +103,16 @@ docker compose logs wasap 2>&1 | grep "TraceRecorder"
 
 ```bash
 # Ver traces recientes
-sqlite3 data/wasap.db "SELECT id, phone_number, message_type, status, created_at FROM traces ORDER BY created_at DESC LIMIT 5;"
+sqlite3 data/localforge.db "SELECT id, phone_number, message_type, status, created_at FROM traces ORDER BY created_at DESC LIMIT 5;"
 
 # Ver spans de un trace específico
-sqlite3 data/wasap.db "SELECT name, kind, status, latency_ms FROM trace_spans WHERE trace_id = '<trace_id>' ORDER BY created_at;"
+sqlite3 data/localforge.db "SELECT name, kind, status, latency_ms FROM trace_spans WHERE trace_id = '<trace_id>' ORDER BY created_at;"
 
 # Verificar que hay spans de tipo 'generation'
-sqlite3 data/wasap.db "SELECT name, kind, COUNT(*) FROM trace_spans GROUP BY name, kind ORDER BY COUNT(*) DESC LIMIT 20;"
+sqlite3 data/localforge.db "SELECT name, kind, COUNT(*) FROM trace_spans GROUP BY name, kind ORDER BY COUNT(*) DESC LIMIT 20;"
 
 # Verificar metadata de tokens en spans
-sqlite3 data/wasap.db "SELECT name, metadata FROM trace_spans WHERE name LIKE 'llm:%' LIMIT 5;"
+sqlite3 data/localforge.db "SELECT name, metadata FROM trace_spans WHERE name LIKE 'llm:%' LIMIT 5;"
 ```
 
 ---
@@ -143,7 +143,7 @@ sqlite3 data/wasap.db "SELECT name, metadata FROM trace_spans WHERE name LIKE 'l
 | Spans aparecen como lista plana (no árbol) en Langfuse | `parent_span_id` no propagado | Verificar que `execute_tool_loop` recibe y usa `parent_span_id` |
 | Tokens siempre `None` en spans | Ollama no devuelve `eval_count` | Verificar versión de Ollama — v0.1.x+ incluye métricas. Verificar que el modelo no hace streaming |
 | "Failed to initialize Langfuse client" en startup | Keys incorrectas o host inalcanzable | Verificar keys en `.env` y conectividad a `LANGFUSE_HOST` |
-| `TraceRecorder.finish_trace failed` en logs DEBUG | Error al guardar en SQLite | Verificar que `data/wasap.db` existe y tiene permisos correctos |
+| `TraceRecorder.finish_trace failed` en logs DEBUG | Error al guardar en SQLite | Verificar que `data/localforge.db` existe y tiene permisos correctos |
 | Sesiones agénticas sin trace | `recorder=None` pasado a `run_agent_session` | Verificar que `CommandContext.trace_recorder` se setea en `process_message` |
 
 ---

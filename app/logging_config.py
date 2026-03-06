@@ -8,7 +8,7 @@ from pythonjsonlogger.json import JsonFormatter
 
 
 def configure_logging(
-    level: str = "INFO", json_format: bool = True, log_file: str = "data/wasap.log"
+    level: str = "INFO", json_format: bool = True, log_file: str = "data/localforge.log"
 ) -> None:
     root = logging.getLogger()
     root.setLevel(level.upper())

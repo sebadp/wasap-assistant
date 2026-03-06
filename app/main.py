@@ -284,6 +284,6 @@ async def lifespan(app: FastAPI):
     await http_client.aclose()
 
 
-app = FastAPI(title="WasAP", lifespan=lifespan)
+app = FastAPI(title="LocalForge", lifespan=lifespan)
 app.include_router(health_router)
 app.include_router(webhook_router)

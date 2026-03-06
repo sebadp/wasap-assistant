@@ -160,7 +160,7 @@ await repository.add_dataset_entry(..., tags=tags)
 
 **Curación manual via SQL**:
 ```bash
-sqlite3 data/wasap.db \
+sqlite3 data/localforge.db \
   "INSERT INTO eval_dataset (trace_id, entry_type, input_text, output_text)
    SELECT id, 'golden', input_text, output_text FROM traces WHERE id = 'trace_xyz';"
 ```

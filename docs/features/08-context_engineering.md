@@ -129,7 +129,7 @@ Esto previene que el LLM use el nombre del dueño de la instalación (ej: `sebas
 Después de la iteración 2 del tool loop, los resultados anteriores se compactan:
 
 ```
-[Previous result processed — summary: [{"name": "wasap-assistant"...]
+[Previous result processed — summary: [{"name": "localforge-assistant"...]
 ```
 
 Esto libera espacio de contexto siguiendo el principio de Anthropic: _"once a tool has been called deep in the message history, why would the agent need to see the raw result again?"_
@@ -144,7 +144,7 @@ Cuando un tool retorna más de 4000 caracteres:
 2. **LLM summarization** (fallback): Prompt con regla explícita "NEVER substitute with [placeholder]"
 3. **Hard truncate** (último recurso): truncado plano con aviso
 
-El paso 1 resuelve el bug donde el LLM de compactación reemplazaba `"wasap-assistant"` con `"[repo-name-1]"`.
+El paso 1 resuelve el bug donde el LLM de compactación reemplazaba `"localforge-assistant"` con `"[repo-name-1]"`.
 
 → `app/formatting/compaction.py:compact_tool_output()` y `_try_json_extraction()`
 

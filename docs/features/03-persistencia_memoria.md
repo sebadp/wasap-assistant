@@ -105,6 +105,6 @@ Las conversaciones y memorias del usuario se persisten en SQLite. El usuario pue
 
 | Variable (`config.py`) | Default | Efecto |
 |---|---|---|
-| `DATABASE_PATH` | `data/wasap.db` | Ruta del archivo SQLite |
+| `DATABASE_PATH` | `data/localforge.db` | Ruta del archivo SQLite |
 | `CONVERSATION_MAX_MESSAGES` | `20` | Trigger para summarization |
 | `MEMORY_FILE_WATCH_ENABLED` | `True` | Habilita watchdog en MEMORY.md |

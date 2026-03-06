@@ -4,7 +4,7 @@ Este documento explica cómo se gestionan los modelos de lenguaje (LLMs) locales
 
 ## Persistencia de los Modelos
 
-En este proyecto, Ollama se ejecuta como un servicio dentro de un contenedor Docker (`wasap-ollama-1` o definido bajo el bloque `ollama` en `docker-compose.yml`).
+En este proyecto, Ollama se ejecuta como un servicio dentro de un contenedor Docker (`localforge-ollama-1` o definido bajo el bloque `ollama` en `docker-compose.yml`).
 
 Para evitar tener que descargar los modelos cada vez que se reinicia el contenedor (ya que los modelos de lenguaje suelen pesar varios Gigabytes), se utiliza un **Volumen de Docker** para hacer persistente la información.
 
@@ -75,7 +75,7 @@ docker compose exec ollama ollama pull <nombre-del-modelo>
 
 ## Configurar el Asistente para usar un nuevo modelo
 
-Después de descargar un nuevo modelo con `ollama pull`, debes instruir a WasAP para que comience a utilizarlo.
+Después de descargar un nuevo modelo con `ollama pull`, debes instruir a LocalForge para que comience a utilizarlo.
 
 1. Abre tu archivo `.env`.
 2. Busca la variable de entorno correspondiente que define el modelo de Ollama a usar (por lo general llamada `OLLAMA_MODEL` o similar asociada al chat principal).
@@ -83,5 +83,5 @@ Después de descargar un nuevo modelo con `ollama pull`, debes instruir a WasAP 
 4. Reinicia la aplicación base del asistente:
 
 ```bash
-docker compose restart wasap
+docker compose restart localforge
 ```

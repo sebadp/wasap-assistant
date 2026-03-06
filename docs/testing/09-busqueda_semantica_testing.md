@@ -8,7 +8,7 @@
 ## Verificar que la feature está activa
 
 ```bash
-docker compose logs -f wasap | head -40
+docker compose logs -f localforge | head -40
 ```
 
 Confirmar:
@@ -32,10 +32,10 @@ Confirmar:
 
 ```bash
 # Backfill al startup
-docker compose logs -f wasap 2>&1 | grep -i "backfill\|embed"
+docker compose logs -f localforge 2>&1 | grep -i "backfill\|embed"
 
 # Búsqueda semántica por request
-docker compose logs -f wasap 2>&1 | grep -i "semantic\|similarity\|vec_memories"
+docker compose logs -f localforge 2>&1 | grep -i "semantic\|similarity\|vec_memories"
 ```
 
 ---
@@ -44,13 +44,13 @@ docker compose logs -f wasap 2>&1 | grep -i "semantic\|similarity\|vec_memories"
 
 ```bash
 # Memorias con embedding
-sqlite3 data/wasap.db "SELECT m.id, substr(m.content,1,50) FROM memories m JOIN vec_memories v ON v.rowid=m.id WHERE m.active=1;"
+sqlite3 data/localforge.db "SELECT m.id, substr(m.content,1,50) FROM memories m JOIN vec_memories v ON v.rowid=m.id WHERE m.active=1;"
 
 # Notas con embedding
-sqlite3 data/wasap.db "SELECT COUNT(*) FROM vec_notes;"
+sqlite3 data/localforge.db "SELECT COUNT(*) FROM vec_notes;"
 
 # Verificar que sqlite-vec está cargado
-sqlite3 data/wasap.db "SELECT vec_version();"
+sqlite3 data/localforge.db "SELECT vec_version();"
 ```
 
 ---

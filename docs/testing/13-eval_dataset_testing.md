@@ -8,7 +8,7 @@
 ## Verificar que la feature está activa
 
 ```bash
-docker compose logs -f wasap 2>&1 | grep -i "curate\|dataset\|golden\|failure"
+docker compose logs -f localforge 2>&1 | grep -i "curate\|dataset\|golden\|failure"
 ```
 
 ---
@@ -50,14 +50,14 @@ docker compose logs -f wasap 2>&1 | grep -i "curate\|dataset\|golden\|failure"
 
 ```bash
 # Ver composición del dataset
-sqlite3 data/wasap.db "
+sqlite3 data/localforge.db "
 SELECT entry_type, COUNT(*) as n,
        SUM(CASE WHEN json_extract(metadata,'$.confirmed')=1 THEN 1 ELSE 0 END) as confirmed
 FROM eval_dataset
 GROUP BY entry_type;"
 
 # Ver últimas entradas con sus tags
-sqlite3 data/wasap.db "
+sqlite3 data/localforge.db "
 SELECT d.entry_type, d.input_text, GROUP_CONCAT(t.tag) as tags, d.created_at
 FROM eval_dataset d
 LEFT JOIN eval_dataset_tags t ON t.dataset_id = d.id
@@ -65,7 +65,7 @@ GROUP BY d.id
 ORDER BY d.created_at DESC LIMIT 10;"
 
 # Ver golden confirmados (tienen señal positiva del usuario)
-sqlite3 data/wasap.db "
+sqlite3 data/localforge.db "
 SELECT d.input_text, d.output_text, d.metadata
 FROM eval_dataset d
 WHERE d.entry_type = 'golden'
@@ -73,14 +73,14 @@ WHERE d.entry_type = 'golden'
 ORDER BY d.created_at DESC LIMIT 5;"
 
 # Ver correction pairs
-sqlite3 data/wasap.db "
+sqlite3 data/localforge.db "
 SELECT d.input_text, d.output_text as bad_output, d.expected_output as correction
 FROM eval_dataset d
 WHERE d.entry_type = 'correction'
 ORDER BY d.created_at DESC LIMIT 5;"
 
 # Stats generales
-sqlite3 data/wasap.db "
+sqlite3 data/localforge.db "
 SELECT
   COUNT(*) as total,
   SUM(entry_type='golden') as golden,
@@ -103,7 +103,7 @@ from app.database.repository import Repository
 from app.eval.exporter import export_to_jsonl
 
 async def main():
-    conn, _ = await init_db("data/wasap.db")
+    conn, _ = await init_db("data/localforge.db")
     repo = Repository(conn)
     count = await export_to_jsonl(repo, Path("data/eval/dataset.jsonl"))
     print(f"Exported {count} entries")

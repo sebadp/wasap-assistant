@@ -1,4 +1,4 @@
-# Evaluación: Experiencia OpenClaw desde WasAP
+# Evaluación: Experiencia OpenClaw desde LocalForge
 
 > **Fecha**: 2026-02-22
 > **Estado**: 📋 Evaluación — pendiente de decisión
@@ -12,15 +12,15 @@ OpenClaw es un asistente personal AI self-hosted que opera como un **agente aut�
 
 ---
 
-## Comparativa: OpenClaw vs WasAP (estado actual)
+## Comparativa: OpenClaw vs LocalForge (estado actual)
 
-| Capacidad | OpenClaw | WasAP | Gap |
+| Capacidad | OpenClaw | LocalForge | Gap |
 |---|---|---|---|
 | **Canal principal** | Multi-canal (WhatsApp + 14 más) | WhatsApp only | 🟡 |
 | **Shell execution** | `exec` con sandbox, yieldMs, background, timeout, host selection | ❌ No tiene | 🔴 |
 | **Process management** | `process` (list/poll/log/write/kill background commands) | ❌ No tiene | 🔴 |
 | **File read/write/patch** | `apply_patch` (workspace-scoped) | `read_source_file`, `write_source_file`, `apply_patch` | ✅ |
-| **Git operations** | No built-in (via exec) | `git_status/diff/branch/commit/push` | ✅ WasAP mejor |
+| **Git operations** | No built-in (via exec) | `git_status/diff/branch/commit/push` | ✅ LocalForge mejor |
 | **Browser control** | CDP integration (Chrome managed) | ❌ No tiene | 🟡 |
 | **Tool loop guardrails** | Loop detection (genericRepeat, pingPong, knownPollNoProgress) | Guardrails de calidad (language, PII, coherence) | 🟡 Diferente enfoque |
 | **Skills system** | ClawHub marketplace + bundled + managed + workspace skills | SkillRegistry + SKILL.md + MCP hot-install | ✅ Similar |
@@ -30,9 +30,9 @@ OpenClaw es un asistente personal AI self-hosted que opera como un **agente aut�
 | **Cron/automation** | Cron jobs + webhooks + Gmail Pub/Sub nativos | APScheduler para cleanup jobs | 🟡 |
 | **Streaming/chunking** | Block streaming + steering while streaming | No streaming (request-response) | 🟡 |
 | **Model failover** | Multi-model con failover automático | Single model, no failover | 🟡 |
-| **Memory** | AGENTS.md como "memory" (archivo editable) | 3 capas (semántica + episódica + snapshots) + embeddings | ✅ WasAP mejor |
-| **Semantic search** | No built-in | sqlite-vec + nomic-embed-text | ✅ WasAP mejor |
-| **Evaluación/tracing** | No built-in | Guardrails + Traces + Dataset vivo + Auto-evolución | ✅ WasAP mejor |
+| **Memory** | AGENTS.md como "memory" (archivo editable) | 3 capas (semántica + episódica + snapshots) + embeddings | ✅ LocalForge mejor |
+| **Semantic search** | No built-in | sqlite-vec + nomic-embed-text | ✅ LocalForge mejor |
+| **Evaluación/tracing** | No built-in | Guardrails + Traces + Dataset vivo + Auto-evolución | ✅ LocalForge mejor |
 | **Voice** | Voice Wake + Talk Mode (ElevenLabs) | Whisper transcription (input only) | 🟡 |
 | **Vision** | Via model capabilities | LLaVA local | ✅ Similar |
 | **Security sandbox** | Docker per-session sandbox para non-main sessions | `_is_safe_path` + `AGENT_WRITE_ENABLED` flag | 🟡 |
@@ -65,7 +65,7 @@ process(action: "kill", sessionId: "abc123")   → terminar
 process(action: "list")                        → todos los procesos activos
 ```
 
-**Impacto para WasAP**: esto habilita el flujo "editar → testear → arreglar". Es la feature #1 del Claude Code evaluation también.
+**Impacto para LocalForge**: esto habilita el flujo "editar → testear → arreglar". Es la feature #1 del Claude Code evaluation también.
 
 ### 2. Loop detection guardrails 🟡
 
@@ -76,7 +76,7 @@ OpenClaw tiene guardrails específicos para prevenir que el agente entre en loop
 
 Con thresholds configurables: warning (10), critical (20), circuit breaker global (30).
 
-**Impacto para WasAP**: nuestro agent loop no tiene protección contra loops. El agente puede gastar sus 15 rounds haciendo lo mismo.
+**Impacto para LocalForge**: nuestro agent loop no tiene protección contra loops. El agente puede gastar sus 15 rounds haciendo lo mismo.
 
 ### 3. Bootstrap files inyectados (SOUL.md, USER.md, IDENTITY.md) 🟡
 
@@ -87,7 +87,7 @@ OpenClaw inyecta varios archivos markdown como contexto al agente:
 - **TOOLS.md** — notas del usuario sobre cómo usar herramientas específicas
 - **AGENTS.md** — instrucciones operativas + memoria
 
-**Impacto para WasAP**: nosotros tenemos algo similar con `user_facts` (fact_extractor), pero no es tan structured. SOUL.md equivale a nuestro system prompt, AGENTS.md equivale a nuestro CLAUDE.md.
+**Impacto para LocalForge**: nosotros tenemos algo similar con `user_facts` (fact_extractor), pero no es tan structured. SOUL.md equivale a nuestro system prompt, AGENTS.md equivale a nuestro CLAUDE.md.
 
 ### 4. Sesiones persistidas como JSONL 🟡
 
@@ -96,7 +96,7 @@ OpenClaw guarda cada sesión como un archivo JSONL en `~/.openclaw/agents/<agent
 - Session pruning (limpieza automática)
 - `sessions_history` para ver logs de otra sesión
 
-**Impacto para WasAP**: nuestras agent sessions son in-memory y se pierden al reiniciar.
+**Impacto para LocalForge**: nuestras agent sessions son in-memory y se pierden al reiniciar.
 
 ### 5. Cron/webhook automation 🟡
 
@@ -104,13 +104,13 @@ OpenClaw puede crear cron jobs y webhooks desde el chat:
 - "Recordame todos los lunes a las 9am revisar PRs"
 - Webhooks que triggerean acciones del agente
 
-**Impacto para WasAP**: nuestro scheduler solo se usa para cleanup jobs internos. El usuario no puede crear sus propios cron jobs.
+**Impacto para LocalForge**: nuestro scheduler solo se usa para cleanup jobs internos. El usuario no puede crear sus propios cron jobs.
 
 ---
 
-## Lo que WasAP hace mejor
+## Lo que LocalForge hace mejor
 
-| Feature WasAP | OpenClaw equivalente |
+| Feature LocalForge | OpenClaw equivalente |
 |---|---|
 | Búsqueda semántica con embeddings | No tiene (solo archivo AGENTS.md editable) |
 | 3 capas de memoria (semántica + episódica + snapshots) | Archivo AGENTS.md simple |

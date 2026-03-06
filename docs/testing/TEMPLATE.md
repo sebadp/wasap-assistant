@@ -10,7 +10,7 @@
 Al arrancar el container, buscar en los logs:
 
 ```bash
-docker compose logs -f wasap | head -60
+docker compose logs -f localforge | head -60
 ```
 
 Confirmar las siguientes líneas:
@@ -40,10 +40,10 @@ Confirmar las siguientes líneas:
 
 ```bash
 # Actividad general de esta feature
-docker compose logs -f wasap 2>&1 | grep -i "<keyword>"
+docker compose logs -f localforge 2>&1 | grep -i "<keyword>"
 
 # Errores
-docker compose logs -f wasap 2>&1 | grep -i "error"
+docker compose logs -f localforge 2>&1 | grep -i "error"
 ```
 
 ---
@@ -52,10 +52,10 @@ docker compose logs -f wasap 2>&1 | grep -i "error"
 
 ```bash
 # [Descripción de qué verificar]
-sqlite3 data/wasap.db "SELECT ... FROM ... WHERE ...;"
+sqlite3 data/localforge.db "SELECT ... FROM ... WHERE ...;"
 
 # [Otra verificación]
-sqlite3 data/wasap.db "SELECT COUNT(*) FROM ...;"
+sqlite3 data/localforge.db "SELECT COUNT(*) FROM ...;"
 ```
 
 ---

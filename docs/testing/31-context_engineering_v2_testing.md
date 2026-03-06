@@ -68,7 +68,7 @@ Con más de 8 mensajes en historial:
 
 ```bash
 # DB query para ver cuántos mensajes hay
-sqlite3 data/wasap.db "SELECT COUNT(*) FROM messages WHERE conversation_id = (SELECT id FROM conversations LIMIT 1);"
+sqlite3 data/localforge.db "SELECT COUNT(*) FROM messages WHERE conversation_id = (SELECT id FROM conversations LIMIT 1);"
 
 # Si hay >8, los logs deben mostrar windowing activo
 # ConversationContext build usa get_windowed_history

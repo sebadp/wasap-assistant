@@ -67,7 +67,7 @@ If you have a local webhook simulator, send a message like:
 ### Step 4: Check from logs
 
 ```bash
-docker compose logs -f wasap | grep -E "Agent session|run_agent"
+docker compose logs -f localforge | grep -E "Agent session|run_agent"
 ```
 
 You should see:
@@ -92,7 +92,7 @@ Agent session abc123 completed
 
 **Verificar:**
 ```bash
-cat wasap-assistant/test.md  # debe decir "hola mundo"
+cat localforge-assistant/test.md  # debe decir "hola mundo"
 ```
 
 ---
@@ -136,7 +136,7 @@ Plan actual:
 
 **Verificar:**
 ```bash
-git -C wasap-assistant log --oneline -1  # debe mostrar el commit del agente
+git -C localforge-assistant log --oneline -1  # debe mostrar el commit del agente
 ```
 
 ---
@@ -162,7 +162,7 @@ Con `AGENT_WRITE_ENABLED=false`:
 
 **Verificar:**
 ```bash
-git -C wasap-assistant branch | grep test/agent-branch
+git -C localforge-assistant branch | grep test/agent-branch
 ```
 
 ---

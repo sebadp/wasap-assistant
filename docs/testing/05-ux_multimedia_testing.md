@@ -31,13 +31,13 @@
 
 ```bash
 # Transcripción de audio
-docker compose logs -f wasap 2>&1 | grep -i "transcri\|whisper\|audio"
+docker compose logs -f localforge 2>&1 | grep -i "transcri\|whisper\|audio"
 
 # Procesamiento de imagen
-docker compose logs -f wasap 2>&1 | grep -i "image\|vision\|llava"
+docker compose logs -f localforge 2>&1 | grep -i "image\|vision\|llava"
 
 # Formato y split
-docker compose logs -f wasap 2>&1 | grep -i "split\|format\|chunk"
+docker compose logs -f localforge 2>&1 | grep -i "split\|format\|chunk"
 ```
 
 ---

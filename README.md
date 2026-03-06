@@ -1,29 +1,28 @@
-# WasAP
+# LocalForge 🤖📱
 
-Asistente personal de WhatsApp con LLM local via Ollama. Privado, gratuito, dockerizado.
+**De Developer a AI Engineer: Boilerplate para construir asistentes con LLMs locales.**
 
-```
+LocalForge no es solo un asistente personal de WhatsApp impulsado por Ollama; es un **proyecto base open source de investigación y aprendizaje**. Está diseñado para que cualquier desarrollador pueda hacer un *fork*, ensuciarse las manos y entender cómo se orquestan las piezas fundamentales de una aplicación GenAI 100% privada, local y gratuita.
+
+```text
 Tu celular ──► WhatsApp ──► Meta Cloud API ──► ngrok ──► FastAPI ──► Ollama (local)
                                                               │
                                                            SQLite
 ```
 
-## Qué hace
+## 💡 El propósito del proyecto
 
-- Recibe mensajes de WhatsApp via la API oficial de Meta (sin riesgo de ban)
-- Los procesa con un LLM local corriendo en Ollama
-- Mantiene historial de conversación persistente en SQLite
-- Sistema de memorias avanzado: el asistente recuerda datos entre sesiones
-- Memoria en 3 capas: semántica (hechos), episódica reciente (daily logs), episódica histórica (snapshots)
-- **Búsqueda semántica**: embeddings locales (nomic-embed-text) + sqlite-vec — solo inyecta memorias y notas relevantes al contexto
-- **MEMORY.md bidireccional**: editá el archivo a mano y los cambios se sincronizan a SQLite automáticamente
-- Extracción automática de hechos y eventos antes de compactar historial
-- Resumen automático de conversaciones largas
-- Comandos interactivos via `/slash`
-- **Skills con tool calling**: el asistente puede consultar el clima, calcular, tomar notas, decir la hora
-- Audio entrante (transcripción local con Whisper) e imágenes (vision con llava)
-- Formato WhatsApp, splitting de mensajes largos, rate limiting
-- Cero costo de operación
+Si estás buscando dar el salto al desarrollo con IA, en este repositorio vas a encontrar implementaciones prácticas y modulares de:
+
+- **Memoria y Contexto (RAG Local)**: Historial respaldado en SQLite con memoria en 3 capas (semántica, episódica reciente e histórica). Usa embeddings automáticos (`nomic-embed-text`) y búsqueda vectorial con `sqlite-vec` para inyectar solo el contexto relevante.
+- **Tool Calling / Agentes**: El LLM (como `qwen3:8b`) toma decisiones autónomas: desde consultar el clima o resolver matemáticas, hasta abrir y leer archivos del sistema de forma dinámica.
+- **Model Context Protocol (MCP)**: Integración nativa con servidores MCP. Permite auto-expandir las capacidades del asistente en *runtime* instalando servidores desde plataformas como Smithery.
+- **Edición Bidireccional (`MEMORY.md`)**: El sistema sincroniza las memorias en texto plano con la base de datos automáticamente (usando *watchdogs* de *filesystem*).
+- **Consolidación de Memoria**: Resúmenes automáticos y extracción de hechos y eventos en *background* antes de compactar el historial.
+- **Multimodalidad Local**: Soporte nativo y gratuito para notas de voz entrantes de WhatsApp (transcripción con Whisper) e imágenes (analizadas con LLaVA).
+- **Observabilidad en IA**: Integración con Langfuse para trazar *prompts*, latencias, consumo de *tokens* y el flujo de llamadas a herramientas.
+
+Todo conectado a la API oficial de WhatsApp Cloud (sin riesgo de ban), dockerizado, cubierto con +300 tests y listo para experimentar con costo de operación **cero**.
 
 ## Quickstart
 
@@ -54,7 +53,15 @@ Ver [SETUP.md](SETUP.md) para la guía completa paso a paso.
 | `/forget <dato>` | Olvidar un recuerdo guardado |
 | `/memories` | Listar todos los recuerdos |
 | `/clear` | Guardar snapshot + borrar historial |
+| `/feedback <comentario>` | Dejar feedback libre sobre la última respuesta |
+| `/rate <1-5>` | Calificar la última respuesta (1-5 estrellas) |
+| `/agent <objetivo>` | Iniciar una sesión agéntica autónoma |
+| `/cancel` | Cancelar la sesión agéntica activa |
 | `/review-skill [nombre]` | Revisar skills y MCP servers instalados |
+| `/approve-prompt <nombre> <versión>` | Activar una versión de prompt propuesta por el agente |
+| `/prompts [nombre] [versión]` | Ver prompts activos e historial de versiones |
+| `/dev-review [teléfono]` | Lanzar análisis agéntico de interacciones recientes |
+| `/debug [on\|off]` | Activar/desactivar modo debug con logs de ejecución |
 | `/help` | Mostrar comandos disponibles |
 
 Las memorias persisten entre reinicios y se inyectan automáticamente en el contexto del LLM.
@@ -69,8 +76,15 @@ El asistente tiene capacidades más allá de conversar, usando tool calling nati
 | `calculator` | `calculate` | Cálculos matemáticos (evaluación segura via AST) |
 | `weather` | `get_weather` | Clima actual y pronóstico via wttr.in |
 | `notes` | `save_note`, `list_notes`, `search_notes`, `delete_note` | Notas persistentes en SQLite |
+| `search` | `web_search` | Búsqueda web + lectura de URLs via Puppeteer/mcp-fetch |
+| `news` | `search_news`, `add_news_preference` | Noticias personalizadas con preferencias de fuentes |
+| `scheduler` | `schedule_task`, `list_schedules` | Recordatorios y mensajes programados (delay o fecha exacta) |
+| `tools` | `list_tool_categories`, `list_category_tools` | Introspección de capacidades y tools disponibles |
+| `projects` | `create_project`, `list_projects`, `add_task`, `update_task`, `project_progress`, `add_project_note`, `search_project_notes`, ... | Gestión de proyectos con tareas, progreso y notas con búsqueda semántica |
+| `eval` | `get_eval_summary`, `list_recent_failures`, `diagnose_trace`, `propose_correction`, `run_quick_eval`, `propose_prompt_change`, ... | Auto-evaluación y mejora continua del asistente via LLM-as-judge |
+| `debug` | `review_interactions`, `get_tool_output_full`, `get_interaction_context`, `write_debug_report`, `get_conversation_transcript` | Diagnóstico e introspección de interacciones pasadas |
 | `selfcode` | `get_version_info`, `read_source_file`, `list_source_files`, `get_runtime_config`, `get_system_health`, `search_source_code`, `get_skill_details` | Auto-inspección: versión, código fuente, configuración y salud del sistema |
-| `expand` | `search_mcp_registry`, `get_mcp_server_info`, `install_from_smithery`, `install_mcp_server`, `remove_mcp_server`, `list_mcp_servers`, `preview_skill_from_url`, `install_skill_from_url`, `reload_capabilities` | Auto-expansión: buscar e instalar MCP servers (Smithery) y skills desde URLs en runtime |
+| `expand` | `search_mcp_registry`, `install_from_smithery`, `install_mcp_server`, `remove_mcp_server`, `list_mcp_servers`, `install_skill_from_url`, `reload_capabilities`, ... | Auto-expansión: buscar e instalar MCP servers (Smithery) y skills en runtime |
 
 Los skills se definen con archivos `SKILL.md` en `skills/`. Para agregar un skill nuevo: crear una carpeta con `SKILL.md` + registrar los handlers en Python.
 
@@ -188,7 +202,7 @@ Variables de entorno (ver [.env.example](.env.example)):
 | `VISION_MODEL` | Modelo de visión | `llava:7b` |
 | `SYSTEM_PROMPT` | Prompt del sistema | (ver .env.example) |
 | `CONVERSATION_MAX_MESSAGES` | Mensajes recientes en contexto | `20` |
-| `DATABASE_PATH` | Ruta al archivo SQLite | `data/wasap.db` |
+| `DATABASE_PATH` | Ruta al archivo SQLite | `data/localforge.db` |
 | `SUMMARY_THRESHOLD` | Mensajes antes de resumir | `40` |
 | `SKILLS_DIR` | Directorio de skills | `skills` |
 | `MEMORY_DIR` | Directorio para daily logs y snapshots | `data/memory` |
@@ -214,7 +228,7 @@ make test
 .venv/bin/python -m pytest tests/ -v
 
 # Con Docker
-docker compose run --rm wasap python -m pytest tests/ -v
+docker compose run --rm localforge python -m pytest tests/ -v
 ```
 
 316 tests cubriendo: repository, conversation manager, comandos, parser, markdown memory, summarizer, daily logs, memory flush, session snapshots, consolidator, embeddings, sqlite-vec, semantic search, memory watcher, webhook (verificación, mensajes, comandos), health check, cliente Ollama, cliente WhatsApp, validación de firma, skill loader, skill registry, tool executor, tool router, MCP, y cada skill (datetime, calculator, weather, notes, search, news, scheduler, tools).
@@ -261,10 +275,10 @@ docker compose up -d
 docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d
 
 # Ver logs
-docker compose logs -f wasap
+docker compose logs -f localforge
 
 # Rebuild después de cambios
-docker compose up -d --build wasap
+docker compose up -d --build localforge
 ```
 
 El container corre como usuario no-root (`appuser`, UID=1000) para que los archivos en `data/` tengan los permisos correctos. Si venís de una versión anterior donde `data/` quedó como root, corregí los permisos una vez con:
@@ -295,6 +309,10 @@ Para más información acerca de cómo descargar, eliminar y configurar Ollama p
 - [x] **Fase 6**: Búsqueda semántica (embeddings, sqlite-vec, RAG, MEMORY.md bidireccional)
 - [x] **Fase 7**: CI/CD — pre-commit hooks (ruff, mypy, pytest) + GitHub Actions + AI code review
 - [x] **Fase 8**: Observabilidad y Tracing (Langfuse, OpenTelemetry, métricas detalladas).
-- [ ] **Fase 9**: Evaluación y Mejora Continua (Guardrails pre-entrega, Evaluación en 3 capas, Dataset vivo).
+- [x] **Fase 9**: Evaluación y Mejora Continua (guardrails, evaluación en 3 capas, dataset vivo, auto-evolución de prompts).
+- [x] **Fase 10**: Tool Router & Capacidades Dinámicas (router de 2 etapas, MCP hot-reload, Smithery, budget dinámico de tools).
+- [x] **Fase 11**: Modo Agéntico (Planner-Orchestrator, workers, Human-in-the-Loop, persistencia de sesiones, gestión de proyectos).
+- [x] **Fase 12**: Seguridad Agéntica (PolicyEngine, AuditTrail SHA-256, shell/git/workspace tools, debug tools).
+- [x] **Fase 13**: Context Engineering v2 (token budget, ContextBuilder XML, windowed history, agent scratchpad, prompt versioning).
 
 Ver [PRODUCT_PLAN.md](PRODUCT_PLAN.md) para el detalle de cada fase.

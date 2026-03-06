@@ -1,5 +1,5 @@
 ---
-description: Rebuild the wasap Docker container after code changes
+description: Rebuild the localforge Docker container after code changes
 ---
 
 ## Steps
@@ -7,14 +7,14 @@ description: Rebuild the wasap Docker container after code changes
 1. Try the standard rebuild first:
 
 ```bash
-docker compose up -d --build wasap
+docker compose up -d --build localforge
 ```
 
 2. If the build fails with "Temporary failure resolving" (DNS issue on IPv6-only hosts), use `--network host`:
 
 // turbo
 ```bash
-docker build --network host -t wasap-wasap .
+docker build --network host -t localforge-localforge .
 ```
 
 3. Then bring up the services:
@@ -40,5 +40,5 @@ docker compose ps
 
 // turbo
 ```bash
-docker compose logs -f wasap
+docker compose logs -f localforge
 ```

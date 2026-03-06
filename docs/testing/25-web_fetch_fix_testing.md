@@ -29,7 +29,7 @@ Qué dice la homepage de https://example.com
 
 **Verificar en logs**:
 ```bash
-grep "fetch mode\|puppeteer_navigate\|Fetch mode" data/wasap.log
+grep "fetch mode\|puppeteer_navigate\|Fetch mode" data/localforge.log
 ```
 
 ---
@@ -110,16 +110,16 @@ https://github.com/fastapi/fastapi
 
 ```bash
 # Estado de fetch mode al inicializar
-grep "Fetch mode\|fetch_mode" data/wasap.log | head -5
+grep "Fetch mode\|fetch_mode" data/localforge.log | head -5
 
 # Fallback runtime
-grep "mcp-fetch fallback\|Puppeteer tool.*failed" data/wasap.log
+grep "mcp-fetch fallback\|Puppeteer tool.*failed" data/localforge.log
 
 # URL fast-path
-grep "URL detected\|overriding.*fetch" data/wasap.log
+grep "URL detected\|overriding.*fetch" data/localforge.log
 
 # Categorías seleccionadas para un mensaje con URL
-grep "Tool router: categories" data/wasap.log | grep fetch
+grep "Tool router: categories" data/localforge.log | grep fetch
 ```
 
 ---

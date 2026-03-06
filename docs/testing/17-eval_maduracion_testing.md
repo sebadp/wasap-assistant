@@ -19,7 +19,7 @@ Reiniciar el container.
 
 ```bash
 # Ver en logs del container si los checks LLM se ejecutan
-docker compose logs -f wasap 2>&1 | grep "tool_coherence\|hallucination_check\|llm_checks"
+docker compose logs -f localforge 2>&1 | grep "tool_coherence\|hallucination_check\|llm_checks"
 ```
 
 ### Verificar que el timeout falla open
@@ -45,7 +45,7 @@ print("✓ Timeout fail-open OK")
 ### Ver scores en trazas
 
 ```bash
-sqlite3 data/wasap.db "
+sqlite3 data/localforge.db "
 SELECT t.id, s.name, s.value
 FROM traces t
 JOIN trace_scores s ON t.id = s.trace_id
@@ -61,7 +61,7 @@ LIMIT 10;"
 ### Verificar spans de tool calls
 
 ```bash
-sqlite3 data/wasap.db "
+sqlite3 data/localforge.db "
 SELECT ts.name, ts.kind, ts.status, ts.latency_ms,
        substr(ts.input_data, 1, 100) as input_preview
 FROM trace_spans ts
@@ -92,7 +92,7 @@ from app.database.db import init_db
 from app.database.repository import Repository
 
 async def main():
-    conn, _ = await init_db("data/wasap.db")
+    conn, _ = await init_db("data/localforge.db")
     repo = Repository(conn)
     deleted = await repo.cleanup_old_traces(days=0)  # borrar todo
     print(f"Deleted: {deleted} traces")
@@ -105,7 +105,7 @@ asyncio.run(main())
 
 ```bash
 # En los logs de startup debe aparecer:
-docker compose logs wasap 2>&1 | grep "trace_cleanup\|Scheduled trace cleanup"
+docker compose logs localforge 2>&1 | grep "trace_cleanup\|Scheduled trace cleanup"
 ```
 
 ---
@@ -128,7 +128,7 @@ from app.database.db import init_db
 from app.database.repository import Repository
 
 async def main():
-    conn, _ = await init_db("data/wasap.db")
+    conn, _ = await init_db("data/localforge.db")
     repo = Repository(conn)
 
     trend = await repo.get_failure_trend(days=30)
@@ -148,14 +148,14 @@ asyncio.run(main())
 
 ```bash
 # Ver conteo de spans por tipo
-sqlite3 data/wasap.db "
+sqlite3 data/localforge.db "
 SELECT kind, COUNT(*) as total, AVG(latency_ms) as avg_ms
 FROM trace_spans
 GROUP BY kind
 ORDER BY total DESC;"
 
 # Resumen del dashboard
-sqlite3 data/wasap.db "
+sqlite3 data/localforge.db "
 SELECT date(started_at) as day, COUNT(*) as total,
        SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) as failed
 FROM traces

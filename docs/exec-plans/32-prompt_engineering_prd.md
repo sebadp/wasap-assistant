@@ -2,7 +2,7 @@
 
 ## 1. Objetivo y Contexto
 
-WasAP tiene **28 prompts** distribuidos en 14 archivos. Solo 1 (el system prompt principal) es
+LocalForge tiene **28 prompts** distribuidos en 14 archivos. Solo 1 (el system prompt principal) es
 versionable via DB — los otros 27 son constantes hardcodeadas en Python sin posibilidad de
 iteración, A/B testing, rollback o evolución automática.
 

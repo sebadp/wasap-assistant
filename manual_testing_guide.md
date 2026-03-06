@@ -1,4 +1,4 @@
-# Guía de Testing Manual — WasAP
+# Guía de Testing Manual — LocalForge
 
 > **Propósito**: Validación pre-release de todas las features implementadas.
 > **Última actualización**: 2026-02-25
@@ -10,7 +10,7 @@
 
 ```bash
 docker compose up --build -d
-docker compose logs -f wasap | head -80
+docker compose logs -f localforge | head -80
 ```
 
 Confirmar estas líneas antes de testear cualquier feature:
@@ -43,7 +43,7 @@ make check   # lint + typecheck + 441 tests
 
 **Verificar en logs:**
 ```bash
-grep "Tool router: categories=none\|plain chat" data/wasap.log | tail -5
+grep "Tool router: categories=none\|plain chat" data/localforge.log | tail -5
 ```
 
 ---
@@ -80,7 +80,7 @@ grep "Tool router: categories=none\|plain chat" data/wasap.log | tail -5
 
 **Verificar `/remember` en DB:**
 ```bash
-sqlite3 data/wasap.db "SELECT content, category FROM memories ORDER BY id DESC LIMIT 3;"
+sqlite3 data/localforge.db "SELECT content, category FROM memories ORDER BY id DESC LIMIT 3;"
 ```
 
 **Verificar snapshot después de `/clear`:**
@@ -154,14 +154,14 @@ ls data/memory/snapshots/
 
 **Verificar persistencia después de restart:**
 ```bash
-docker compose restart wasap
+docker compose restart localforge
 # Esperar boot
-grep "Restored.*cron jobs" data/wasap.log
+grep "Restored.*cron jobs" data/localforge.log
 ```
 
 **Verificar en DB:**
 ```bash
-sqlite3 data/wasap.db "SELECT id, cron_expr, message, active FROM user_cron_jobs;"
+sqlite3 data/localforge.db "SELECT id, cron_expr, message, active FROM user_cron_jobs;"
 ```
 
 ---
@@ -177,11 +177,11 @@ sqlite3 data/wasap.db "SELECT id, cron_expr, message, active FROM user_cron_jobs
 **Archivo → DB (edición manual):**
 1. Editar `data/MEMORY.md`, agregar: `- [hobby] Toca la guitarra`
 2. Esperar ~1s
-3. Verificar: `sqlite3 data/wasap.db "SELECT content, category FROM memories WHERE content LIKE '%guitarra%';"`
+3. Verificar: `sqlite3 data/localforge.db "SELECT content, category FROM memories WHERE content LIKE '%guitarra%';"`
 
 **Verificar en logs:**
 ```bash
-grep "Synced from file\|Skipping sync" data/wasap.log | tail -5
+grep "Synced from file\|Skipping sync" data/localforge.log | tail -5
 ```
 
 ### 6b. Búsqueda semántica de memorias
@@ -208,11 +208,11 @@ grep "Synced from file\|Skipping sync" data/wasap.log | tail -5
 ### 6e. Verificar embeddings
 
 ```bash
-sqlite3 data/wasap.db "SELECT COUNT(*) FROM vec_memories;"
+sqlite3 data/localforge.db "SELECT COUNT(*) FROM vec_memories;"
 # Debe ser > 0
 
 # Memorias sin embedding (debe ser 0 después del backfill)
-sqlite3 data/wasap.db "
+sqlite3 data/localforge.db "
   SELECT m.id FROM memories m
   LEFT JOIN vec_memories v ON v.memory_id = m.id
   WHERE m.active = 1 AND v.memory_id IS NULL;
@@ -235,8 +235,8 @@ sqlite3 data/wasap.db "
 
 **Verificar en DB:**
 ```bash
-sqlite3 data/wasap.db "SELECT name, status FROM projects;"
-sqlite3 data/wasap.db "SELECT description, status FROM project_tasks LIMIT 10;"
+sqlite3 data/localforge.db "SELECT name, status FROM projects;"
+sqlite3 data/localforge.db "SELECT description, status FROM project_tasks LIMIT 10;"
 ```
 
 ---
@@ -251,7 +251,7 @@ sqlite3 data/wasap.db "SELECT description, status FROM project_tasks LIMIT 10;"
 | `Resumí https://news.ycombinator.com` | Lista de links/títulos de HN |
 
 ```bash
-grep "Fetch mode: puppeteer\|Tool router.*fetch" data/wasap.log | tail -3
+grep "Fetch mode: puppeteer\|Tool router.*fetch" data/localforge.log | tail -3
 ```
 
 ### 8b. Fallback a mcp-fetch
@@ -263,7 +263,7 @@ grep "Fetch mode: puppeteer\|Tool router.*fetch" data/wasap.log | tail -3
 | `Qué hay en https://example.com?` | Contenido via HTTP básico, con nota al usuario sobre fetch limitado |
 
 ```bash
-grep "Fetch mode: mcp-fetch\|mcp-fetch fallback" data/wasap.log | tail -3
+grep "Fetch mode: mcp-fetch\|mcp-fetch fallback" data/localforge.log | tail -3
 ```
 
 ### 8c. URL detectada automáticamente
@@ -281,8 +281,8 @@ https://github.com/fastapi/fastapi
 
 | Mensaje | Esperado |
 |---|---|
-| `Lista las issues abiertas del repo wasap-assistant` | Lista de issues con número, título |
-| `Crea una issue: Test desde WasAP` | Issue creada, retorna URL |
+| `Lista las issues abiertas del repo localforge-assistant` | Lista de issues con número, título |
+| `Crea una issue: Test desde LocalForge` | Issue creada, retorna URL |
 | `Buscá repositorios sobre FastAPI` | Lista de repos con estrellas |
 
 ---
@@ -323,7 +323,7 @@ Necesito crear una issue en GitHub para el proyecto "backend-api" sobre el bug d
 
 **Verificar en logs:**
 ```bash
-grep "Tool router: categories=\['projects', 'github'\]" data/wasap.log | tail -3
+grep "Tool router: categories=\['projects', 'github'\]" data/localforge.log | tail -3
 # Esperado: ambas categorías tienen tools en la lista (no solo projects)
 ```
 
@@ -331,7 +331,7 @@ grep "Tool router: categories=\['projects', 'github'\]" data/wasap.log | tail -3
 
 Difícil de forzar manualmente (depende del clasificador). Verificar que está disponible:
 ```bash
-grep "request_more_tools" data/wasap.log | tail -5
+grep "request_more_tools" data/localforge.log | tail -5
 ```
 
 Si el LLM lo usa, ver: `request_more_tools: cats=[...], added=N: [tool_names]`.
@@ -399,7 +399,7 @@ cat data/agent_sessions/<phone>_<session_id>.jsonl | head -20
 
 Si el agente detecta que lleva 3 rondas usando las mismas tools sin progreso:
 ```bash
-grep "Loop detected\|repetitive pattern" data/wasap.log
+grep "Loop detected\|repetitive pattern" data/localforge.log
 ```
 **Esperado**: el agente informa al usuario y termina la sesión.
 
@@ -427,7 +427,7 @@ grep "Loop detected\|repetitive pattern" data/wasap.log
 | Mensaje | Esperado |
 |---|---|
 | `Qué proyectos tengo disponibles?` | `list_workspaces()` → lista de subdirectorios |
-| `Cambiá al proyecto wasap-frontend` | `switch_workspace("wasap-frontend")` → confirmación con branch y archivos |
+| `Cambiá al proyecto localforge-frontend` | `switch_workspace("localforge-frontend")` → confirmación con branch y archivos |
 | `En qué proyecto estoy trabajando?` | `get_workspace_info()` → nombre, path, branch git |
 
 **Verificar que selfcode refleja el nuevo workspace:**
@@ -492,7 +492,7 @@ print("Hash chain OK")
 
 ```bash
 # Buscar scores de guardrails en la última traza
-sqlite3 data/wasap.db "
+sqlite3 data/localforge.db "
   SELECT check_name, value FROM trace_scores
   WHERE source = 'system'
   ORDER BY id DESC LIMIT 10;
@@ -504,12 +504,12 @@ sqlite3 data/wasap.db "
 
 ```bash
 # Ver última traza
-sqlite3 data/wasap.db "
+sqlite3 data/localforge.db "
   SELECT id, input_preview, output_preview, duration_ms
   FROM traces ORDER BY id DESC LIMIT 3;
 "
 # Ver spans de la traza
-sqlite3 data/wasap.db "
+sqlite3 data/localforge.db "
   SELECT name, kind, duration_ms FROM trace_spans
   WHERE trace_id = (SELECT id FROM traces ORDER BY id DESC LIMIT 1);
 "
@@ -531,7 +531,7 @@ sqlite3 data/wasap.db "
 ### 18e. Dataset vivo
 
 ```bash
-sqlite3 data/wasap.db "SELECT entry_type, COUNT(*) FROM eval_dataset GROUP BY entry_type;"
+sqlite3 data/localforge.db "SELECT entry_type, COUNT(*) FROM eval_dataset GROUP BY entry_type;"
 # Debe mostrar: failure, golden_candidate (y correction si hubo correcciones)
 ```
 
@@ -543,15 +543,15 @@ sqlite3 data/wasap.db "SELECT entry_type, COUNT(*) FROM eval_dataset GROUP BY en
 
 Enviar >10 mensajes en menos de 60 segundos desde el mismo número:
 ```bash
-grep "Rate limit exceeded" data/wasap.log
+grep "Rate limit exceeded" data/localforge.log
 ```
 **Esperado**: algunos mensajes ignorados silenciosamente sin error 500.
 
 ### Graceful shutdown
 
 ```bash
-docker compose stop wasap
-grep "Graceful shutdown\|Waiting for.*in-flight" data/wasap.log | tail -5
+docker compose stop localforge
+grep "Graceful shutdown\|Waiting for.*in-flight" data/localforge.log | tail -5
 ```
 **Esperado**: espera hasta 30s a que los background tasks terminen antes de cerrar.
 
@@ -574,28 +574,28 @@ grep "Graceful shutdown\|Waiting for.*in-flight" data/wasap.log | tail -5
 
 ```bash
 # Tool calls generales
-grep "Tool router\|Tool iteration\|Tool.*->" data/wasap.log | tail -20
+grep "Tool router\|Tool iteration\|Tool.*->" data/localforge.log | tail -20
 
 # Agent sessions
-grep "Agent round\|Agent session" data/wasap.log | tail -10
+grep "Agent round\|Agent session" data/localforge.log | tail -10
 
 # request_more_tools (dynamic budget)
-grep "request_more_tools\|per_cat" data/wasap.log | tail -10
+grep "request_more_tools\|per_cat" data/localforge.log | tail -10
 
 # Web fetch
-grep "Fetch mode\|puppeteer\|mcp-fetch" data/wasap.log | tail -5
+grep "Fetch mode\|puppeteer\|mcp-fetch" data/localforge.log | tail -5
 
 # Memoria y embeddings
-grep "embed\|semantic\|backfill\|Synced from" data/wasap.log | tail -10
+grep "embed\|semantic\|backfill\|Synced from" data/localforge.log | tail -10
 
 # Security
-grep "PolicyEngine\|AuditTrail\|HITL\|blocked_by_policy" data/wasap.log | tail -10
+grep "PolicyEngine\|AuditTrail\|HITL\|blocked_by_policy" data/localforge.log | tail -10
 
 # Cron jobs
-grep "cron\|CronTrigger\|Restored" data/wasap.log | tail -5
+grep "cron\|CronTrigger\|Restored" data/localforge.log | tail -5
 
 # Errores
-grep -i "error\|exception\|traceback" data/wasap.log | tail -20
+grep -i "error\|exception\|traceback" data/localforge.log | tail -20
 ```
 
 ---
@@ -686,7 +686,7 @@ Marcar cada ítem antes de declarar la rama lista para merge/release:
 | LLM presenta plan en lugar de ejecutar | 0 tools disponibles para la categoría | Verificar `select_tools` en logs |
 | Agent loop no inicia | `AGENT_WRITE_ENABLED` no seteado | Agregar a `.env` + restart |
 | Cron no se dispara | Timezone incorrecto o cron expr inválida | `list_crons` via WA, verificar expr |
-| MCP connection refused | `npx` no disponible en container | `docker compose exec wasap which npx` |
+| MCP connection refused | `npx` no disponible en container | `docker compose exec localforge which npx` |
 | Sin embeddings en vec_memories | nomic-embed-text no descargado | `ollama pull nomic-embed-text` dentro del container |
 | `think` visible en respuestas con tools | Bug: `think=True` con tools activo | Verificar `chat_with_tools()` en `llm/client.py` |
 | HITL no llega por WA | Token de WA expirado o número incorrecto | Verificar `.env` y logs de WhatsApp client |

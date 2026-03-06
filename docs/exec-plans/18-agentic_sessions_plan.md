@@ -1,7 +1,7 @@
 # Plan de Implementación — Sesiones Agénticas (Agent Mode)
 
 > Documento técnico que baja la intención de producto "El asistente puede trabajar de forma autónoma,
-> crear branches, editar código, y abrir PRs" a cambios concretos en el codebase de WasAP.
+> crear branches, editar código, y abrir PRs" a cambios concretos en el codebase de LocalForge.
 >
 > **Revisión 1** — Basada en investigación de OpenClaw, ManusIA, Claude Code, y Antigravity.
 
@@ -361,7 +361,7 @@ iteraciones largas, siguiendo el patrón de Claude Code / Antigravity.
 
 ### Implementación
 
-En lugar de crear archivos `.wasap/task.md` en el repo del usuario (que requiere acceso
+En lugar de crear archivos `.localforge/task.md` en el repo del usuario (que requiere acceso
 al filesystem del usuario y es complejo de manejar), almacenamos el task plan como un
 campo de texto en el `AgentSession`. El agente lo actualiza entre iteraciones usando
 un tool dedicado.
@@ -651,7 +651,7 @@ async def cmd_cancel(args: str, context: CommandContext) -> str:
 
 ### ¿Por qué NO CodeAct (ejecución de scripts arbitrarios)?
 ManusIA ejecuta scripts Python dentro de un Docker sandbox. Esto es extremadamente
-poderoso pero requiere aislamiento de containers por tarea. WasAP corre como un
+poderoso pero requiere aislamiento de containers por tarea. LocalForge corre como un
 solo contenedor Docker sin sandboxing. Ejecutar código arbitrario en ese entorno
 sería un riesgo de seguridad inaceptable. Las herramientas predefinidas con controles
 de seguridad son la opción correcta de seguridad para este contexto.

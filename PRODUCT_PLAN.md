@@ -1,4 +1,4 @@
-# WasAP - Plan de Producto
+# LocalForge - Plan de Producto
 ## Asistente Personal vía WhatsApp con LLM Local (Ollama)
 
 ---
@@ -15,13 +15,13 @@ Un asistente personal inteligente al que le hablás por WhatsApp y te responde u
 - **Extensible**: sistema de skills/plugins inspirado en [OpenClaw](https://openclaw.ai), donde agregar capacidades nuevas es escribir un archivo markdown
 
 **Inspiración — OpenClaw:**
-WasAP toma varios patrones de diseño de OpenClaw, el asistente personal open-source que usa markdown como capa de configuración y memoria. En particular:
+LocalForge toma varios patrones de diseño de OpenClaw, el asistente personal open-source que usa markdown como capa de configuración y memoria. En particular:
 - **Archivos markdown como fuente de verdad** para memorias y configuración de skills
 - **Skills como carpetas con SKILL.md** que definen capacidades del agente
 - **Memoria en dos capas**: hechos curados (MEMORY.md) + notas diarias (logs)
 - **Carga progresiva**: solo se lee el detalle de un skill cuando el agente lo necesita
 
-La diferencia clave: OpenClaw es un framework multi-canal multi-agente. WasAP es un asistente personal single-user, single-channel (WhatsApp), optimizado para simplicidad.
+La diferencia clave: OpenClaw es un framework multi-canal multi-agente. LocalForge es un asistente personal single-user, single-channel (WhatsApp), optimizado para simplicidad.
 
 ---
 
@@ -43,7 +43,7 @@ La diferencia clave: OpenClaw es un framework multi-canal multi-agente. WasAP es
                                  ┌─── Docker Compose ────────────────────┐
                                  │                                      │
                                  │  ┌─────────────────────────┐        │
-                                 │  │  WasAP Server (Python)   │        │
+                                 │  │  LocalForge Server (Python)   │        │
                                  │  │                         │        │
                                  │  │  FastAPI                │        │
                                  │  │  ├─ Webhook receiver    │        │
@@ -118,7 +118,7 @@ La diferencia clave: OpenClaw es un framework multi-canal multi-agente. WasAP es
 - Indicador de "visto" / acuse de recibo
 - Health check endpoint
 - Guía de setup completa (SETUP.md)
-- **Dockerizado**: Dockerfile + docker-compose.yml (wasap + ollama + ngrok)
+- **Dockerizado**: Dockerfile + docker-compose.yml (localforge + ollama + ngrok)
 - Volume para modelos de Ollama (persistencia entre reinicios)
 - Tests unitarios completos
 
@@ -197,7 +197,7 @@ Respondé en el idioma del usuario.
 
 1. El mensaje del usuario llega con la lista de tools disponibles
 2. Ollama responde con tool_calls en vez de texto
-3. WasAP ejecuta cada tool, appendea resultados como role="tool"
+3. LocalForge ejecuta cada tool, appendea resultados como role="tool"
 4. Se reenvía a Ollama → puede llamar más tools o responder con texto
 5. Después de MAX_TOOL_ITERATIONS (5), se fuerza respuesta sin tools
 
@@ -341,17 +341,142 @@ Phase C: categories = await classify_task  ← ya casi listo
 Phase D: _build_context() → chat_with_tools (LLM principal, ~3-8s)
 ```
 
-### Fase 8: Evaluación y Mejora Continua 🔄
+### Fase 8: Evaluación y Mejora Continua ✅
 > Arquitectura de evaluación estructurada para medir y mejorar sistemáticamente la calidad del asistente.
 
-- **Guardrails**: Validación pre-entrega (idioma, longitud, alucinaciones, PII)
-- **Trazabilidad Estructurada**: Spans jerárquicos de todo el pipeline (SQLite)
+- **Guardrails** (`app/guardrails/`): Validación pre-entrega — checks determinísticos (idioma, longitud, PII, tool JSON expuesto) + LLM checks opcionales (coherencia de tool, alucinación). Fail-open. Remediation single-shot con prompt bilingüe.
+- **Trazabilidad Estructurada** (`app/tracing/`): Spans jerárquicos de todo el pipeline — `TraceContext` via `ContextVar`, `TraceRecorder` best-effort con Langfuse + SQLite simultáneamente. Spans: `guardrails`, `guardrails:remediation`, `llm:iteration_N`, `tool:*`, `planner:*`.
 - **Evaluación en 3 Capas**:
-  - *Capa 1* (Implícita): Reacciones de WhatsApp, correcciones del usuario
-  - *Capa 2* (Automática): G-Eval offline para testear métricas
-  - *Capa 3* (Explícita): Comando `/feedback` para human-in-the-loop
-- **Dataset vivo y Auto-evolución**: Creación de un dataset de interacciones y prompts dinámicos
-- Ver detalle en `docs/exec-plans/11-eval_implementation_plan.md`
+  - *Capa 1* (Implícita): Reacciones de WhatsApp (👍→1.0, 👎→0.0, etc.) → scores en `trace_scores`. Correcciones del usuario detectadas por alta confianza → `add_correction_pair()`.
+  - *Capa 2* (Automática): LLM-as-judge (`run_quick_eval`, `scripts/run_eval.py`) — prompt binario yes/no, `think=False`.
+  - *Capa 3* (Explícita): `/feedback <comentario>` (análisis de sentimiento → score) + `/rate <1-5>`.
+- **Dataset vivo** (`app/eval/`): Curación 3-tier automática — failure (guardrail < 0.3 o señal negativa) > golden confirmado (sistema OK + señal positiva) > golden candidato. Tags `guardrail:{check_name}` para filtrar por causa.
+- **Auto-evolución de prompts** (`app/eval/evolution.py` + `prompt_manager.py`): `propose_prompt_change()` genera versión modificada. `/approve-prompt` + `activate_with_eval()` (advisory LLM-as-judge sobre dataset) → activación humana explícita.
+- **Prompt Registry & Versioning** (`app/eval/prompt_registry.py`): 9 prompts en catálogo centralizado, versionado en DB, cache en memoria, `/prompts` para inspeccionar.
+- **Benchmark offline** (`scripts/run_eval.py`): CLI sin FastAPI — `init_db()` + `OllamaClient` directo. Exit 0/1/2 según accuracy vs threshold. Integrable en CI.
+
+---
+
+### Fase 9: Tool Router & Capacidades Dinámicas ✅
+> Router de 2 etapas para escalar a 60+ tools sin degradar la fiabilidad del LLM.
+
+#### Problema
+qwen3:8b maneja de forma fiable ~5-6 tools en el payload de Ollama. Con 60+ tools el modelo ignora todas las tools.
+
+#### Solución: Router de 2 etapas
+
+1. **`classify_intent()`**: LLM call rápido (`think=False`, sin tools) — clasifica el mensaje en categorías (`["time", "math", "notes", "projects", ...]`). Se lanza como `asyncio.create_task` en paralelo con el I/O de la Fase A del critical path.
+2. **`select_tools()`**: Mapea categorías → tool names, distribuye el budget proporcionalmente (`per_cat = max(2, max_tools // len(categories))`). Cap configurable: `max_tools_per_call=8`.
+
+#### MCP Integration & Hot-Reload
+
+- **`McpManager`** (`app/mcp/`): conecta a servidores MCP stdio/HTTP, timeout 30s. Stack por servidor (`_server_stacks`) → `hot_add_server()` / `hot_remove_server()` sin restart.
+- **Smithery**: `GET https://registry.smithery.ai/servers?q=<query>` para descubrir servidores. HTTP transport via `streamable_http_client`.
+- **`expand` skill**: instala servidores desde Smithery o URLs, llama `reset_tools_cache()` + `register_dynamic_category()` en runtime.
+- **Fetch mode tracking**: Puppeteer primero, mcp-fetch como fallback, runtime fallback en executor si el tool falla.
+
+#### Dynamic Tool Budget
+
+- Meta-tool `request_more_tools`: siempre disponible, permite al LLM pedir tools de otra categoría mid-conversation sin llamar `classify_intent` nuevamente.
+
+---
+
+### Fase 10: Modo Agéntico ✅
+> Loop autónomo Planner-Orchestrator para tareas complejas multi-step.
+
+#### Arquitectura (3 fases)
+
+```
+UNDERSTAND → planner crea JSON plan (AgentPlan + TaskStep[])
+EXECUTE    → workers ejecutan tareas con tool sets especializados
+SYNTHESIZE → planner revisa, re-planea si necesario (max 3 re-plans)
+```
+
+- **Planner** (`app/agent/planner.py`): `think=False` para output JSON estructurado. Fallback a reactive loop si falla el parse.
+- **Workers** (`app/agent/workers.py`): `WORKER_TOOL_SETS` mapea `worker_type` → lista de categorías. Cada worker usa `execute_tool_loop` con `pre_classified_categories`.
+- **Reactive fallback** (`_run_reactive_session`): loop simple 15 rounds × 8 tools para tareas no estructuradas.
+- **HitL** (`app/agent/hitl.py`): `request_user_approval()` envía mensaje WhatsApp y espera respuesta async antes de ejecutar tools sensibles.
+- **Scratchpad**: `AgentSession.scratchpad` persiste entre rounds reactivos via tags `<scratchpad>...</scratchpad>`.
+- **Persistencia** (`app/agent/persistence.py`): append-only JSONL en `data/agent_sessions/<phone>_<session_id>.jsonl`. Best-effort.
+- **`/agent <objetivo>`**: inicia sesión en background. `/cancel` interrumpe. `/agent-resume` retoma desde disco.
+
+#### Projects Skill
+
+- 4 tablas SQLite: `projects`, `project_tasks`, `project_activity`, `project_notes` + `vec_project_notes`.
+- Proyectos por `phone_number` (no FK a conversations) — sobreviven `/clear`.
+- `UNIQUE(phone_number, name)` — identificados por nombre, COLLATE NOCASE.
+- Semántica: `add_project_note` embede la nota; `search_project_notes` usa KNN con fallback a list all.
+- Auto-suggest: si todas las tareas están done → sugiere `update_project_status`. Al completar/archivar → log final automático.
+
+---
+
+### Fase 11: Seguridad Agéntica ✅
+> Defensa en profundidad para tool execution autónoma.
+
+#### PolicyEngine (`app/security/policy_engine.py`)
+
+- Evalúa argumentos de tools contra reglas YAML **antes** de ejecutar.
+- Tres decisiones: `ALLOW`, `DENY`, `FLAG` (HitL).
+- Regex deterministas — sin LLM, latencia negligible.
+
+#### AuditTrail (`app/security/audit.py`)
+
+- Log append-only con hash SHA-256 secuencial (cada registro incluye el hash del anterior).
+- Garantiza integridad y no-repudio del historial de tool calls agénticos.
+
+#### Dev Tools
+
+| Tool | Descripción |
+|------|-------------|
+| `shell_tools` | Denylist (`rm`, `sudo`, etc.) + allowlist configurable. Shell operators → HitL. `asyncio.create_subprocess_exec` con `shell=False`. |
+| `git_tools` | `git_commit`, `git_push`, `git_create_branch` local + PR via GitHub REST API v2022-11-28. |
+| `workspace_tools` | `switch_workspace(name)` cambia `_PROJECT_ROOT` dinámicamente. `settings.projects_root` para multi-project. |
+| `debug_tools` | 5 tools de introspección — `review_interactions`, `diagnose_trace`, `write_debug_report`, etc. |
+
+#### Comandos
+
+- `/dev-review [teléfono]`: lanza sesión Planner-Orchestrator con objetivo de análisis de interacciones.
+- `/debug [on|off]`: toggle de modo debug con logs detallados de ejecución.
+
+---
+
+### Fase 12: Context Engineering v2 ✅
+> Token budget tracking, ContextBuilder unificado, windowed history y prompt versioning.
+
+#### Token Budget
+
+- `token_estimator.py`: proxy chars/4, `log_context_budget()` — WARNING >80%, ERROR >100% de 32K.
+- Budget guardado en `ctx.token_estimate`, visible en logs estructurados.
+
+#### ContextBuilder
+
+- `context_builder.py`: consolida N secciones en 1 system message con XML tags (`<user_memories>`, `<active_projects>`, `<relevant_notes>`, `<recent_activity>`, `<capabilities>`, `<conversation_summary>`).
+- Secciones vacías omitidas. Reemplaza el system message plano anterior.
+
+#### Windowed History
+
+- `get_windowed_history(verbatim_count=8)` en `ConversationManager` → `(últimos_N, resumen_de_anteriores)`.
+- Zero-latency adicional: usa el resumen existente en DB.
+- Setting: `history_verbatim_count=8`.
+
+#### Capabilities Filtering
+
+- Capabilities se construyen **después** de `classify_intent` — skip si `["none"]`, filtradas por categoría activa.
+- `_build_capabilities_for_categories()` separa skills/MCP por categorías.
+
+#### Memory Similarity Threshold
+
+- `search_similar_memories_with_distance()` → `(content, L2_distance)`. Filtrado por `memory_similarity_threshold=1.0`. Fallback a top-3.
+
+#### Sticky Categories
+
+- `conversation_state` tabla persiste categorías del turno anterior.
+- Si `classify_intent` retorna `"none"` → se usan sticky categories como fallback.
+
+#### Prompt Versioning
+
+- `app/eval/prompt_registry.py`: 9 prompts en catálogo centralizado, fallback chain cache → DB → registry → default.
+- `seed_default_prompts()` idempotente en startup. `/approve-prompt` activa versiones con eval advisory.
 
 ---
 
@@ -508,7 +633,7 @@ Todo gratis. El número de test tiene limitación de 5 destinatarios en modo des
 
 | Servicio | Imagen | Propósito |
 |---|---|---|
-| `wasap` | Build local (Dockerfile) | App FastAPI |
+| `localforge` | Build local (Dockerfile) | App FastAPI |
 | `ollama` | `ollama/ollama` | LLM server |
 | `ngrok` | `ngrok/ngrok` (opcional) | Túnel al webhook |
 
@@ -531,16 +656,16 @@ docker compose exec ollama ollama pull qwen3:8b   # Descargar modelo
 docker compose up -d         # Listo
 
 # Ver logs
-docker compose logs -f wasap
+docker compose logs -f localforge
 ```
 
 ---
 
 ## 14. Comparación con OpenClaw
 
-WasAP se inspira en varios patrones de OpenClaw pero con un enfoque más simple:
+LocalForge se inspira en varios patrones de OpenClaw pero con un enfoque más simple:
 
-| Aspecto | OpenClaw | WasAP |
+| Aspecto | OpenClaw | LocalForge |
 |---------|----------|-------|
 | **Canales** | 12+ (WhatsApp, Telegram, Slack, Discord...) | Solo WhatsApp |
 | **Usuarios** | Multi-agente, multi-usuario | Single-user |

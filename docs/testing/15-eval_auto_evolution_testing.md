@@ -14,7 +14,7 @@
 # (bot responde en idioma incorrecto — difícil de triggear manualmente)
 
 # Verificar memorias de self_correction en DB
-sqlite3 data/wasap.db "
+sqlite3 data/localforge.db "
 SELECT id, content, category, created_at
 FROM memories
 WHERE category = 'self_correction'
@@ -29,7 +29,7 @@ grep -A2 "auto-corrección" data/memory/MEMORY.md
 ```bash
 # Las memorias de self_correction se inyectan en Phase B
 # Verificar en los logs del container:
-docker compose logs -f wasap 2>&1 | grep "self_correction\|memories"
+docker compose logs -f localforge 2>&1 | grep "self_correction\|memories"
 ```
 
 ---
@@ -46,7 +46,7 @@ from app.database.db import init_db
 from app.database.repository import Repository
 
 async def main():
-    conn, _ = await init_db("data/wasap.db")
+    conn, _ = await init_db("data/localforge.db")
     repo = Repository(conn)
 
     # Leer el prompt actual de config
@@ -80,7 +80,7 @@ Usuario: "los últimos fallos son de idioma. proponé un fix al system prompt"
 ### Verificar la propuesta en DB
 
 ```bash
-sqlite3 data/wasap.db "
+sqlite3 data/localforge.db "
 SELECT version, is_active, created_by, created_at,
        substr(content, 1, 100) as content_preview
 FROM prompt_versions
@@ -100,7 +100,7 @@ Usuario: /approve-prompt system_prompt 2
 ```bash
 # Los próximos mensajes deben usar v2
 # Verificar en logs:
-docker compose logs -f wasap 2>&1 | grep "prompt cache\|active_prompt"
+docker compose logs -f localforge 2>&1 | grep "prompt cache\|active_prompt"
 
 # O desde Python:
 python - <<'EOF'
@@ -110,7 +110,7 @@ from app.database.repository import Repository
 from app.eval.prompt_manager import get_active_prompt, invalidate_prompt_cache
 
 async def main():
-    conn, _ = await init_db("data/wasap.db")
+    conn, _ = await init_db("data/localforge.db")
     repo = Repository(conn)
     invalidate_prompt_cache("system_prompt")
     prompt = await get_active_prompt("system_prompt", repo, "default")
@@ -127,13 +127,13 @@ EOF
 
 ```bash
 # Listar todas las versiones de prompts
-sqlite3 data/wasap.db "
+sqlite3 data/localforge.db "
 SELECT prompt_name, version, is_active, created_by, approved_at
 FROM prompt_versions
 ORDER BY prompt_name, version DESC;"
 
 # Ver memorias de auto-corrección
-sqlite3 data/wasap.db "
+sqlite3 data/localforge.db "
 SELECT content, created_at
 FROM memories
 WHERE category = 'self_correction'

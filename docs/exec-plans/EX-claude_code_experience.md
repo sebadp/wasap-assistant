@@ -7,7 +7,7 @@
 
 ## Objetivo
 
-Convertir el agente WasAP en un asistente de programación autónomo que el usuario pueda manejar desde WhatsApp, con una experiencia similar a Claude Code / cursor / aider. El usuario describe qué quiere hacer ("agregá dark mode al portfolio", "arreglá el bug de login") y el agente navega el código, edita archivos, corre tests, y commitea — pidiendo aprobación en los momentos clave.
+Convertir el agente LocalForge en un asistente de programación autónomo que el usuario pueda manejar desde WhatsApp, con una experiencia similar a Claude Code / cursor / aider. El usuario describe qué quiere hacer ("agregá dark mode al portfolio", "arreglá el bug de login") y el agente navega el código, edita archivos, corre tests, y commitea — pidiendo aprobación en los momentos clave.
 
 ---
 
@@ -122,7 +122,7 @@ CODING RULES:
 
 ### Feature 4: Multi-Project Workspace 🟡
 
-**Qué**: el agente puede trabajar en distintos repositorios, no solo en el propio (`wasap-assistant`). El usuario dice "trabajá en mi portfolio" y el agente cambia el `_PROJECT_ROOT`.
+**Qué**: el agente puede trabajar en distintos repositorios, no solo en el propio (`localforge-assistant`). El usuario dice "trabajá en mi portfolio" y el agente cambia el `_PROJECT_ROOT`.
 
 **Cómo**:
 - Directorio base configurable: `PROJECTS_DIR=/home/appuser/projects`

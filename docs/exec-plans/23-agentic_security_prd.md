@@ -1,7 +1,7 @@
 # PRD: Agentic Security Layer
 
 ## 1. Goal & Context
-The goal is to implement a robust security layer for the WasAP Autonomous Agent mode to prevent potentially destructive actions or unauthorized tool usage. This is inspired by modern "Agentic Detection and Response" (ADR) practices, employing Zero-Trust principles and Human-in-the-Loop workflows to secure the execution of sensitive tools.
+The goal is to implement a robust security layer for the LocalForge Autonomous Agent mode to prevent potentially destructive actions or unauthorized tool usage. This is inspired by modern "Agentic Detection and Response" (ADR) practices, employing Zero-Trust principles and Human-in-the-Loop workflows to secure the execution of sensitive tools.
 
 ## 2. The "What"
 The security layer will consist of three main pillars:

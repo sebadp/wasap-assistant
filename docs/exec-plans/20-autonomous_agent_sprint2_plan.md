@@ -38,7 +38,7 @@ Se implementarán 4 features clave (F4-F7 del plan original):
 
 Reemplaza la aplicación a ciegas del código por un paso de validación visual.
 
-#### [MODIFY] [selfcode_tools.py](file:///Users/sebastiandavila/wasap/wasap-assistant/app/skills/tools/selfcode_tools.py)
+#### [MODIFY] [selfcode_tools.py](file:///Users/sebastiandavila/localforge/localforge-assistant/app/skills/tools/selfcode_tools.py)
 Añadir herramienta `preview_patch`:
 - **Firma:** `preview_patch(path: str, search: str, replace: str)`
 - **Lógica:** Intenta aplicar el parche en memoria. Si tiene éxito, genera un *unified diff* usando la librería estándar `difflib`.
@@ -46,18 +46,18 @@ Añadir herramienta `preview_patch`:
 - **Importante:** Esta tool **NO** modifica el archivo real. Solo sirve para visualización.
 
 **Impacto en Loop:**
-Se debe modificar el `_AGENT_SYSTEM_PROMPT` en [loop.py](file:///Users/sebastiandavila/wasap/wasap-assistant/app/agent/loop.py) para indicar al agente que **siempre** debe usar `preview_patch` y obtener aprobación antes de usar `apply_patch` en archivos críticos o cuando hay dudas.
+Se debe modificar el `_AGENT_SYSTEM_PROMPT` en [loop.py](file:///Users/sebastiandavila/localforge/localforge-assistant/app/agent/loop.py) para indicar al agente que **siempre** debe usar `preview_patch` y obtener aprobación antes de usar `apply_patch` en archivos críticos o cuando hay dudas.
 
 ### F5: PR Creation (Integración con GitHub)
 
 Permite al agente completar el ciclo de vida del desarrollo.
 
-#### [MODIFY] [config.py](file:///Users/sebastiandavila/wasap/wasap-assistant/app/config.py)
+#### [MODIFY] [config.py](file:///Users/sebastiandavila/localforge/localforge-assistant/app/config.py)
 Añadir soporte para credenciales de GitHub:
 - `github_token: str | None = None`
-- `github_repo: str | None = None` (ej: `"sebastiandavila/wasap"`)
+- `github_repo: str | None = None` (ej: `"sebastiandavila/localforge"`)
 
-#### [MODIFY] [git_tools.py](file:///Users/sebastiandavila/wasap/wasap-assistant/app/skills/tools/git_tools.py)
+#### [MODIFY] [git_tools.py](file:///Users/sebastiandavila/localforge/localforge-assistant/app/skills/tools/git_tools.py)
 Añadir herramienta `git_create_pr`:
 - **Firma:** `git_create_pr(title: str, body: str, head_branch: str, base_branch: str = "main")`
 - **Lógica:** Hace un request HTTP a la GitHub API (`POST /repos/{owner}/{repo}/pulls`).
@@ -68,14 +68,14 @@ Añadir herramienta `git_create_pr`:
 
 Resolución de uno de los mayores problemas actuales: si el bot se reinicia, las tareas en background del agente se pierden silenciosamente.
 
-#### [NEW] [persistence.py](file:///Users/sebastiandavila/wasap/wasap-assistant/app/agent/persistence.py)
+#### [NEW] [persistence.py](file:///Users/sebastiandavila/localforge/localforge-assistant/app/agent/persistence.py)
 Crear módulo dedicado a persistencia usando formato JSONL (fácil de appendear, robusto ante caídas):
 - **Estructura Directorio:** `data/agent_sessions/<phone_number>_<session_id>.jsonl`
 - **Lógica de Guardado:** `append_to_session(session_id, phone_number, data_dict)` -> Escribe una línea JSON.
 - **Lógica de Carga:** `load_session_history(session_id, phone_number)` -> Reconstruye la sesión iterando línea por línea.
 - *Nota: la persistencia en DB relacional es overkill para este caso de uso donde solo nos importa el log estructurado de qué hizo.*
 
-#### [MODIFY] [loop.py](file:///Users/sebastiandavila/wasap/wasap-assistant/app/agent/loop.py)
+#### [MODIFY] [loop.py](file:///Users/sebastiandavila/localforge/localforge-assistant/app/agent/loop.py)
 - En `run_agent_session`, al final de cada round, llamar a `append_to_session(...)` para guardar el estado actual (messages, task_plan).
 - Añadir comando `/agent-resume` (podría ir en router o un handler específico) para cargar la última sesión si el estado en memoria está vacío pero hay archivos JSONL recientes.
 
@@ -83,7 +83,7 @@ Crear módulo dedicado a persistencia usando formato JSONL (fácil de appendear,
 
 Inspirado en Claude Code, permite "customizar" el comportamiento del agente mediante archivos flat.
 
-#### [MODIFY] [loop.py](file:///Users/sebastiandavila/wasap/wasap-assistant/app/agent/loop.py)
+#### [MODIFY] [loop.py](file:///Users/sebastiandavila/localforge/localforge-assistant/app/agent/loop.py)
 - Al inicializar el `_AGENT_SYSTEM_PROMPT`, el agente debe revisar el directorio del workspace (o la raíz del proyecto) buscando archivos de bootstrap opcionales.
 - Archivos objetivo:
   - `SOUL.md`: Injecta personalidad o estilo (ej: "Respuestas concisas", "Usa emojis").

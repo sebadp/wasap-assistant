@@ -2,7 +2,7 @@
 
 > Documento técnico que baja la intención "El agente pierde contexto entre iteraciones,
 > clasifica mal follow-ups, y la compactación destruye información clave" a cambios
-> concretos en el codebase de WasAP.
+> concretos en el codebase de LocalForge.
 >
 > **Basado en**: [Effective Context Engineering for AI Agents](https://www.anthropic.com/engineering/effective-context-engineering-for-ai-agents) (Anthropic, 2025)
 > y el análisis de bugs de la sesión de debugging del 22/02/2026.
@@ -33,7 +33,7 @@ En las pruebas de producción del 22/02, el agente mostró 3 tipos de falla:
 El artículo de Anthropic de 2025 sobre context engineering propone principios que mapean directamente
 a estos problemas:
 
-| Principio Anthropic | Problema WasAP | Solución propuesta |
+| Principio Anthropic | Problema LocalForge | Solución propuesta |
 |---|---|---|
 | "Context as finite resource" | Contexto se llena con tool results crudos | Tool result clearing |
 | "Just-in-time retrieval" | Se pre-cargan todos los datos sin filtrar | `user_facts` on-demand |
@@ -626,7 +626,7 @@ contexto conversacional resuelve el 80% de los problemas sin costo operacional a
 
 ### ¿Por qué extracción JSON antes de LLM para compactar?
 El LLM de compactación tiene un defecto fundamental: puede hallucinar placeholders como
-`[repo-name]` en lugar de preservar el valor real `wasap-assistant`. La extracción JSON
+`[repo-name]` en lugar de preservar el valor real `localforge-assistant`. La extracción JSON
 es determinista y preserva los valores exactos. No hay riesgo de hallucination.
 
 ### ¿Son revertibles estos cambios?
