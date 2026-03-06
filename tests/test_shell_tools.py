@@ -56,7 +56,7 @@ def _make_registry_and_settings(write_enabled: bool = True):
     settings = MagicMock()
     settings.agent_write_enabled = write_enabled
     settings.agent_shell_allowlist = (
-        "pytest,ruff,mypy,make,npm,pip,git,cat,head,tail,wc,ls,find,grep,echo,python,node"
+        "pytest,ruff,mypy,make,npm,git,cat,head,tail,wc,ls,find,grep,echo,python,node"
     )
     return registry, settings
 
