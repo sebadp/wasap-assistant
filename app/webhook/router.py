@@ -618,12 +618,14 @@ async def _handle_reaction(reaction, repository, wa_client=None, settings=None) 
             io = await repository.get_trace_io_by_id(trace_id)
             if io:
                 input_text, output_text = io
-                asyncio.create_task(
-                    maybe_curate_to_dataset(
-                        trace_id=trace_id,
-                        input_text=input_text,
-                        output_text=output_text,
-                        repository=repository,
+                _track_task(
+                    asyncio.create_task(
+                        maybe_curate_to_dataset(
+                            trace_id=trace_id,
+                            input_text=input_text,
+                            output_text=output_text,
+                            repository=repository,
+                        )
                     )
                 )
 
@@ -639,12 +641,14 @@ async def _handle_reaction(reaction, repository, wa_client=None, settings=None) 
                     source="system",
                     comment="correction prompt sent after negative reaction",
                 )
-                asyncio.create_task(
-                    wa_client.send_message(
-                        reaction.from_number,
-                        "Vi que no te gustó mi respuesta. "
-                        "¿Qué debería haber dicho? "
-                        "Respondé con la respuesta correcta y la recordaré para mejorar.",
+                _track_task(
+                    asyncio.create_task(
+                        wa_client.send_message(
+                            reaction.from_number,
+                            "Vi que no te gustó mi respuesta. "
+                            "¿Qué debería haber dicho? "
+                            "Respondé con la respuesta correcta y la recordaré para mejorar.",
+                        )
                     )
                 )
 
