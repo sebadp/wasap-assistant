@@ -53,6 +53,11 @@ async def get_audit_trail() -> AuditTrail:
     if _audit_trail is None:
         loop = asyncio.get_running_loop()
         hmac_key = os.getenv("AUDIT_HMAC_KEY")
+        if not hmac_key:
+            logger.warning(
+                "AUDIT_HMAC_KEY is not set — audit trail uses plain SHA-256 (no HMAC tamper-evidence). "
+                "Set AUDIT_HMAC_KEY in .env to enable cryptographic tamper protection."
+            )
         _audit_trail = await loop.run_in_executor(
             None, lambda: AuditTrail(Path("data/audit_trail.jsonl"), hmac_key=hmac_key)
         )

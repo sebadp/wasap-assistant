@@ -153,9 +153,11 @@ def _validate_command(command: str, allowlist: frozenset[str]) -> CommandDecisio
             for tok in tokens[1:]:
                 if tok in _CODE_EXEC_FLAGS:
                     return CommandDecision.DENY
-        # Package install subcommands require HITL even for allowlisted managers
+        # Package install subcommands require HITL even for allowlisted managers.
+        # Scan all tokens (not just tokens[1]) to catch flags before the subcommand,
+        # e.g. `pip --quiet install pkg` or `npm --verbose install pkg`.
         if base_cmd in _PACKAGE_MGMT_CMDS:
-            if len(tokens) > 1 and tokens[1] in _PACKAGE_MGMT_SUBCMDS:
+            if any(tok in _PACKAGE_MGMT_SUBCMDS for tok in tokens[1:]):
                 return CommandDecision.ASK
         return CommandDecision.ALLOW
 

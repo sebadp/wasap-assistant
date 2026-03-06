@@ -346,7 +346,7 @@ def register(
         if not _is_safe_path(target):
             return f"Blocked: '{path}' is outside the project root or is a sensitive file."
 
-        if target.name in _BLOCKED_CONFIG_FILES:
+        if target.name.lower() in _BLOCKED_CONFIG_FILES:
             return f"Blocked: '{path}' is a protected configuration file and cannot be overwritten."
 
         if target.suffix.lower() in _BLOCKED_EXT:
@@ -430,7 +430,7 @@ def register(
         if not _is_safe_path(target):
             return f"Blocked: '{path}' is outside the project root or is a sensitive file."
 
-        if target.name in _BLOCKED_CONFIG_FILES:
+        if target.name.lower() in _BLOCKED_CONFIG_FILES:
             return f"Blocked: '{path}' is a protected configuration file and cannot be modified."
 
         if target.suffix.lower() in _BLOCKED_EXT:

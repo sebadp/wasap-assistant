@@ -28,7 +28,9 @@ _ALLOWLIST = frozenset(
         "mypy",
         "make",
         "npm",
-        "pip",
+        # "pip" intentionally absent — mirrors the production default and makes
+        # the pip-related tests in TestArgumentValidation meaningful (they add
+        # pip explicitly via `frozenset(_ALLOWLIST | {"pip"})`).
         "git",
         "cat",
         "head",
