@@ -47,6 +47,11 @@ Documentos técnicos que bajan una intención de producto a cambios concretos en
 | Eval & Security Hardening — Multi-criteria judge, code security patterns, credential scrubbing | [`60-eval_security_hardening_prd.md`](60-eval_security_hardening_prd.md) / [`60-eval_security_hardening_prp.md`](60-eval_security_hardening_prp.md) | ✅ Completado |
 | Guardrails & Eval Hardening — LLM checks, code security tracing, reactions, guardrails benchmark | [`61-guardrails_eval_hardening_prd.md`](61-guardrails_eval_hardening_prd.md) / [`61-guardrails_eval_hardening_prp.md`](61-guardrails_eval_hardening_prp.md) | ✅ Completado |
 | Benchmark Suite Expansion — Memory, plan, saturation, scheduled eval, dataset expansion | [`62-benchmark_suite_prd.md`](62-benchmark_suite_prd.md) / [`62-benchmark_suite_prp.md`](62-benchmark_suite_prp.md) | ✅ Completado |
+| PR Review — AI Code Review desde WhatsApp (master plan, 3 fases) | [`63-pr_review_prd.md`](63-pr_review_prd.md) | ✅ Completado |
+| &nbsp;&nbsp;↳ Phase A: Core Review Engine (diff → LLM → GitHub comments) | [`63a-pr_review_core_prp.md`](63a-pr_review_core_prp.md) | ✅ Completado |
+| &nbsp;&nbsp;↳ Phase B: Repo Setup & Context (metadata, conventions, /pr-setup) | [`63b-pr_review_setup_prp.md`](63b-pr_review_setup_prp.md) | ✅ Completado |
+| &nbsp;&nbsp;↳ Phase C: Deep Code Search (clone, grep, glob, symbols) | [`63c-pr_review_deep_index_prp.md`](63c-pr_review_deep_index_prp.md) | ✅ Completado |
+| PR Review Observability — Prompts, Multi-Pass, Tracing & Eval | [`64-pr_review_observability_prd.md`](64-pr_review_observability_prd.md) / [`64-pr_review_observability_prp.md`](64-pr_review_observability_prp.md) | ✅ Completado |
 
 ## Convenciones
 

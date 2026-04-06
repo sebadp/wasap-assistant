@@ -1,4 +1,4 @@
-.PHONY: dev test lint format typecheck check eval eval-seed eval-seed-clear eval-classify eval-tools eval-e2e eval-e2e-verbose eval-guardrails eval-memory eval-plan eval-saturation eval-all eval-langfuse
+.PHONY: dev test lint format typecheck check eval eval-seed eval-seed-clear eval-classify eval-tools eval-e2e eval-e2e-verbose eval-guardrails eval-memory eval-plan eval-pr-review eval-saturation eval-all eval-langfuse
 
 VENV := .venv/bin/
 OLLAMA_URL ?= http://localhost:11434
@@ -51,6 +51,9 @@ eval-memory:
 
 eval-plan:
 	$(VENV)python scripts/run_eval.py --mode plan --threshold 0.5 --limit 100 --ollama $(OLLAMA_URL)
+
+eval-pr-review:
+	$(VENV)python scripts/run_eval.py --mode pr-review --tag section:pr_review_security --tag section:pr_review_bugs --tag section:pr_review_clean --threshold 0.5 --limit 100 --ollama $(OLLAMA_URL) -v
 
 eval-saturation:
 	$(VENV)python scripts/context_saturation_analysis.py

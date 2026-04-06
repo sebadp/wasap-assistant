@@ -11,8 +11,18 @@ from app.models import ChatMessage
 
 logger = logging.getLogger(__name__)
 
-# Keep references to background agent tasks to prevent GC mid-execution
+# Keep references to background tasks to prevent GC mid-execution
 _bg_agent_tasks: set[asyncio.Task] = set()
+_bg_review_tasks: set[asyncio.Task] = set()
+
+
+def _get_clone_path(repo_key: str, settings: object) -> str:
+    """Return clone path as string if deep indexing is available."""
+    from app.reviews.repo_clone import get_clone_path
+
+    clones_dir = getattr(settings, "pr_review_clones_dir", "data/repo_clones")
+    path = get_clone_path(repo_key, clones_dir)
+    return str(path) if path else ""
 
 
 async def cmd_cancel(args: str, context: CommandContext) -> str:
@@ -779,6 +789,259 @@ async def cmd_reset_metrics(args: str, context: CommandContext) -> str:
     return "\n".join(lines)
 
 
+async def cmd_pr_setup(args: str, context: CommandContext) -> str:
+    """Setup a repo for enhanced PR reviews with project context."""
+    import re
+
+    settings = context.settings
+    token = getattr(settings, "github_token", None)
+    if not token:
+        return "Error: `github_token` no configurado. Agrega GITHUB_TOKEN en .env"
+
+    parts = args.strip().split()
+
+    # /pr-setup (no args) -> list repos
+    if not parts:
+        profiles = await context.repository.list_repo_profiles()
+        if not profiles:
+            return "No hay repos configurados. Usa: /pr-setup https://github.com/owner/repo"
+        lines = ["*Repos configurados:*"]
+        for p in profiles:
+            lang = p.get("primary_language", "")
+            fw = p.get("framework") or ""
+            lvl = p.get("indexing_level", 0)
+            lines.append(f"- `{p['owner']}/{p['repo']}` ({lang}/{fw}) [level {lvl}]")
+        return "\n".join(lines)
+
+    raw = parts[0]
+
+    # Parse owner/repo from URL or shorthand
+    m = re.match(r"(?:https?://)?github\.com/([^/]+)/([^/]+?)(?:\.git)?/?$", raw)
+    if m:
+        owner, repo = m.group(1), m.group(2)
+    elif "/" in raw and not raw.startswith("http"):
+        owner, repo = raw.split("/", 1)
+    else:
+        return "Formato: /pr-setup https://github.com/owner/repo  o  /pr-setup owner/repo"
+
+    repo_key = f"github:{owner}/{repo}"
+
+    # --remove
+    if "--remove" in parts:
+        deleted = await context.repository.delete_repo_profile(repo_key)
+        return (
+            f"Repo {owner}/{repo} eliminado." if deleted else f"Repo {owner}/{repo} no encontrado."
+        )
+
+    deep = "--deep" in parts
+
+    # --refresh or first setup
+    from app.reviews.providers.github import GitHubProvider
+    from app.reviews.repo_analyzer import analyze_repo
+
+    provider = GitHubProvider(owner=owner, repo=repo, token=token)
+    try:
+        profile = await analyze_repo(owner, repo, provider)
+    except Exception as exc:
+        return f"Error al analizar {owner}/{repo}: {exc}"
+
+    # Deep mode: clone repo for cross-file search (Phase C)
+    if deep:
+        from app.reviews.repo_clone import ensure_clone
+
+        clone_url = f"https://x-access-token:{token}@github.com/{owner}/{repo}.git"
+        clones_dir = getattr(settings, "pr_review_clones_dir", "data/repo_clones")
+        try:
+            await ensure_clone(profile.repo_key, clone_url, clones_dir)
+            profile.indexing_level = 1
+        except Exception as exc:
+            return f"Error al clonar {owner}/{repo}: {exc}"
+
+    await context.repository.save_repo_profile(
+        {
+            "repo_key": profile.repo_key,
+            "owner": profile.owner,
+            "repo": profile.repo,
+            "provider": profile.provider,
+            "default_branch": profile.default_branch,
+            "primary_language": profile.primary_language,
+            "framework": profile.framework,
+            "linter": profile.linter,
+            "test_runner": profile.test_runner,
+            "conventions": profile.conventions,
+            "file_tree": profile.file_tree,
+            "readme_summary": profile.readme_summary,
+            "config_snippets": profile.config_snippets,
+            "indexing_level": profile.indexing_level,
+            "last_analyzed_at": profile.last_analyzed_at,
+        }
+    )
+
+    fw = profile.framework or "n/a"
+    linter = profile.linter or "n/a"
+    runner = profile.test_runner or "n/a"
+    deep_msg = " + deep clone listo" if deep else ""
+    return (
+        f"Repo {owner}/{repo} configurado "
+        f"({profile.primary_language}/{fw}, {linter}, {runner}){deep_msg}. "
+        f"Listo para /pr-review."
+    )
+
+
+async def cmd_pr_review(args: str, context: CommandContext) -> str:
+    """Review a GitHub PR with AI — summary + line comments."""
+    if not args.strip():
+        return "Uso: /pr-review <url> [--summary-only] [--severity critical,warning]"
+
+    parts = args.strip().split()
+    url = parts[0]
+    summary_only = "--summary-only" in parts
+    thorough = "--thorough" in parts
+    severity_filter = "suggestion"
+    for i, p in enumerate(parts):
+        if p == "--severity" and i + 1 < len(parts):
+            severity_filter = parts[i + 1]
+
+    settings = context.settings
+    token = getattr(settings, "github_token", None)
+    if not token:
+        return "Error: `github_token` no configurado. Agrega GITHUB_TOKEN en .env"
+
+    from app.reviews.providers.factory import parse_pr_url
+
+    try:
+        _owner, _repo, pr_number = parse_pr_url(url)
+    except ValueError:
+        return "URL no soportada. Usa: https://github.com/owner/repo/pull/123"
+
+    # Background execution
+    async def _run_review() -> None:
+        try:
+            from app.reviews.diff_parser import parse_unified_diff
+            from app.reviews.formatter import format_finding_for_github, format_review_summary
+            from app.reviews.models import ReviewComment
+            from app.reviews.providers.factory import create_provider
+            from app.reviews.reviewer import review_pull_request
+            from app.tracing.context import get_current_trace
+
+            trace = get_current_trace()
+            provider, number = create_provider(url, token)
+
+            # Notify start
+            if context.wa_client:
+                await context.wa_client.send_message(
+                    context.phone_number, f"Analizando PR #{number}..."
+                )
+
+            # Fetch data
+            if trace:
+                async with trace.span("pr_review.fetch") as span:
+                    span.set_input({"pr_number": number})
+                    pr = await provider.get_pull_request(number)
+                    raw_diff = await provider.get_diff(number)
+                    span.set_output({"files_changed": pr.files_changed})
+            else:
+                pr = await provider.get_pull_request(number)
+                raw_diff = await provider.get_diff(number)
+
+            if trace:
+                async with trace.span("pr_review.parse") as span:
+                    files = parse_unified_diff(raw_diff)
+                    span.set_output({"files_parsed": len(files)})
+            else:
+                files = parse_unified_diff(raw_diff)
+
+            # Lookup repo context (Phase B)
+            repo_ctx = ""
+            repo_key = f"github:{pr.repo_owner}/{pr.repo_name}"
+            profile = await context.repository.get_repo_profile(repo_key)
+            if profile:
+                parts_ctx = [
+                    f"- Project: {profile['owner']}/{profile['repo']}"
+                    f" ({profile.get('primary_language', '')}"
+                    f", {profile.get('framework') or 'n/a'})",
+                    f"- Linter: {profile.get('linter') or 'n/a'}"
+                    f", Test runner: {profile.get('test_runner') or 'n/a'}",
+                ]
+                convs = profile.get("conventions", [])
+                if convs:
+                    parts_ctx.append(f"- Conventions: {', '.join(convs)}")
+                repo_ctx = "\n".join(parts_ctx)
+
+            # Run review
+            summary = await review_pull_request(
+                pr,
+                files,
+                context.ollama_client,
+                model=getattr(settings, "ollama_model", None),
+                language=getattr(settings, "pr_review_language", "es"),
+                min_confidence=getattr(settings, "pr_review_min_confidence", 0.6),
+                min_severity=severity_filter,
+                max_findings_per_file=getattr(settings, "pr_review_max_findings_per_file", 10),
+                skip_generated=getattr(settings, "pr_review_skip_generated", True),
+                repo_context=repo_ctx,
+                clone_path=_get_clone_path(repo_key, settings),
+                thorough=thorough,
+            )
+
+            # Send WhatsApp summary
+            wa_text = format_review_summary(summary, pr)
+            if context.wa_client:
+                await context.wa_client.send_message(context.phone_number, wa_text)
+
+            # Post GitHub review (unless summary-only)
+            if not summary_only and summary.findings:
+                comments = [
+                    ReviewComment(
+                        path=f.path,
+                        line=f.line,
+                        side=f.side,
+                        body=format_finding_for_github(f),
+                        start_line=f.start_line,
+                    )
+                    for f in summary.findings
+                ]
+                review_body = f"## {summary.title}\n\n{summary.overview}"
+                if trace:
+                    async with trace.span("pr_review.github_post") as span:
+                        span.set_input({"comments": len(comments)})
+                        review_url = await provider.post_review(
+                            number, review_body, "COMMENT", comments,
+                        )
+                        span.set_output({"url": review_url})
+                else:
+                    review_url = await provider.post_review(
+                        number, review_body, "COMMENT", comments,
+                    )
+                if context.wa_client:
+                    await context.wa_client.send_message(
+                        context.phone_number,
+                        f"Review posteado: {len(comments)} comentarios en {review_url}",
+                    )
+            # Trace scores
+            if trace:
+                await trace.add_score("pr_review_duration_ms", summary.duration_ms)
+                await trace.add_score("pr_review_findings_count", float(len(summary.findings)))
+                await trace.add_score("pr_review_files_reviewed", float(summary.files_reviewed))
+                critical = sum(1 for f in summary.findings if f.severity.value == "critical")
+                await trace.add_score("pr_review_critical_count", float(critical))
+                if summary.findings:
+                    avg_conf = sum(f.confidence for f in summary.findings) / len(summary.findings)
+                    await trace.add_score("pr_review_avg_confidence", avg_conf)
+
+        except Exception:
+            logger.exception("PR review failed for %s", url)
+            if context.wa_client:
+                await context.wa_client.send_message(
+                    context.phone_number, f"Error al revisar PR: {url}"
+                )
+
+    task = asyncio.create_task(_run_review())
+    _bg_review_tasks.add(task)
+    task.add_done_callback(_bg_review_tasks.discard)
+    return f"Revisando PR #{pr_number}... Te enviaré el resultado cuando termine."
+
+
 def register_builtins(registry: CommandRegistry) -> None:
     registry.register(
         CommandSpec(
@@ -930,5 +1193,21 @@ def register_builtins(registry: CommandRegistry) -> None:
             description="Borrar trazas, scores y eval dataset (sin tocar memorias)",
             usage="/reset-metrics",
             handler=cmd_reset_metrics,
+        )
+    )
+    registry.register(
+        CommandSpec(
+            name="pr-review",
+            description="Review a GitHub PR with AI — summary + line comments",
+            usage="/pr-review <url> [--summary-only] [--severity critical,warning]",
+            handler=cmd_pr_review,
+        )
+    )
+    registry.register(
+        CommandSpec(
+            name="pr-setup",
+            description="Setup a repo for enhanced PR reviews with project context",
+            usage="/pr-setup <url|owner/repo> [--remove] [--refresh]",
+            handler=cmd_pr_setup,
         )
     )

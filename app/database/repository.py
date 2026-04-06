@@ -2263,3 +2263,70 @@ class Repository:
         )
         await self._conn.commit()
         return cursor.rowcount > 0
+
+    # ------------------------------------------------------------------
+    # Repo Profiles (Plan 63-B)
+    # ------------------------------------------------------------------
+
+    async def save_repo_profile(self, profile: dict) -> None:
+        """Upsert a repo profile."""
+        await self._conn.execute(
+            "INSERT OR REPLACE INTO repo_profiles "
+            "(repo_key, owner, repo, provider, default_branch, primary_language, "
+            "framework, linter, test_runner, conventions, file_tree, "
+            "readme_summary, config_snippets, indexing_level, last_analyzed_at, "
+            "updated_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))",
+            (
+                profile["repo_key"],
+                profile["owner"],
+                profile["repo"],
+                profile.get("provider", "github"),
+                profile.get("default_branch", "main"),
+                profile.get("primary_language", ""),
+                profile.get("framework"),
+                profile.get("linter"),
+                profile.get("test_runner"),
+                json.dumps(profile.get("conventions", [])),
+                json.dumps(profile.get("file_tree", [])),
+                profile.get("readme_summary", ""),
+                json.dumps(profile.get("config_snippets", {})),
+                profile.get("indexing_level", 0),
+                profile.get("last_analyzed_at", ""),
+            ),
+        )
+        await self._conn.commit()
+
+    async def get_repo_profile(self, repo_key: str) -> dict | None:
+        """Get a repo profile by key."""
+        cursor = await self._conn.execute(
+            "SELECT * FROM repo_profiles WHERE repo_key = ?", (repo_key,)
+        )
+        row = await cursor.fetchone()
+        if not row:
+            return None
+        cols = [d[0] for d in cursor.description]
+        d = dict(zip(cols, row, strict=False))
+        d["conventions"] = json.loads(d.get("conventions") or "[]")
+        d["file_tree"] = json.loads(d.get("file_tree") or "[]")
+        d["config_snippets"] = json.loads(d.get("config_snippets") or "{}")
+        return d
+
+    async def list_repo_profiles(self) -> list[dict]:
+        """List all repo profiles."""
+        cursor = await self._conn.execute(
+            "SELECT repo_key, owner, repo, provider, primary_language, "
+            "framework, indexing_level, last_analyzed_at FROM repo_profiles "
+            "ORDER BY updated_at DESC"
+        )
+        rows = await cursor.fetchall()
+        cols = [d[0] for d in cursor.description]
+        return [dict(zip(cols, row, strict=False)) for row in rows]
+
+    async def delete_repo_profile(self, repo_key: str) -> bool:
+        """Delete a repo profile."""
+        cursor = await self._conn.execute(
+            "DELETE FROM repo_profiles WHERE repo_key = ?", (repo_key,)
+        )
+        await self._conn.commit()
+        return cursor.rowcount > 0

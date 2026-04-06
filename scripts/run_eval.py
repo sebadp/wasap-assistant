@@ -719,6 +719,86 @@ async def _run_plan(entries: list[dict], client: OllamaClient) -> list[dict]:
     return results
 
 
+async def _run_pr_review(entries: list[dict], client: OllamaClient) -> list[dict]:
+    """PR Review eval: run review pipeline on synthetic diffs and score findings."""
+    from app.reviews.diff_parser import parse_unified_diff
+    from app.reviews.models import PullRequestInfo
+    from app.reviews.reviewer import review_pull_request
+
+    results: list[dict] = []
+    for entry in entries:
+        meta = _parse_metadata(entry)
+        diff_text = entry["input_text"]
+        expected_category = meta.get("expected_category", "")
+        expected_severity = meta.get("expected_severity", "")
+        expected_min = meta.get("expected_min_findings", 1)
+        expected_max = meta.get("expected_max_findings", 5)
+        is_clean = meta.get("is_clean", False)
+
+        t0 = time.monotonic()
+        try:
+            files = parse_unified_diff(diff_text)
+            pr = PullRequestInfo(
+                number=0, title="Eval PR", description="Synthetic diff for eval",
+                author="eval", base_branch="main", head_branch="eval",
+                url="", repo_owner="eval", repo_name="eval",
+                files_changed=len(files), additions=sum(f.additions for f in files),
+                deletions=sum(f.deletions for f in files), commit_sha="abc123",
+            )
+            summary = await review_pull_request(
+                pr, files, client, language="en", min_confidence=7.0,
+                min_severity="suggestion", max_findings_per_file=10,
+            )
+            findings = summary.findings
+        except Exception as exc:
+            logger.warning("PR review eval error: %s", exc)
+            findings = []
+
+        latency_ms = (time.monotonic() - t0) * 1000
+
+        # Scoring
+        if is_clean:
+            # False positive test: 1.0 if no findings, 0.0 if any
+            score = 1.0 if len(findings) == 0 else 0.0
+            detail = f"clean diff: {len(findings)} findings (expected 0)"
+        else:
+            # Detection (0.4): did it find at least one finding of the expected category?
+            detected = any(f.category.value == expected_category for f in findings) if expected_category else len(findings) >= expected_min
+            detection_score = 1.0 if detected else 0.0
+
+            # Severity accuracy (0.2): does the highest-severity finding match expected?
+            severity_score = 0.0
+            if findings and expected_severity:
+                best = findings[0]  # already sorted by severity
+                severity_score = 1.0 if best.severity.value == expected_severity else 0.5
+
+            # Precision (0.2): ratio of relevant findings
+            relevant = sum(1 for f in findings if f.category.value == expected_category) if expected_category else len(findings)
+            precision_score = (relevant / len(findings)) if findings else 0.0
+
+            # Count (0.2): within expected range
+            count_score = 1.0 if expected_min <= len(findings) <= max(expected_max, 1) else 0.5 if findings else 0.0
+
+            score = detection_score * 0.4 + severity_score * 0.2 + precision_score * 0.2 + count_score * 0.2
+            detail = (
+                f"det={detection_score:.1f} sev={severity_score:.1f} "
+                f"prec={precision_score:.1f} cnt={count_score:.1f} "
+                f"findings={len(findings)} expected_cat={expected_category}"
+            )
+
+        results.append({
+            "id": entry["id"],
+            "input": diff_text[:80],
+            "expected": entry.get("expected_output", ""),
+            "actual": f"{len(findings)} findings",
+            "score": score,
+            "latency_ms": latency_ms,
+            "detail": detail,
+        })
+
+    return results
+
+
 async def _run_e2e(entries: list[dict], client: OllamaClient) -> list[dict]:
     """Level 3: LLM-as-judge end-to-end evaluation with tool support.
 
@@ -928,6 +1008,9 @@ async def _run_eval(
             # plan mode requires expected_plan_tasks or expected_plan_categories
             if mode == "plan" and not (meta.get("expected_plan_tasks") is not None or meta.get("expected_plan_categories")):
                 continue
+            # pr-review mode requires pr_review eval type
+            if mode == "pr-review" and "pr_review" not in eval_types:
+                continue
             filtered.append(e)
 
         if not filtered:
@@ -955,6 +1038,8 @@ async def _run_eval(
             results = await _run_memory(filtered, client)
         elif mode == "plan":
             results = await _run_plan(filtered, client)
+        elif mode == "pr-review":
+            results = await _run_pr_review(filtered, client)
         else:  # e2e
             results = await _run_e2e(filtered, client)
 
@@ -1111,7 +1196,7 @@ def main() -> None:
     parser.add_argument(
         "--mode",
         default="e2e",
-        choices=["classify", "tools", "e2e", "guardrails", "memory", "plan"],
+        choices=["classify", "tools", "e2e", "guardrails", "memory", "plan", "pr-review"],
         help="Eval mode (default: e2e). guardrails=deterministic checks, memory=retrieval quality, plan=agent planning.",
     )
     parser.add_argument(

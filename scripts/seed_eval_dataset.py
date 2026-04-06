@@ -38,6 +38,7 @@ class EvalCase:
     expected_tools: list[str] = field(default_factory=list)
     language: str = "es"
     eval_types: list[str] = field(default_factory=lambda: ["classify", "e2e"])
+    extra: dict = field(default_factory=dict)
 
 
 # ---------------------------------------------------------------------------
@@ -985,6 +986,29 @@ CASES: list[EvalCase] = [
 ]
 
 
+# PR Review eval cases (Plan 64)
+from scripts.pr_review_eval_cases import PR_REVIEW_RAW
+
+for _pr in PR_REVIEW_RAW:
+    CASES.append(
+        EvalCase(
+            input_text=_pr.diff,
+            expected_output=_pr.name,
+            section=_pr.section,
+            expected_categories=[_pr.expected_category] if _pr.expected_category else [],
+            eval_types=["pr_review"],
+            language="en",
+            extra={
+                "expected_severity": _pr.expected_severity,
+                "expected_category": _pr.expected_category,
+                "expected_min_findings": _pr.expected_min_findings,
+                "expected_max_findings": _pr.expected_max_findings,
+                "is_clean": _pr.is_clean,
+            },
+        )
+    )
+
+
 def _build_tags(case: EvalCase) -> list[str]:
     """Build tag list for a test case."""
     tags = [f"section:{case.section}", f"lang:{case.language}"]
@@ -995,13 +1019,16 @@ def _build_tags(case: EvalCase) -> list[str]:
 
 def _build_metadata(case: EvalCase) -> dict:
     """Build metadata dict for a test case."""
-    return {
+    meta = {
         "source": "seed",
         "expected_categories": case.expected_categories,
         "expected_tools": case.expected_tools,
         "section": case.section,
         "eval_types": case.eval_types,
     }
+    if case.extra:
+        meta.update(case.extra)
+    return meta
 
 
 async def _seed(db_path: str, clear: bool, dry_run: bool, section: str | None) -> None:

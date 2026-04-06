@@ -354,6 +354,26 @@ CREATE TABLE IF NOT EXISTS automation_log (
     FOREIGN KEY (rule_id) REFERENCES automation_rules(id)
 );
 CREATE INDEX IF NOT EXISTS idx_automation_log_rule ON automation_log(rule_id, triggered_at);
+
+CREATE TABLE IF NOT EXISTS repo_profiles (
+    repo_key TEXT PRIMARY KEY,
+    owner TEXT NOT NULL,
+    repo TEXT NOT NULL,
+    provider TEXT NOT NULL DEFAULT 'github',
+    default_branch TEXT DEFAULT 'main',
+    primary_language TEXT DEFAULT '',
+    framework TEXT,
+    linter TEXT,
+    test_runner TEXT,
+    conventions TEXT DEFAULT '[]',
+    file_tree TEXT DEFAULT '[]',
+    readme_summary TEXT DEFAULT '',
+    config_snippets TEXT DEFAULT '{}',
+    indexing_level INTEGER DEFAULT 0,
+    last_analyzed_at TEXT,
+    created_at TEXT DEFAULT (datetime('now')),
+    updated_at TEXT DEFAULT (datetime('now'))
+);
 """
 
 VEC_SCHEMA_MEMORIES = (

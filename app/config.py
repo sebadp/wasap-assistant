@@ -229,6 +229,16 @@ class Settings(BaseSettings):
     # Context window budget for auto-compaction (Plan 58)
     context_window_tokens: int = 32768
 
+    # PR Review (Plan 63)
+    github_token: str = ""
+    pr_review_min_confidence: float = 7.0
+    pr_review_min_severity: str = "suggestion"
+    pr_review_max_findings_per_file: int = 10
+    pr_review_skip_generated: bool = True
+    pr_review_language: str = "es"
+    pr_review_clones_dir: str = "data/repo_clones"
+    pr_review_deep_context_budget: int = 3000
+
     # Operational Automation (Plan 47)
     automation_enabled: bool = False
     automation_interval_minutes: int = 15
